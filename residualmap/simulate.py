@@ -1,0 +1,168 @@
+"""
+simulate.py — ground truth + everything the surrogate is allowed to see.
+
+Two models are built from the same EPANET .inp:
+
+  * TRUTH  : hidden per-pipe wall-decay coefficients (old/rough pipes decay faster),
+             perturbed demands, perturbed source dose.  The surrogate never sees these.
+  * NOMINAL: the operator's own (imperfect) hydraulic model.  From it we take everything
+             EPANET gives us for free without a single chlorine measurement:
+               - water age (AGE quality mode)
+               - hydraulics: pressure, pipe flow and velocity, flow direction
+               - the pipe table: length, diameter, Hazen-Williams roughness (material/age proxy)
+               - topology: hydraulic distances, paths from sources, tanks
+             and a chlorine simulator whose decay parameters are UNKNOWN and get calibrated
+             from grab samples (see simgp.py).
+
+Everything runs on WNTR (EPA/Sandia), which bundles the EPANET 2.2 engine.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import wntr
+
+DAY = 86400
+LIB = os.path.join(os.path.dirname(wntr.__file__), "library", "networks")
+
+
+def net_path(name: str = "Net3") -> str:
+    """Path to a network bundled with WNTR (Net1/2/3/6, ky4, ky10) or a user .inp."""
+    return name if os.path.exists(name) else os.path.join(LIB, f"{name}.inp")
+
+
+def load(name: str, duration_days: int = 7) -> wntr.network.WaterNetworkModel:
+    wn = wntr.network.WaterNetworkModel(net_path(name))
+    wn.options.time.duration = duration_days * DAY
+    wn.options.time.hydraulic_timestep = 3600
+    wn.options.time.report_timestep = 3600
+    wn.options.time.quality_timestep = 300
+    return wn
+
+
+def roughness_factor(c: float, gamma: float = 1.0) -> float:
+    """Hypothesis encoded in both truth and calibrated simulator: rougher (older) pipe -> faster
+    wall decay.  C=130 -> 1x, C=110 -> 1.6x, C=199 -> 0.2x when gamma=1; gamma=0 switches it off."""
+    return 2.0 ** (-gamma * (c - 130.0) / 30.0)
+
+
+def hydraulic_graph(wn) -> nx.Graph:
+    g = nx.Graph()
+    for lname, link in wn.links():
+        length = getattr(link, "length", None) or 1.0  # pumps/valves: 1 m
+        a, b = link.start_node_name, link.end_node_name
+        if not g.has_edge(a, b) or g[a][b]["weight"] > length:
+            g.add_edge(a, b, weight=length, link=lname)
+    return g
+
+
+@dataclass
+class Scenario:
+    wn_name: str
+    seed: int
+    sample_hour: int
+    junctions: list[str]
+    truth_snapshot: pd.Series        # mg/L at sampling hour, last day
+    truth_daily_min: pd.Series       # mg/L daily minimum, last day
+    truth_by_hour: pd.DataFrame      # hour x junction, last day
+    age_by_hour_h: pd.DataFrame      # hour x junction, NOMINAL model
+    hyd_dist: pd.DataFrame           # length-weighted shortest path (m), junction x junction
+    graph: nx.Graph
+    pipes: pd.DataFrame              # per pipe: start, end, length, diameter, roughness, flow, velocity
+    node_hyd: pd.DataFrame           # per junction: pressure stats from nominal hydraulics
+    coords: dict
+    wn: wntr.network.WaterNetworkModel  # nominal model
+    source_dose: float
+
+    @property
+    def age_snapshot_h(self):
+        return self.age_by_hour_h.loc[self.sample_hour]
+
+    @property
+    def age_daily_mean_h(self):
+        return self.age_by_hour_h.mean()
+
+
+def _last_day(df: pd.DataFrame, cols) -> pd.DataFrame:
+    out = df.loc[df.index >= 6 * DAY, cols].copy()
+    out.index = ((out.index - 6 * DAY) // 3600).astype(int)
+    return out.loc[out.index < 24]
+
+
+def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float, gamma: float,
+                              source_dose: float = 1.2) -> pd.DataFrame:
+    """Chlorine on the operator's NOMINAL model for a candidate (kb, kw, gamma).  hour x junction."""
+    wn = load(name)
+    wn.options.quality.parameter = "CHEMICAL"
+    wn.options.reaction.bulk_coeff = -kb_per_day / DAY
+    wn.options.reaction.wall_coeff = -kw_m_per_day / DAY
+    for _, pipe in wn.pipes():
+        pipe.wall_coeff = -kw_m_per_day * roughness_factor(pipe.roughness, gamma) / DAY
+    for res in wn.reservoir_name_list:
+        wn.add_source(f"src_{res}", res, "CONCEN", source_dose)
+    q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
+    return _last_day(q, wn.junction_name_list).clip(lower=0.0)
+
+
+def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
+                   source_dose: float = 1.2, kb_per_day: float = 0.40,
+                   kw_m_per_day: float = 0.70) -> Scenario:
+    rng = np.random.default_rng(seed)
+
+    # ---------------- TRUTH (hidden) ----------------
+    wn = load(name)
+    wn.options.quality.parameter = "CHEMICAL"
+    wn.options.reaction.bulk_coeff = -kb_per_day * rng.uniform(0.8, 1.2) / DAY
+    wn.options.reaction.wall_coeff = -kw_m_per_day / DAY
+    for _, pipe in wn.pipes():
+        pipe.wall_coeff = -kw_m_per_day * roughness_factor(pipe.roughness, 1.0) * np.exp(rng.normal(0, 0.4)) / DAY
+        pipe.roughness = pipe.roughness * np.exp(rng.normal(0, 0.10))   # hydraulic model mismatch
+    global_mult = rng.uniform(0.85, 1.15)
+    for _, j in wn.junctions():
+        for ts in j.demand_timeseries_list:
+            ts.base_value = ts.base_value * global_mult * np.exp(rng.normal(0.0, 0.15))
+    for res in wn.reservoir_name_list:
+        wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng.uniform(0.9, 1.1))
+    q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
+    junctions = wn.junction_name_list
+    truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
+
+    # ---------------- NOMINAL (what the operator has) ----------------
+    wn_nom = load(name)
+    wn_nom.options.quality.parameter = "AGE"
+    res = wntr.sim.EpanetSimulator(wn_nom).run_sim()
+    age_by_hour = _last_day(res.node["quality"], junctions) / 3600.0
+
+    pressure = _last_day(res.node["pressure"], junctions)
+    node_hyd = pd.DataFrame({"pressure_mean_m": pressure.mean(), "pressure_min_m": pressure.min()})
+
+    pipe_names = wn_nom.pipe_name_list
+    flow = _last_day(res.link["flowrate"], pipe_names)
+    vel = _last_day(res.link["velocity"], pipe_names)
+    rows = []
+    for pn in pipe_names:
+        p = wn_nom.get_link(pn)
+        f = flow[pn]
+        steady = f.abs().mean() > 0 and abs(f.mean()) / f.abs().mean() > 0.8
+        rows.append({"pipe": pn, "start": p.start_node_name, "end": p.end_node_name,
+                     "length_m": p.length, "diameter_m": p.diameter, "roughness": p.roughness,
+                     "flow_mean_m3s": f.mean(), "abs_flow_mean_m3s": f.abs().mean(),
+                     "velocity_mean_ms": vel[pn].mean(), "velocity_min_ms": vel[pn].min(),
+                     # +1 if flow goes start->end most of the day, -1 if reversed, 0 if it sloshes
+                     "direction": int(np.sign(f.mean())) if steady else 0})
+    pipes = pd.DataFrame(rows).set_index("pipe")
+
+    g = hydraulic_graph(wn_nom)
+    d = dict(nx.all_pairs_dijkstra_path_length(g, weight="weight"))
+    big = 10 * max(max(v.values()) for v in d.values())
+    hyd = pd.DataFrame([[d[i].get(j, big) for j in junctions] for i in junctions],
+                       index=junctions, columns=junctions, dtype=float)
+    coords = {n: wn_nom.get_node(n).coordinates for n in g.nodes}
+
+    return Scenario(name, seed, sample_hour, junctions,
+                    truth_by_hour.loc[sample_hour], truth_by_hour.min(), truth_by_hour,
+                    age_by_hour, hyd, g, pipes, node_hyd, coords, wn_nom, source_dose)

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+outputs/cache/
+.DS_Store
+temp.bin
+temp.inp
+temp.rpt
