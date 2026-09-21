@@ -223,7 +223,7 @@ if __name__ == "__main__":
     seeds = tuple(range(int(sys.argv[2]))) if len(sys.argv) > 2 else tuple(range(8))
     _, agg, agg2, _ = main(net, seeds=seeds)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
-    for col in ("rmse", "recall", "cov"):
+    for col in ("rmse", "recall", "cov90"):
         print(f"\n== models under random sampling: {col}")
         print(agg[agg.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="model", values=col).round(3))
     print("\n== sampling rules with calibrated-simulator GP: recall")

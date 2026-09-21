@@ -5,3 +5,4 @@ outputs/cache/
 temp.bin
 temp.inp
 temp.rpt
+.venv/
