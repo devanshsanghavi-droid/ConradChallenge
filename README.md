@@ -62,10 +62,33 @@ RMSE in mg/L; recall = share of junctions truly below 0.2 mg/L that the model fl
 
 Figures: `outputs/map_Net3_n{3,8,15}.png`, `outputs/curves_Net3.png`, `outputs/strategies_Net3.png`, `outputs/day_vs_night_Net3.png`. Numbers: `outputs/results_Net3.csv`, `outputs/summary_Net3.json`, `outputs/features_Net3_seed0.csv`.
 
+## Iteration 3 — task 1: daytime samples predict the night
+
+The compliance number is the **daily minimum**, which happens at night; operators sample by day. `residualmap/simgp.py::SimGP24` takes samples as (junction, hour, mg/L), scores every grid member on the simulated value at each sample's own hour, gives the discrepancy GP the hour (sin/cos) and the water age at that hour, and predicts the whole 24-h profile at every junction. The daily minimum and `P(daily min < 0.2)` come from Monte-Carlo draws (grid member by weight + a joint 24-h GP draw per junction). Sampling hours are restricted to 07:00–17:00. The calibration likelihood is Student-t so that one junction where the operator's model is structurally wrong cannot hijack the fit (see `CHANGELOG.md`).
+
+**Net3, 8 seeds, samples only between 07:00 and 17:00, target = daily minimum, scored on unsampled junctions**
+
+| model / sampling rule | n=3 RMSE / recall | n=8 RMSE / recall | n=15 RMSE / recall | 90% coverage of daily min (n=8) |
+|---|---|---|---|---|
+| mean of samples (today's practice) | 0.32 / 0.00 | 0.32 / 0.00 | 0.34 / 0.00 | – |
+| time-blind calibrated-simulator GP (iteration 2; every sample treated as 14:00) | 0.25 / 0.37 | 0.22 / 0.27 | 0.21 / 0.38 | 0.29 |
+| time-aware GP, random daytime samples | 0.08 / 0.86 | 0.13 / 0.80 | 0.12 / 0.89 | 0.65 |
+| time-aware GP, hourly straddle | 0.08 / 0.86 | 0.14 / 0.88 | 0.13 / 0.84 | 0.66 |
+| time-aware GP, max-uncertainty | 0.08 / 0.86 | 0.14 / 0.94 | 0.14 / 0.93 | 0.66 |
+| **time-aware GP, straddle on daily minimum** | **0.08 / 0.86** | **0.12 / 0.94** | **0.13 / 0.93** | 0.57 |
+
+RMSE in mg/L on the daily minimum; recall = share of junctions whose true daily minimum is below 0.2 mg/L that the model flags (`P(daily min < 0.2) > 0.5`). Precision of the flags at n=15, straddle-on-daily-minimum: 0.94 (F1 0.93). Recall at the 22:00 snapshot from the same daytime samples: 0.78 → 0.95 → 0.85.
+
+- **Fifteen daytime grab samples find 93% of the junctions that go below 0.2 mg/L at night.** The same samples fed to the iteration-2 snapshot model find 38%; the mean of samples finds none.
+- **The calibration recovers the physics from daytime data:** posterior mode at n=15 averages kb 0.31 /day, kw 0.75 m/day, γ 0.94 against a truth of 0.40 / 0.70 / 1.0.
+- **The band on the daily minimum is not yet honest:** 90% coverage 0.81 at n=3 falling to 0.65 at n=15 — see limitations and task 2.
+
+Figures: `outputs/day_vs_night_predicted_Net3.png` (true 22:00 map next to the prediction from 15 daytime samples; true daily-minimum violations next to `P(daily min < 0.2)`), `outputs/curves_time_Net3.png`. Numbers: `outputs/results_time_Net3.csv`, `outputs/summary_Net3.json["time_aware_daily_min"]`.
+
 ## Honest limitations
 
 - **Truth shares the nominal model's topology.** Real EPANET files have closed valves that are open, missing pipes, wrong tank levels. Roughness mismatch is modelled (±10%); structural mismatch is not yet.
-- **Snapshot, not daily minimum.** The model predicts residual at the sampling hour. The compliance number is the daily minimum, which happens at night.
+- **The daily-minimum band under-covers.** The time-aware model's 90% band on the daily minimum holds the truth 0.81 of the time at n=3 and 0.65 at n=15, and the daily-minimum RMSE grows with n (0.08 → 0.13 mg/L). More daytime samples concentrate the posterior on a few grid members whose night profile is biased (the truth's per-pipe decay noise and hydraulic mismatch are not on the grid), while the discrepancy GP, trained by day, reverts to the simulator at night. Task 2 (demand and roughness axes on the grid) is the intended fix; until then treat `P(daily min < 0.2)` as a ranking, not a probability.
 - **Synthetic truth.** No real grab-sample data yet. `docs/pilot_protocol.md` (to be written) is the path to it.
 - **Grid posterior is coarse** (5×5×3). Fine for three parameters; MCMC or an emulator if more are added.
 - **Net3 is mid-size.** ky4/ky10 (≈950 junctions, bundled with WNTR) run through the same code but the simulator grid takes minutes per network.
@@ -83,10 +106,11 @@ python -m residualmap.experiment ky4 2       # bigger real network, fewer seeds
 ```
 residualmap/simulate.py    truth scenario (hidden decay, demand, dose, roughness noise) + nominal model hydraulics, age, pipe table, nominal-chlorine simulator
 residualmap/features.py    24 physics features from the .inp and one hydraulic run; CORE subset; FEATURE_DOCS
-residualmap/simgp.py       calibrated-simulator GP (main model): grid posterior over kb/kw/gamma + discrepancy GP
-residualmap/surrogate.py   decay-law GP (iteration 1), baselines, acquisition rules
+residualmap/simgp.py       calibrated-simulator GP (main model): grid posterior over kb/kw/gamma + discrepancy GP;
+                           SimGP24 = the time-aware version (samples at any hour, 24-h profile, daily minimum)
+residualmap/surrogate.py   decay-law GP (iteration 1), baselines, acquisition rules (per junction, and per junction-hour)
 residualmap/pinn.py        graph-PINN baseline (numpy, L-BFGS, deep ensemble)
-residualmap/experiment.py  sequential-sampling loop, metrics, all figures
+residualmap/experiment.py  sequential-sampling loops (snapshot and time-aware), metrics, all figures
 docs/feature_dictionary.md what every feature means physically
 CHANGELOG.md               dated results per iteration
 CLAUDE_CODE_PROMPT.md      the prompt to start iteration 3 in Claude Code

@@ -60,13 +60,13 @@
         "rmse": 0.269,
         "recall": 0.663,
         "f1": 0.52,
-        "cov90": 0.324
+        "cov90": 0.323
       },
       "pinn_rich": {
-        "rmse": 0.238,
+        "rmse": 0.243,
         "recall": 0.047,
-        "f1": 0.05,
-        "cov90": 0.308
+        "f1": 0.048,
+        "cov90": 0.294
       },
       "simgp_core": {
         "rmse": 0.136,
@@ -113,10 +113,10 @@
         "cov90": 0.512
       },
       "pinn_rich": {
-        "rmse": 0.195,
-        "recall": 0.352,
-        "f1": 0.374,
-        "cov90": 0.382
+        "rmse": 0.189,
+        "recall": 0.329,
+        "f1": 0.332,
+        "cov90": 0.369
       },
       "simgp_core": {
         "rmse": 0.122,
@@ -125,10 +125,10 @@
         "cov90": 0.746
       },
       "simgp_rich": {
-        "rmse": 0.11,
-        "recall": 0.807,
-        "f1": 0.722,
-        "cov90": 0.817
+        "rmse": 0.111,
+        "recall": 0.791,
+        "f1": 0.719,
+        "cov90": 0.808
       }
     },
     "15": {
@@ -164,9 +164,9 @@
       },
       "pinn_rich": {
         "rmse": 0.139,
-        "recall": 0.449,
-        "f1": 0.522,
-        "cov90": 0.429
+        "recall": 0.379,
+        "f1": 0.444,
+        "cov90": 0.417
       },
       "simgp_core": {
         "rmse": 0.089,
@@ -232,6 +232,122 @@
         "rmse": 0.112,
         "recall": 0.903,
         "f1": 0.801
+      }
+    }
+  },
+  "time_aware_daily_min": {
+    "3": {
+      "mean_of_samples/random": {
+        "rmse": 0.321,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.08,
+        "recall": 0.862,
+        "cov90": 0.812,
+        "recall_night": 0.778
+      },
+      "simgp24/straddle": {
+        "rmse": 0.08,
+        "recall": 0.862,
+        "cov90": 0.812,
+        "recall_night": 0.778
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.08,
+        "recall": 0.862,
+        "cov90": 0.812,
+        "recall_night": 0.778
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.08,
+        "recall": 0.862,
+        "cov90": 0.812,
+        "recall_night": 0.778
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.246,
+        "recall": 0.371,
+        "cov90": 0.34,
+        "recall_night": 0.386
+      }
+    },
+    "8": {
+      "mean_of_samples/random": {
+        "rmse": 0.32,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.126,
+        "recall": 0.803,
+        "cov90": 0.652,
+        "recall_night": 0.719
+      },
+      "simgp24/straddle": {
+        "rmse": 0.141,
+        "recall": 0.882,
+        "cov90": 0.659,
+        "recall_night": 0.893
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.124,
+        "recall": 0.94,
+        "cov90": 0.57,
+        "recall_night": 0.953
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.142,
+        "recall": 0.937,
+        "cov90": 0.659,
+        "recall_night": 0.765
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.222,
+        "recall": 0.27,
+        "cov90": 0.293,
+        "recall_night": 0.3
+      }
+    },
+    "15": {
+      "mean_of_samples/random": {
+        "rmse": 0.338,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.123,
+        "recall": 0.888,
+        "cov90": 0.505,
+        "recall_night": 0.778
+      },
+      "simgp24/straddle": {
+        "rmse": 0.131,
+        "recall": 0.839,
+        "cov90": 0.651,
+        "recall_night": 0.781
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.126,
+        "recall": 0.931,
+        "cov90": 0.651,
+        "recall_night": 0.847
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.135,
+        "recall": 0.931,
+        "cov90": 0.644,
+        "recall_night": 0.71
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.212,
+        "recall": 0.381,
+        "cov90": 0.351,
+        "recall_night": 0.45
       }
     }
   },

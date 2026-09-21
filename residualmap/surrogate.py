@@ -121,3 +121,30 @@ def acquire(strategy: str, pred: pd.DataFrame, candidates: list[str], rng,
         score = 1.96 * p["z_sd"] - (p["z_mu"] - np.log(threshold)).abs()
         return str(score.idxmax())
     raise ValueError(strategy)
+
+
+def acquire_time(strategy: str, hourly: tuple[pd.DataFrame, pd.DataFrame], daily_min: pd.DataFrame,
+                 candidates: list[str], hours: list[int], rng, threshold: float = 0.2) -> tuple[str, int]:
+    """Pick the next (junction, hour) grab sample, hour restricted to the operator's window.
+
+    hourly    : (z_mu, z_sd) DataFrames, hour x junction, from SimGP24.predict_hours
+    daily_min : SimGP24.predict_daily_min output (z_mu / z_sd of ln daily-min per junction)
+    """
+    mu, sd = hourly[0].loc[hours, candidates], hourly[1].loc[hours, candidates]
+    if strategy == "random":
+        return str(rng.choice(candidates)), int(rng.choice(hours))
+    if strategy == "uncertainty":
+        h, j = sd.stack().idxmax()
+        return str(j), int(h)
+    if strategy == "straddle":
+        # hourly straddle: the (junction, hour) the model is least sure sits above or below the limit
+        score = 1.96 * sd - (mu - np.log(threshold)).abs()
+        h, j = score.stack().idxmax()
+        return str(j), int(h)
+    if strategy == "straddle_min":
+        # straddle on the DAILY MINIMUM picks the junction; then sample it at the daytime hour where
+        # the model is most uncertain (the reading that most constrains the night)
+        d = daily_min.loc[candidates]
+        j = str((1.96 * d["z_sd"] - (d["z_mu"] - np.log(threshold)).abs()).idxmax())
+        return j, int(sd[j].idxmax())
+    raise ValueError(strategy)

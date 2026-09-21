@@ -22,14 +22,20 @@ import wntr
 
 from .features import CORE, build_features, rich_columns
 from .pinn import GraphPINN
-from .simgp import SimGP
+from .simgp import DAY_HOURS, SimGP, SimGP24
 from .simulate import build_scenario
-from .surrogate import PhysicsGP, acquire, baseline_decay_only, baseline_mean, baseline_nearest
+from .surrogate import (PhysicsGP, acquire, acquire_time, baseline_decay_only, baseline_mean,
+                        baseline_nearest)
 
 warnings.filterwarnings("ignore")  # GP optimizer bound warnings are expected with 3-15 points
 STRATEGIES = ["random", "uncertainty", "straddle"]
 THRESHOLD = 0.2
 PINN_AT = (3, 5, 8, 10, 12, 15)
+TIME_STRATEGIES = ["random", "uncertainty", "straddle", "straddle_min"]
+TIME_MAIN = "straddle_min"      # rule whose maps are drawn
+NIGHT_HOUR = 22
+BIG = {"font.size": 13, "axes.titlesize": 14, "axes.labelsize": 13, "legend.fontsize": 11,
+       "xtick.labelsize": 11, "ytick.labelsize": 11}   # figures must read in a judged video
 
 
 def _metrics(truth, pred_median, p_viol, lo, hi, mask) -> dict:
@@ -100,6 +106,73 @@ def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outpu
     return pd.DataFrame(rows), snapshots, X
 
 
+# ----------------------------------------------------------------------------- time-aware (task 1)
+def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask) -> dict:
+    """Scores against the DAILY MINIMUM (the compliance number) and the night snapshot, on unsampled
+    junctions.  pmin needs columns median / lo90 / hi90 / p_below."""
+    t, m = sc.truth_daily_min.loc[mask], pmin.loc[mask]
+    tv, pv = t < THRESHOLD, m["p_below"] > 0.5
+    tp = int((tv & pv).sum()); fp = int((~tv & pv).sum()); fn = int((tv & ~pv).sum())
+    prec = tp / (tp + fp) if tp + fp else 1.0
+    rec = tp / (tp + fn) if tp + fn else 1.0
+    out = {"rmse_min": float(np.sqrt(np.mean((t - m["median"]) ** 2))), "precision_min": prec, "recall_min": rec,
+           "f1_min": (2 * prec * rec / (prec + rec)) if prec + rec else 0.0, "n_true_viol_min": int(tv.sum()),
+           "coverage90_min": float(((t >= m["lo90"]) & (t <= m["hi90"])).mean())}
+    if p_night is not None:
+        tn, mn = sc.truth_by_hour.loc[NIGHT_HOUR, mask], p_night.loc[mask]
+        tvn, pvn = tn < THRESHOLD, mn["p_below"] > 0.5
+        out["rmse_night"] = float(np.sqrt(np.mean((tn - mn["median"]) ** 2)))
+        out["recall_night"] = float((tvn & pvn).sum() / tvn.sum()) if tvn.sum() else 1.0
+        out["coverage90_night"] = float(((tn >= mn["lo90"]) & (tn <= mn["hi90"])).mean())
+    return out
+
+
+def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outputs/cache"):
+    """Task 1: samples are (junction, hour) with hour in the operator's 07:00-17:00 window; the model
+    predicts all 24 h and the daily minimum.  Baselines: the time-blind iteration-2 model (every sample
+    treated as a 14:00 sample) and the mean of samples."""
+    rng = np.random.default_rng(2000 + seed)
+
+    def observe(js, hs):
+        t = np.array([sc.truth_by_hour.loc[h, j] for j, h in zip(js, hs)])
+        return np.clip(t + rng.normal(0, noise_sd, len(js)), 0.01, None)
+
+    seed_js = list(rng.choice(sc.junctions, n_seed, replace=False))
+    seed_hs = [int(h) for h in rng.choice(DAY_HOURS, n_seed)]
+    seed_y = list(observe(seed_js, seed_hs))
+    rows, snapshots = [], {}
+    for strat in TIME_STRATEGIES:
+        S = pd.DataFrame({"junction": seed_js, "hour": seed_hs, "y": seed_y})
+        for n in range(n_seed, n_max + 1):
+            unsampled = [j for j in sc.junctions if j not in set(S.junction)]
+            m = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(S)
+            hourly = m.predict_hours()
+            pmin = m.predict_daily_min()
+            pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight)
+            r = {"model": "simgp24", "strategy": strat, "n": n, "seed": seed, **_metrics_time(sc, pmin, pnight, unsampled)}
+            r["map_kb"], r["map_kw"], r["map_gamma"] = m.map_params_
+            rows.append(r)
+            if strat == "random":
+                tb = SimGP(sc, seed=seed, cache_dir=cache_dir, lik="t").fit(X.loc[S.junction], S.y.values).predict(X)
+                tb["p_below"] = SimGP.p_below(tb)          # its 14:00 flags, scored against the daily minimum
+                rows.append({"model": "simgp_timeblind", "strategy": strat, "n": n, "seed": seed,
+                             **_metrics_time(sc, tb, tb, unsampled)})
+                mu = float(np.mean(S.y))
+                bm = pd.DataFrame({"median": mu, "lo90": mu, "hi90": mu, "p_below": float(mu < THRESHOLD)}, index=sc.junctions)
+                rows.append({"model": "mean_of_samples", "strategy": strat, "n": n, "seed": seed,
+                             **_metrics_time(sc, bm, bm, unsampled)})
+            if strat == TIME_MAIN and n in (n_seed, 8, n_max):
+                snapshots[n] = {"samples": S.copy(), "pmin": pmin.copy(), "pnight": pnight.copy(),
+                                "hourly": (hourly[0].copy(), hourly[1].copy())}
+            if n == n_max:
+                break
+            cols = sc.junctions
+            hourly_df = (pd.DataFrame(hourly[0], columns=cols), pd.DataFrame(hourly[1], columns=cols))
+            j, h = acquire_time(strat, hourly_df, pmin, unsampled, DAY_HOURS, rng, THRESHOLD)
+            S = pd.concat([S, pd.DataFrame({"junction": [j], "hour": [h], "y": observe([j], [h])})], ignore_index=True)
+    return pd.DataFrame(rows), snapshots
+
+
 # ----------------------------------------------------------------------------- figures
 def plot_maps(sc, snap, out, n):
     truth, pred, pv, sampled = sc.truth_snapshot, snap["pred"], snap["p_viol"], snap["sampled"]
@@ -138,6 +211,73 @@ def plot_day_night(sc, out):
                                    add_colorbar=True, title=f"True chlorine at {h}:00 "
                                    f"({int((sc.truth_by_hour.loc[h] < THRESHOLD).sum())} junctions below {THRESHOLD})")
     fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+
+
+def plot_day_night_predicted(sc, snap, out, n):
+    """The pitch in one figure: the true night map next to what n DAYTIME samples predict for it,
+    and the daily-minimum violations next to the model's P(daily min < 0.2)."""
+    S, pmin, pnight = snap["samples"], snap["pmin"], snap["pnight"]
+    uns = [j for j in sc.junctions if j not in set(S.junction)]
+    met = _metrics_time(sc, pmin, pnight, uns)
+    tv = sc.truth_daily_min < THRESHOLD
+    with plt.rc_context(BIG):
+        fig, axes = plt.subplots(1, 4, figsize=(24, 6.2))
+        panels = [(f"TRUE chlorine at {NIGHT_HOUR}:00 (hidden)\n{int((sc.truth_by_hour.loc[NIGHT_HOUR] < THRESHOLD).sum())} junctions below {THRESHOLD} mg/L",
+                   sc.truth_by_hour.loc[NIGHT_HOUR], "viridis", (0, 1.2)),
+                  (f"PREDICTED {NIGHT_HOUR}:00 from {n} daytime samples\nrecall {met['recall_night']:.2f}, RMSE {met['rmse_night']:.2f} mg/L",
+                   pnight["median"], "viridis", (0, 1.2)),
+                  (f"TRUE daily minimum (hidden)\n{int(tv.sum())} junctions below {THRESHOLD} mg/L at some hour",
+                   sc.truth_daily_min, "viridis", (0, 1.2)),
+                  (f"P(daily minimum < {THRESHOLD} mg/L) from daytime samples\nrecall {met['recall_min']:.2f} on unsampled junctions",
+                   pmin["p_below"], "Reds", (0, 1))]
+        for ax, (title, series, cmap, rng_) in zip(axes, panels):
+            wntr.graphics.plot_network(sc.wn, node_attribute=series.to_dict(), node_size=60, node_cmap=cmap,
+                                       node_range=rng_, ax=ax, title=title, link_width=0.7, add_colorbar=True)
+        ax = axes[1]
+        ax.scatter([sc.coords[j][0] for j in S.junction], [sc.coords[j][1] for j in S.junction], s=150,
+                   facecolors="none", edgecolors="cyan", linewidths=2.0, zorder=5, label="grab samples (hour)")
+        for j, h in zip(S.junction, S.hour):
+            ax.annotate(f"{h}h", sc.coords[j], fontsize=9, color="cyan", xytext=(4, 4), textcoords="offset points")
+        ax.legend(loc="lower left")
+        fig.suptitle(f"{sc.wn_name}: {n} grab samples taken between 07:00 and 17:00 predict the night — "
+                     f"scenario {sc.seed}, time-aware calibrated-simulator GP ({TIME_MAIN} rule)", fontsize=16)
+        fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+
+
+def plot_curves_time(df, out):
+    """Daily-minimum error, recall and coverage vs number of daytime samples."""
+    agg = df.groupby(["model", "strategy", "n"]).agg(rmse=("rmse_min", "mean"), recall=("recall_min", "mean"),
+                                                     cov90=("coverage90_min", "mean"), recall_night=("recall_night", "mean")).reset_index()
+    style = {("simgp24", "random"): ("tab:red", "--", "time-aware GP, random daytime samples"),
+             ("simgp24", "uncertainty"): ("tab:red", ":", "time-aware GP, max-uncertainty rule"),
+             ("simgp24", "straddle"): ("tab:red", "-", "time-aware GP, straddle rule"),
+             ("simgp24", "straddle_min"): ("tab:purple", "-", "time-aware GP, straddle on daily min"),
+             ("simgp_timeblind", "random"): ("tab:orange", "-", "time-blind GP (iteration 2, every sample = 14:00)"),
+             ("mean_of_samples", "random"): ("gray", "--", "mean of samples (today's practice)")}
+    n15 = agg[(agg.n == agg.n.max()) & (agg.model == "simgp24") & (agg.strategy == TIME_MAIN)].iloc[0]
+    with plt.rc_context(BIG):
+        fig, axes = plt.subplots(1, 3, figsize=(21, 5.6))
+        for (mname, strat), g in agg.groupby(["model", "strategy"]):
+            if (mname, strat) not in style:
+                continue
+            c, ls, lab = style[(mname, strat)]
+            axes[0].plot(g.n, g.rmse, ls, color=c, marker="o", ms=4, label=lab)
+            axes[1].plot(g.n, g.recall, ls, color=c, marker="o", ms=4, label=lab)
+            if mname == "simgp24":
+                axes[2].plot(g.n, g.cov90, ls, color=c, marker="o", ms=4, label=lab)
+        axes[1].axhline(0.8, color="k", lw=0.8, ls=":"); axes[1].text(3.1, 0.81, "target 0.80", fontsize=10)
+        axes[2].axhline(0.9, color="k", lw=0.8, ls=":"); axes[2].text(3.1, 0.905, "target 0.90", fontsize=10)
+        axes[0].set(title="Daily-minimum error at unsampled junctions", xlabel="daytime grab samples", ylabel="RMSE of daily minimum (mg/L)")
+        axes[1].set(title=f"Recall of junctions whose daily minimum < {THRESHOLD} mg/L", xlabel="daytime grab samples", ylabel="recall", ylim=(0, 1.02))
+        axes[2].set(title="Calibration: truth inside the 90% band (daily minimum)", xlabel="daytime grab samples", ylabel="coverage", ylim=(0, 1.02))
+        for ax in axes:
+            ax.grid(alpha=0.3)
+        axes[1].legend(loc="lower right", fontsize=9)
+        fig.suptitle(f"Daytime samples predict the night: recall {n15.recall:.2f} of daily-minimum violations at "
+                     f"{int(n15.n)} daytime samples, {TIME_MAIN} rule (time-blind model: "
+                     f"{agg[(agg.model == 'simgp_timeblind') & (agg.n == n15.n)].recall.iloc[0]:.2f})", fontsize=15)
+        fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+    return agg
 
 
 def plot_curves(df, out):
@@ -185,15 +325,18 @@ def plot_curves(df, out):
 def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outputs", sample_hour=14):
     os.makedirs(outdir, exist_ok=True)
     cache = os.path.join(outdir, "cache")
-    frames, summary = [], {}
+    frames, frames_t, summary = [], [], {}
     for s in seeds:
         sc = build_scenario(network, seed=s, sample_hour=sample_hour)
         df, snaps, X = run_scenario(sc, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
         frames.append(df)
+        df_t, snaps_t = run_scenario_time(sc, X, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
+        frames_t.append(df_t)
         if s == seeds[0]:
             for n, snap in snaps.items():
                 plot_maps(sc, snap, os.path.join(outdir, f"map_{network}_n{n}.png"), n)
             plot_day_night(sc, os.path.join(outdir, f"day_vs_night_{network}.png"))
+            plot_day_night_predicted(sc, snaps_t[n_max], os.path.join(outdir, f"day_vs_night_predicted_{network}.png"), n_max)
             X.to_csv(os.path.join(outdir, f"features_{network}_seed{s}.csv"))
             summary["scenario0"] = {
                 "junctions": len(sc.junctions),
@@ -212,19 +355,31 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     summary["strategies_simgp"] = {
         str(n): agg2[agg2.n == n].set_index("strategy")[["rmse", "recall", "f1"]].round(3).to_dict("index")
         for n in (n_seed, 8, n_max)}
+    mp = df[(df.model == "simgp_core") & (df.strategy == "random")].groupby("n")[["map_kb", "map_kw", "map_gamma"]].mean()
+    summary["map_params_mean_by_n"] = {str(n): mp.loc[n].round(2).to_dict() for n in (n_seed, 8, n_max)}
+    df_t = pd.concat(frames_t, ignore_index=True)
+    df_t.to_csv(os.path.join(outdir, f"results_time_{network}.csv"), index=False)
+    agg_t = plot_curves_time(df_t, os.path.join(outdir, f"curves_time_{network}.png"))
+    agg_t["key"] = agg_t.model + "/" + agg_t.strategy
+    summary["time_aware_daily_min"] = {
+        str(n): agg_t[agg_t.n == n].set_index("key")[["rmse", "recall", "cov90", "recall_night"]].round(3).to_dict("index")
+        for n in (n_seed, 8, n_max)}
     with open(os.path.join(outdir, f"summary_{network}.json"), "w") as f:
         json.dump(summary, f, indent=2)
-    return df, agg, agg2, summary
+    return df, agg, agg2, summary, agg_t
 
 
 if __name__ == "__main__":
     import sys
     net = sys.argv[1] if len(sys.argv) > 1 else "Net3"
     seeds = tuple(range(int(sys.argv[2]))) if len(sys.argv) > 2 else tuple(range(8))
-    _, agg, agg2, _ = main(net, seeds=seeds)
+    _, agg, agg2, _, agg_t = main(net, seeds=seeds)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
     for col in ("rmse", "recall", "cov90"):
         print(f"\n== models under random sampling: {col}")
         print(agg[agg.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="model", values=col).round(3))
     print("\n== sampling rules with calibrated-simulator GP: recall")
     print(agg2[agg2.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="strategy", values="recall").round(3))
+    for col in ("rmse", "recall", "cov90", "recall_night"):
+        print(f"\n== time-aware: DAILY MINIMUM from daytime samples, {col}")
+        print(agg_t[agg_t.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="key", values=col).round(3))
