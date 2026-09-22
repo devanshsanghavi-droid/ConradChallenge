@@ -1,0 +1,29 @@
+tap_id,junction_id,flush_min,notes
+T1,225,3,hydrant
+T2,239,3,hydrant
+T3,193,3,hydrant
+T4,173,3,hydrant
+T5,127,3,hydrant
+T6,35,3,hydrant
+T7,15,3,hydrant
+T8,139,3,hydrant
+T9,113,3,hydrant
+T10,60,3,hydrant
+V1-1,143,3,"customer tap, rotating"
+V1-2,261,3,"customer tap, rotating"
+V1-3,243,3,"customer tap, rotating"
+V2-1,61,3,"customer tap, rotating"
+V2-2,187,3,"customer tap, rotating"
+V2-3,263,3,"customer tap, rotating"
+V3-1,219,3,"customer tap, rotating"
+V3-2,267,3,"customer tap, rotating"
+V3-3,206,3,"customer tap, rotating"
+V4-1,269,3,"customer tap, rotating"
+V4-2,184,3,"customer tap, rotating"
+V4-3,161,3,"customer tap, rotating"
+V5-1,121,3,"customer tap, rotating"
+V5-2,257,3,"customer tap, rotating"
+V5-3,131,3,"customer tap, rotating"
+V6-1,184,3,"customer tap, rotating"
+V6-2,143,3,"customer tap, rotating"
+V6-3,267,3,"customer tap, rotating"

@@ -119,7 +119,7 @@ Real EPANET files have closed valves that are open, missing pipes, wrong tank da
 - **The band is honest on average, not at every n.** Snapshot: 0.95 for a 90% band over n = 3–15, but the 50% band over-covers (0.68) — slightly too wide in the middle. Daily minimum: 0.93 on average, narrowing from 0.96 at n=3 to 0.87 at n=15 (0.79 with the straddle-on-daily-minimum rule). Treat `P(daily min < 0.2)` from a straddle-chosen set of 15 samples as slightly over-confident.
 - **Recall traded for precision on the 14:00 snapshot.** The better-calibrated posterior shrinks the low junctions' medians toward the grid centre: recall under random samples is about 5% lower than with the iteration-2 grid (precision 10–16 points higher, F1 higher). The max-uncertainty rule lost 20% recall and should not be used.
 - **The daily-minimum recall is nearly saturated on Net3.** Any 5 daytime samples find 97% or more of the junctions that go below 0.2 mg/L at night, because a whole tank-fed zone goes low together. Route and rule comparisons on that metric are decided by two hard scenarios out of eight; the 14:00 snapshot (recall 0.74–0.92) and the 0.2 mg/L precision are the discriminating numbers. Larger networks (task 5) should separate the routes more.
-- **Synthetic truth.** No real grab-sample data yet. `docs/pilot_protocol.md` (to be written) is the path to it.
+- **Synthetic truth.** No real grab-sample data yet. `docs/pilot_protocol.md` is the path to it: what a utility gives us, how taps become junctions, the monthly deliverable, and the hold-out validation (`python -m residualmap.pilot`) with success criteria fixed in advance — including rotating off-route sites, because a fixed route can never validate the map.
 - **Grid posterior is coarse** (5×5×3 decay × 3×3 hydraulic × 5 dose). Fine for six parameters with a 20-second cache; MCMC or an emulator if more are added.
 - **The discrepancy GP does not scale to 959 junctions at 15 samples.** On ky4 it raises the snapshot RMSE from 0.08 to 0.11 and the straddle rule's to 0.21; the calibrated simulator with its band is the better map there. A rule for when to switch the GP on (n ≥ J/25, or by marginal likelihood) is the next iteration's job. The 675-run grid takes 15 minutes and 62 MB on ky4.
 - **The route optimiser's edge is Net3-specific so far.** On Net2 and ky4 the K highest-demand sites do as well or better on recall, and the straddle-chosen sites hurt calibration at K=12. A mixed objective (half the sites for the violation call, half to calibrate) is proposed in `CHANGELOG.md`.
@@ -140,6 +140,7 @@ python -m residualmap.experiment Net3 8      # network, number of scenario seeds
 python -m residualmap.experiment Net2 8      # small tank-fed network; ~2 min
 python -m residualmap.experiment ky4 2       # 959 junctions, fewer seeds; ~25 min including a 15-min grid on 11 cores
 python -m residualmap.experiment Net3 8 --structural=persistent   # stress test: truth with a closed pipe / wrong tank volume -> outputs/structural_persistent/
+python -m residualmap.pilot --synthetic Net3                       # the pilot validation on a synthetic six-month grab log -> outputs/pilot/
 ```
 
 ## Layout
@@ -153,6 +154,8 @@ residualmap/surrogate.py   decay-law GP (iteration 1), baselines, acquisition ru
 residualmap/route.py       monthly route of K sites chosen at once (straddle on the daily minimum + hydraulic-distance repulsion), with reasons; random and highest-demand baselines
 residualmap/pinn.py        graph-PINN baseline (numpy, L-BFGS, deep ensemble)
 residualmap/experiment.py  sequential-sampling loops (snapshot and time-aware), metrics, all figures
+residualmap/pilot.py       the real-data path: grab log + tap map -> rolling hold-out validation (RMSE, coverage, recall vs persistence)
+docs/pilot_protocol.md     what a pilot utility gives us, tap-to-junction mapping, monthly deliverable, the validation and its criteria
 docs/feature_dictionary.md what every feature means physically
 CHANGELOG.md               dated results per iteration
 app.py                     the operator-facing Streamlit app (upload .inp, enter samples, four panels, route, PDF)

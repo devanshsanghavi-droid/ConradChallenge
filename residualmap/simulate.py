@@ -187,9 +187,13 @@ def apply_structural_noise(wn, rng, mode: str = "spec") -> dict:
 
 def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    source_dose: float = 1.2, kb_per_day: float = 0.40,
-                   kw_m_per_day: float = 0.70, structural_noise: bool | str = False) -> Scenario:
-    """structural_noise: False, True (= "spec") or "persistent" — see apply_structural_noise."""
+                   kw_m_per_day: float = 0.70, structural_noise: bool | str = False,
+                   month_seed: int | None = None) -> Scenario:
+    """structural_noise: False, True (= "spec") or "persistent" — see apply_structural_noise.
+    month_seed: if given, the pipe-level truth (per-pipe wall decay, roughness) comes from `seed` and the
+    operating truth (bulk decay, demand, dose) from `month_seed` — the same network in a different month."""
     rng = np.random.default_rng(seed)
+    rng_m = np.random.default_rng(month_seed) if month_seed is not None else rng
 
     # ---------------- TRUTH (hidden) ----------------
     wn = load(name)
@@ -198,17 +202,17 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     if structural_noise:
         mode = structural_noise if isinstance(structural_noise, str) else "spec"
         structural = apply_structural_noise(wn, np.random.default_rng(10_000 + seed), mode)
-    wn.options.reaction.bulk_coeff = -kb_per_day * rng.uniform(0.8, 1.2) / DAY
+    wn.options.reaction.bulk_coeff = -kb_per_day * rng_m.uniform(0.8, 1.2) / DAY
     wn.options.reaction.wall_coeff = -kw_m_per_day / DAY
     for _, pipe in wn.pipes():
         pipe.wall_coeff = -kw_m_per_day * roughness_factor(pipe.roughness, 1.0) * np.exp(rng.normal(0, 0.4)) / DAY
         pipe.roughness = pipe.roughness * np.exp(rng.normal(0, 0.10))   # hydraulic model mismatch
-    global_mult = rng.uniform(0.85, 1.15)
+    global_mult = rng_m.uniform(0.85, 1.15)
     for _, j in wn.junctions():
         for ts in j.demand_timeseries_list:
-            ts.base_value = ts.base_value * global_mult * np.exp(rng.normal(0.0, 0.15))
+            ts.base_value = ts.base_value * global_mult * np.exp(rng_m.normal(0.0, 0.15))
     for res in source_nodes(wn):
-        wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng.uniform(0.9, 1.1))
+        wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng_m.uniform(0.9, 1.1))
     q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)

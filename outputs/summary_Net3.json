@@ -405,7 +405,7 @@
       "simgp24/random": {
         "rmse": 0.082,
         "recall": 0.981,
-        "cov90": 0.872,
+        "cov90": 0.873,
         "recall_night": 0.842
       },
       "simgp24/straddle": {
@@ -423,7 +423,7 @@
       "simgp24/uncertainty": {
         "rmse": 0.137,
         "recall": 0.984,
-        "cov90": 0.849,
+        "cov90": 0.851,
         "recall_night": 0.959
       },
       "simgp24_g75/random": {
@@ -465,7 +465,7 @@
         "precision_min": 0.876,
         "f1_min": 0.925,
         "rmse_min": 0.087,
-        "coverage90_min": 0.925,
+        "coverage90_min": 0.927,
         "recall_min_all": 0.99,
         "f1_min_all": 0.929
       }
