@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-21 — iteration 3, task 6: operator-facing demo
+
+- `app.py` (Streamlit, `streamlit run app.py`): pick an example network or upload an `.inp`, set the plant dose and the minimum residual, type grab samples as rows (junction from a dropdown of the model's IDs, hour, mg/L). Four panels: chlorine map with the samples marked, 90% band width, `P(residual < limit)`, and next month's route of K sites drawn on the map; a table of the K sites with a one-sentence reason each (from `route.plan_route`); the worst-hour bar chart; headline metrics (junctions likely below the limit, worst hour, calibrated bulk / wall decay, demand and dose multipliers); a one-page PDF (matplotlib's PDF backend — no new dependency). The view switches between the daily minimum and any hour of the day. No accounts, no database; the 675-run grid is built once per network (20 s on Net3, cached on disk in `outputs/cache/`, uploads under `outputs/app_uploads/`, git-ignored).
+- With no samples the app still gives a map: `SimGP24.fit_prior()` — the operator's physics alone, uniform over the decay and hydraulic grid, the band as wide as that implies.
+- Demo mode (default on) simulates a hidden truth from the same file with the experiment's scenario generator and draws n daytime samples from it, so the app can be shown without real data; a toggle reveals the true daily-minimum map and scores the flags. Net3 scenario 0, 8 demo samples: 41 true daily-minimum violations, the map flags 42 junctions and finds 36 of the 36 unsampled violations with 1 false alarm; the mean of the 8 samples is 0.53 mg/L and flags nothing.
+- `simulate.nominal_scenario()`: the operator's side of `build_scenario` on its own (no hidden truth); `build_scenario` now calls it — features and truth verified identical to the committed outputs.
+- Verified headlessly with `streamlit.testing.v1.AppTest`: default run, truth reveal, hourly view, demo off with no samples, Net2 — no exceptions. `streamlit>=1.30` added to `requirements.txt`.
+
 ## 2026-09-21 — iteration 3, task 5: Net2 (35 junctions, tank-fed) and ky4 (959 junctions)
 
 - `simulate.source_nodes`: where chlorine enters — reservoirs; else junctions with a negative demand (a pumped inflow, as in Net2's junction 1); else tanks. The task said "set a tank source if there is no reservoir": a CONCEN source only acts on external inflow at a node, so on Net2 a source at the tank gives a median of 0.05 mg/L on the last day, at the inflow junction 0.86. Used by the truth, the nominal simulator and the path features.

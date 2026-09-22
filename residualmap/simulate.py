@@ -77,9 +77,9 @@ class Scenario:
     seed: int
     sample_hour: int
     junctions: list[str]
-    truth_snapshot: pd.Series        # mg/L at sampling hour, last day
-    truth_daily_min: pd.Series       # mg/L daily minimum, last day
-    truth_by_hour: pd.DataFrame      # hour x junction, last day
+    truth_snapshot: pd.Series | None        # mg/L at sampling hour, last day (None for a real .inp)
+    truth_daily_min: pd.Series | None       # mg/L daily minimum, last day
+    truth_by_hour: pd.DataFrame | None      # hour x junction, last day
     age_by_hour_h: pd.DataFrame      # hour x junction, NOMINAL model
     hyd_dist: pd.DataFrame           # length-weighted shortest path (m), junction x junction
     graph: nx.Graph
@@ -213,8 +213,17 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
 
-    # ---------------- NOMINAL (what the operator has) ----------------
+    sc = nominal_scenario(name, sample_hour, source_dose)
+    sc.seed, sc.structural = seed, structural
+    sc.truth_snapshot, sc.truth_daily_min, sc.truth_by_hour = truth_by_hour.loc[sample_hour], truth_by_hour.min(), truth_by_hour
+    return sc
+
+
+def nominal_scenario(name: str, sample_hour: int = 14, source_dose: float = 1.2) -> Scenario:
+    """The operator's side only: what a real .inp gives us with no chlorine measurement.  Used by the
+    app (no hidden truth) and by build_scenario (which adds one)."""
     wn_nom = load(name)
+    junctions = wn_nom.junction_name_list
     wn_nom.options.quality.parameter = "AGE"
     res = wntr.sim.EpanetSimulator(wn_nom).run_sim()
     age_by_hour = _last_day(res.node["quality"], junctions) / 3600.0
@@ -245,6 +254,5 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                        index=junctions, columns=junctions, dtype=float)
     coords = {n: wn_nom.get_node(n).coordinates for n in g.nodes}
 
-    return Scenario(name, seed, sample_hour, junctions,
-                    truth_by_hour.loc[sample_hour], truth_by_hour.min(), truth_by_hour,
-                    age_by_hour, hyd, g, pipes, node_hyd, coords, wn_nom, source_dose, structural)
+    return Scenario(name, 0, sample_hour, junctions, None, None, None,
+                    age_by_hour, hyd, g, pipes, node_hyd, coords, wn_nom, source_dose, None)

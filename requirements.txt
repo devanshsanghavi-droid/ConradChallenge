@@ -5,3 +5,4 @@ pandas
 scipy
 networkx
 matplotlib
+streamlit>=1.30

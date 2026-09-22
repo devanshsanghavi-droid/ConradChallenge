@@ -124,7 +124,15 @@ Real EPANET files have closed valves that are open, missing pipes, wrong tank da
 - **The discrepancy GP does not scale to 959 junctions at 15 samples.** On ky4 it raises the snapshot RMSE from 0.08 to 0.11 and the straddle rule's to 0.21; the calibrated simulator with its band is the better map there. A rule for when to switch the GP on (n ≥ J/25, or by marginal likelihood) is the next iteration's job. The 675-run grid takes 15 minutes and 62 MB on ky4.
 - **The route optimiser's edge is Net3-specific so far.** On Net2 and ky4 the K highest-demand sites do as well or better on recall, and the straddle-chosen sites hurt calibration at K=12. A mixed objective (half the sites for the violation call, half to calibrate) is proposed in `CHANGELOG.md`.
 
-## Run
+## The app (`app.py`)
+
+```bash
+streamlit run app.py
+```
+
+Pick an example network or upload your `.inp`, set the plant dose, type your grab samples as rows (junction, hour, mg/L), and read four panels: the chlorine map with your samples marked, the 90% band, `P(residual < 0.2)` at the daily minimum or at any hour, and next month's route with a one-sentence reason per site. Download the one-page PDF. With no samples yet the map is your model's physics alone. Demo mode simulates a hidden truth from the same file, draws daytime samples from it, and can reveal the truth to score the flags. Runs on a laptop; nothing leaves it.
+
+## Run the experiments
 
 ```bash
 pip install -r requirements.txt
@@ -147,5 +155,6 @@ residualmap/pinn.py        graph-PINN baseline (numpy, L-BFGS, deep ensemble)
 residualmap/experiment.py  sequential-sampling loops (snapshot and time-aware), metrics, all figures
 docs/feature_dictionary.md what every feature means physically
 CHANGELOG.md               dated results per iteration
+app.py                     the operator-facing Streamlit app (upload .inp, enter samples, four panels, route, PDF)
 CLAUDE_CODE_PROMPT.md      the prompt to start iteration 3 in Claude Code
 ```
