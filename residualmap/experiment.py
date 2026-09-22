@@ -22,6 +22,7 @@ import wntr
 
 from .features import CORE, build_features, rich_columns
 from .pinn import GraphPINN
+from .route import demand_route, plan_route, random_route
 from .simgp import DAY_HOURS, SimGP, SimGP24
 from .simulate import build_scenario
 from .surrogate import (PhysicsGP, acquire, acquire_time, baseline_decay_only, baseline_mean,
@@ -32,6 +33,7 @@ STRATEGIES = ["random", "uncertainty", "straddle"]
 THRESHOLD = 0.2
 PINN_AT = (3, 5, 8, 10, 12, 15)
 TIME_STRATEGIES = ["random", "uncertainty", "straddle", "straddle_min"]
+ROUTE_KS = (5, 8, 12)
 TIME_MAIN = "straddle_min"      # rule whose maps are drawn
 NIGHT_HOUR = 22
 BIG = {"font.size": 13, "axes.titlesize": 14, "axes.labelsize": 13, "legend.fontsize": 11,
@@ -211,6 +213,70 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
             j, h = acquire_time(strat, hourly_df, pmin, unsampled, DAY_HOURS, rng, THRESHOLD)
             S = pd.concat([S, pd.DataFrame({"junction": [j], "hour": [h], "y": observe([j], [h])})], ignore_index=True)
     return pd.DataFrame(rows), snapshots
+
+
+# ----------------------------------------------------------------------------- routes (task 4)
+def run_routes(sc, X, seed=0, noise_sd=0.03, Ks=ROUTE_KS, cache_dir="outputs/cache"):
+    """Task 4: a fixed monthly route of K sites chosen at once from the .inp alone (prior model), against
+    K random sites and the K highest-demand sites.  Scored on the daily minimum at unsampled junctions."""
+    rng = np.random.default_rng(3000 + seed)
+    prior = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit_prior()
+    rows, routes = [], {}
+    for K in Ks:
+        for name, route in (("optimised", plan_route(prior, K)), ("highest_demand", demand_route(sc, K)),
+                            ("random", random_route(sc, K, rng))):
+            t = np.array([sc.truth_by_hour.loc[h, j] for j, h in zip(route.junction, route.hour)])
+            S = pd.DataFrame({"junction": list(route.junction), "hour": [int(h) for h in route.hour],
+                              "y": np.clip(t + rng.normal(0, noise_sd, K), 0.01, None)})
+            m = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(S)
+            uns = [j for j in sc.junctions if j not in set(S.junction)]
+            hourly = m.predict_hours(); pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight)
+            pmin = m.predict_daily_min()
+            # a daytime sample does not reveal a junction's night minimum, so the daily-minimum flags are
+            # also scored over ALL junctions (the operator's view); the unsampled-only score stays primary
+            allj = _metrics_time(sc, pmin, None, sc.junctions)
+            rows.append({"route": name, "K": K, "seed": seed, **_metrics_time(sc, pmin, pnight, uns),
+                         **{k + "_all": allj[k] for k in ("recall_min", "precision_min", "f1_min")}})
+            routes[(name, K)] = {"route": route, "pmin": pmin}
+    return pd.DataFrame(rows), routes
+
+
+def plot_routes(df_r, df_t, sc, routes, out, K_map=8):
+    df_r = df_r.copy(); df_r["missed"] = ((1 - df_r.recall_min) * df_r.n_true_viol_min).round(0)
+    agg = df_r.groupby(["route", "K"])[["recall_min", "precision_min", "f1_min", "rmse_min", "coverage90_min", "recall_min_all", "f1_min_all"]].mean().reset_index()
+    missed = df_r.groupby(["route", "K"]).missed.sum()
+    n_months = df_r.seed.nunique()
+    seq = df_t[(df_t.model == "simgp24") & (df_t.strategy == "straddle_min") & df_t.n.isin(ROUTE_KS)].groupby("n")[["recall_min", "f1_min"]].mean()
+    style = {"optimised": ("tab:purple", "optimised route (from the .inp alone)"),
+             "highest_demand": ("tab:orange", "K highest-demand sites (operator heuristic)"),
+             "random": ("gray", "K random sites")}
+    with plt.rc_context(BIG):
+        fig = plt.figure(figsize=(22, 6.4)); gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1.25])
+        ax0, ax1, ax2 = fig.add_subplot(gs[0]), fig.add_subplot(gs[1]), fig.add_subplot(gs[2])
+        w = 0.26
+        for i, (name, (c, lab)) in enumerate(style.items()):
+            g = agg[agg.route == name].set_index("K")
+            xs = np.arange(len(ROUTE_KS)) + (i - 1) * w
+            ms = [missed[(name, k)] for k in ROUTE_KS]
+            ax0.bar(xs, ms, w, color=c, label=lab)
+            for x, v in zip(xs, ms):
+                ax0.text(x, v + 0.15, f"{int(v)}", ha="center", fontsize=12, fontweight="bold")
+            ax1.bar(xs, g.loc[list(ROUTE_KS), "f1_min"], w, color=c, label=lab)
+        ax1.plot(np.arange(len(ROUTE_KS)), seq.loc[list(ROUTE_KS), "f1_min"], "k_", ms=22, mew=2, label="adaptive, one sample at a time (reference)")
+        ax0.set(xticks=range(len(ROUTE_KS)), xticklabels=[f"K = {k} sites" for k in ROUTE_KS], ylabel="missed night violations",
+                title=f"Night violations MISSED, summed over {n_months} scenario-months (lower is better)"); ax0.grid(alpha=0.3, axis="y")
+        ax1.set(xticks=range(len(ROUTE_KS)), xticklabels=[f"K = {k} sites" for k in ROUTE_KS], ylim=(0, 1.05), ylabel="F1", title="F1 of the daily-minimum flags"); ax1.grid(alpha=0.3, axis="y")
+        ax1.legend(loc="lower right", fontsize=10)
+        r = routes[("optimised", K_map)]; route, pmin = r["route"], r["pmin"]
+        wntr.graphics.plot_network(sc.wn, node_attribute=pmin["p_below"].to_dict(), node_size=55, node_cmap="Reds", node_range=(0, 1),
+                                   ax=ax2, link_width=0.7, add_colorbar=True, title=f"The {K_map}-site route on scenario {sc.seed}: colour = P(daily min < {THRESHOLD}) before any sample")
+        ax2.scatter([sc.coords[j][0] for j in route.junction], [sc.coords[j][1] for j in route.junction], s=170, facecolors="none", edgecolors="tab:purple", linewidths=2.2, zorder=5)
+        for k, (j, h) in enumerate(zip(route.junction, route.hour)):
+            ax2.annotate(f"{k + 1}: {h:02d}h", sc.coords[j], fontsize=10, color="tab:purple", xytext=(5, 4), textcoords="offset points", fontweight="bold")
+        fig.suptitle(f"A 5-site route planned from the EPANET file alone misses {int(missed[('optimised', 5)])} night violation(s) in {n_months} scenario-months; "
+                     f"the 5 highest-demand sites miss {int(missed[('highest_demand', 5)])}, 5 random sites {int(missed[('random', 5)])}", fontsize=15)
+        fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+    return agg
 
 
 # ----------------------------------------------------------------------------- figures
@@ -429,7 +495,7 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     if structural_noise:
         outdir = os.path.join(outdir, "structural" if structural_noise is True else f"structural_{structural_noise}")
     os.makedirs(outdir, exist_ok=True)
-    frames, frames_t, summary = [], [], {}
+    frames, frames_t, frames_r, summary = [], [], [], {}
     for s in seeds:
         sc = build_scenario(network, seed=s, sample_hour=sample_hour, structural_noise=structural_noise)
         if sc.structural:
@@ -439,7 +505,10 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
         frames.append(df)
         df_t, snaps_t = run_scenario_time(sc, X, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
         frames_t.append(df_t)
+        df_r, routes = run_routes(sc, X, seed=s, cache_dir=cache)
+        frames_r.append(df_r)
         if s == seeds[0]:
+            sc0, routes0 = sc, routes
             for n, snap in snaps.items():
                 plot_maps(sc, snap, os.path.join(outdir, f"map_{network}_n{n}.png"), n)
             plot_day_night(sc, os.path.join(outdir, f"day_vs_night_{network}.png"))
@@ -476,6 +545,13 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     summary["time_aware_daily_min"] = {
         str(n): agg_t[agg_t.n == n].set_index("key")[["rmse", "recall", "cov90", "recall_night"]].round(3).to_dict("index")
         for n in (n_seed, 8, n_max)}
+    df_r = pd.concat(frames_r, ignore_index=True)
+    df_r.to_csv(os.path.join(outdir, f"results_routes_{network}.csv"), index=False)
+    agg_r = plot_routes(df_r, df_t, sc0, routes0, os.path.join(outdir, f"route_comparison_{network}.png"))
+    summary["routes_daily_min"] = {
+        str(K): agg_r[agg_r.K == K].set_index("route")[["recall_min", "precision_min", "f1_min", "rmse_min", "coverage90_min", "recall_min_all", "f1_min_all"]].round(3).to_dict("index")
+        for K in ROUTE_KS}
+    summary["route_scenario0_K8"] = routes0[("optimised", 8)]["route"].to_dict("records")
     with open(os.path.join(outdir, f"summary_{network}.json"), "w") as f:
         json.dump(summary, f, indent=2)
     return df, agg, agg2, summary, agg_t
@@ -499,3 +575,6 @@ if __name__ == "__main__":
     for col in ("rmse", "recall", "cov90", "recall_night"):
         print(f"\n== time-aware: DAILY MINIMUM from daytime samples, {col}")
         print(agg_t[agg_t.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="key", values=col).round(3))
+    print("\n== routes: K sites chosen at once, daily-minimum recall / precision / F1")
+    print(pd.read_csv(os.path.join("outputs" if not structural else f"outputs/structural{'_' + structural if isinstance(structural, str) else ''}", f"results_routes_{net}.csv"))
+          .groupby(["K", "route"])[["recall_min", "precision_min", "f1_min", "rmse_min", "coverage90_min", "recall_min_all", "f1_min_all"]].mean().round(3))

@@ -256,8 +256,27 @@ class SimGP24:
     def _design(self, jidx, hours) -> np.ndarray:
         return (self._raw(np.asarray(jidx), np.asarray(hours)) - self.mu_) / self.sd_
 
+    def fit_prior(self) -> "SimGP24":
+        """No samples yet: uniform weights over grid members and doses, no discrepancy GP.  This is what
+        the operator gets from the .inp alone, and what the first route is planned from."""
+        W = np.full((len(self.params), len(self.doses)), 1.0 / (len(self.params) * len(self.doses)))
+        offs = np.log(np.asarray(self.doses, dtype=float))
+        w, wd = W.sum(axis=1), W.sum(axis=0)
+        self.w_, self.W_, self.offs_ = w, W, offs
+        self.m_ = np.tensordot(w, self.Z, axes=1) + wd @ offs
+        wo = W @ offs
+        self.v_ = np.clip(np.tensordot(w, self.Z ** 2, axes=1) + 2 * np.tensordot(wo, self.Z, axes=1)
+                          + wd @ offs ** 2 - self.m_ ** 2, 1e-6, None)
+        self.hv_ = local_hydraulic_var(w, self.Z, self.n_hyd) if self.n_hyd > 1 else np.zeros_like(self.v_)
+        self.map_params_, self.map_dose_ = None, None
+        self.gp = None
+        self.samples_ = pd.DataFrame(columns=["junction", "hour", "y"])
+        return self
+
     def fit(self, samples: pd.DataFrame) -> "SimGP24":
         """samples: columns junction, hour (int 0-23), y (mg/L)."""
+        if samples is None or len(samples) == 0:
+            return self.fit_prior()
         idx = np.array([self.jidx[j] for j in samples.junction])
         h = samples.hour.astype(int).values
         z_obs = np.log(np.clip(samples.y.values, FLOOR, None))
@@ -292,6 +311,9 @@ class SimGP24:
 
     def predict_hours(self) -> tuple[np.ndarray, np.ndarray]:
         """Predictive ln C for every (hour, junction): (z_mu, z_sd), each 24 x J."""
+        if self.gp is None:                                             # prior: simulator only
+            self.z_sd_acq_ = np.sqrt(self.v_)
+            return self.m_.copy(), np.sqrt(self.v_ + self.hv_)
         Xs = (self.Xall_ - self.mu_) / self.sd_
         r_mu, r_sd = self.gp.predict(Xs, return_std=True)
         noise = self.gp.kernel_.k2.noise_level
@@ -326,11 +348,12 @@ class SimGP24:
             grp = members // self.n_hyd
             sib = grp * self.n_hyd + rng.integers(self.n_hyd, size=S)
             Zk = Zk + self.Z[sib] - Zr.mean(axis=1)[grp]
-        Xs = (self.Xall_ - self.mu_) / self.sd_
-        r_mu, r_cov = self.gp.predict(Xs, return_cov=True)
-        noise = self.gp.kernel_.k2.noise_level
-        R = np.empty((S, 24, self.J))
-        for j in range(self.J):
+        R = np.zeros((S, 24, self.J))
+        if self.gp is not None:
+            Xs = (self.Xall_ - self.mu_) / self.sd_
+            r_mu, r_cov = self.gp.predict(Xs, return_cov=True)
+            noise = self.gp.kernel_.k2.noise_level
+        for j in range(self.J if self.gp is not None else 0):
             sl = slice(24 * j, 24 * j + 24)
             C = r_cov[sl, sl] - noise * np.eye(24)
             C = 0.5 * (C + C.T)
