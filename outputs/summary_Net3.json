@@ -69,16 +69,22 @@
         "cov90": 0.294
       },
       "simgp_core": {
+        "rmse": 0.122,
+        "recall": 0.74,
+        "f1": 0.743,
+        "cov90": 0.961
+      },
+      "simgp_core_g75": {
         "rmse": 0.136,
         "recall": 0.802,
         "f1": 0.707,
         "cov90": 0.789
       },
       "simgp_rich": {
-        "rmse": 0.13,
-        "recall": 0.824,
-        "f1": 0.709,
-        "cov90": 0.823
+        "rmse": 0.122,
+        "recall": 0.748,
+        "f1": 0.75,
+        "cov90": 0.969
       }
     },
     "8": {
@@ -119,16 +125,22 @@
         "cov90": 0.369
       },
       "simgp_core": {
+        "rmse": 0.107,
+        "recall": 0.872,
+        "f1": 0.814,
+        "cov90": 0.94
+      },
+      "simgp_core_g75": {
         "rmse": 0.122,
         "recall": 0.816,
         "f1": 0.732,
         "cov90": 0.746
       },
       "simgp_rich": {
-        "rmse": 0.111,
-        "recall": 0.791,
-        "f1": 0.719,
-        "cov90": 0.808
+        "rmse": 0.114,
+        "recall": 0.762,
+        "f1": 0.749,
+        "cov90": 0.917
       }
     },
     "15": {
@@ -169,70 +181,111 @@
         "cov90": 0.417
       },
       "simgp_core": {
+        "rmse": 0.085,
+        "recall": 0.839,
+        "f1": 0.827,
+        "cov90": 0.963
+      },
+      "simgp_core_g75": {
         "rmse": 0.089,
         "recall": 0.869,
         "f1": 0.842,
         "cov90": 0.82
       },
       "simgp_rich": {
-        "rmse": 0.099,
-        "recall": 0.788,
-        "f1": 0.771,
-        "cov90": 0.768
+        "rmse": 0.093,
+        "recall": 0.732,
+        "f1": 0.755,
+        "cov90": 0.92
       }
     }
   },
   "strategies_simgp": {
     "3": {
       "random": {
-        "rmse": 0.136,
-        "recall": 0.802,
-        "f1": 0.707
+        "rmse": 0.122,
+        "recall": 0.74,
+        "f1": 0.743,
+        "recall_all": 0.74,
+        "cov90": 0.961
       },
       "straddle": {
-        "rmse": 0.13,
-        "recall": 0.85,
-        "f1": 0.719
+        "rmse": 0.12,
+        "recall": 0.784,
+        "f1": 0.773,
+        "recall_all": 0.768,
+        "cov90": 0.956
       },
       "uncertainty": {
-        "rmse": 0.145,
-        "recall": 0.845,
-        "f1": 0.726
+        "rmse": 0.126,
+        "recall": 0.744,
+        "f1": 0.732,
+        "recall_all": 0.728,
+        "cov90": 0.954
       }
     },
     "8": {
       "random": {
-        "rmse": 0.122,
-        "recall": 0.816,
-        "f1": 0.732
+        "rmse": 0.107,
+        "recall": 0.872,
+        "f1": 0.814,
+        "recall_all": 0.877,
+        "cov90": 0.94
       },
       "straddle": {
-        "rmse": 0.111,
-        "recall": 0.875,
-        "f1": 0.826
+        "rmse": 0.093,
+        "recall": 0.934,
+        "f1": 0.936,
+        "recall_all": 0.905,
+        "cov90": 0.881
       },
       "uncertainty": {
-        "rmse": 0.129,
-        "recall": 0.816,
-        "f1": 0.779
+        "rmse": 0.103,
+        "recall": 0.736,
+        "f1": 0.726,
+        "recall_all": 0.768,
+        "cov90": 0.896
       }
     },
     "15": {
       "random": {
-        "rmse": 0.089,
-        "recall": 0.869,
-        "f1": 0.842
+        "rmse": 0.085,
+        "recall": 0.839,
+        "f1": 0.827,
+        "recall_all": 0.833,
+        "cov90": 0.963
       },
       "straddle": {
         "rmse": 0.095,
-        "recall": 0.958,
-        "f1": 0.914
+        "recall": 0.916,
+        "f1": 0.929,
+        "recall_all": 0.844,
+        "cov90": 0.846
       },
       "uncertainty": {
-        "rmse": 0.112,
-        "recall": 0.903,
-        "f1": 0.801
+        "rmse": 0.097,
+        "recall": 0.697,
+        "f1": 0.646,
+        "recall_all": 0.821,
+        "cov90": 0.847
       }
+    }
+  },
+  "map_params_mean_by_n": {
+    "3": {
+      "map_kb": 0.48,
+      "map_kw": 0.65,
+      "map_gamma": 0.88
+    },
+    "8": {
+      "map_kb": 0.31,
+      "map_kw": 0.75,
+      "map_gamma": 0.94
+    },
+    "15": {
+      "map_kb": 0.18,
+      "map_kw": 0.81,
+      "map_gamma": 0.94
     }
   },
   "time_aware_daily_min": {
@@ -244,34 +297,40 @@
         "recall_night": 0.0
       },
       "simgp24/random": {
-        "rmse": 0.08,
-        "recall": 0.862,
-        "cov90": 0.812,
-        "recall_night": 0.778
+        "rmse": 0.069,
+        "recall": 0.938,
+        "cov90": 0.959,
+        "recall_night": 0.744
       },
       "simgp24/straddle": {
-        "rmse": 0.08,
-        "recall": 0.862,
-        "cov90": 0.812,
-        "recall_night": 0.778
+        "rmse": 0.069,
+        "recall": 0.938,
+        "cov90": 0.959,
+        "recall_night": 0.744
       },
       "simgp24/straddle_min": {
-        "rmse": 0.08,
-        "recall": 0.862,
-        "cov90": 0.812,
-        "recall_night": 0.778
+        "rmse": 0.069,
+        "recall": 0.938,
+        "cov90": 0.959,
+        "recall_night": 0.744
       },
       "simgp24/uncertainty": {
+        "rmse": 0.069,
+        "recall": 0.938,
+        "cov90": 0.959,
+        "recall_night": 0.744
+      },
+      "simgp24_g75/random": {
         "rmse": 0.08,
         "recall": 0.862,
-        "cov90": 0.812,
-        "recall_night": 0.778
+        "cov90": 0.809,
+        "recall_night": NaN
       },
       "simgp_timeblind/random": {
-        "rmse": 0.246,
-        "recall": 0.371,
-        "cov90": 0.34,
-        "recall_night": 0.386
+        "rmse": 0.221,
+        "recall": 0.267,
+        "cov90": 0.478,
+        "recall_night": 0.375
       }
     },
     "8": {
@@ -282,34 +341,40 @@
         "recall_night": 0.0
       },
       "simgp24/random": {
+        "rmse": 0.068,
+        "recall": 0.951,
+        "cov90": 0.938,
+        "recall_night": 0.761
+      },
+      "simgp24/straddle": {
+        "rmse": 0.078,
+        "recall": 0.899,
+        "cov90": 0.868,
+        "recall_night": 0.781
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.07,
+        "recall": 0.993,
+        "cov90": 0.921,
+        "recall_night": 0.914
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.105,
+        "recall": 0.935,
+        "cov90": 0.838,
+        "recall_night": 0.833
+      },
+      "simgp24_g75/random": {
         "rmse": 0.126,
         "recall": 0.803,
         "cov90": 0.652,
-        "recall_night": 0.719
-      },
-      "simgp24/straddle": {
-        "rmse": 0.141,
-        "recall": 0.882,
-        "cov90": 0.659,
-        "recall_night": 0.893
-      },
-      "simgp24/straddle_min": {
-        "rmse": 0.124,
-        "recall": 0.94,
-        "cov90": 0.57,
-        "recall_night": 0.953
-      },
-      "simgp24/uncertainty": {
-        "rmse": 0.142,
-        "recall": 0.937,
-        "cov90": 0.659,
-        "recall_night": 0.765
+        "recall_night": NaN
       },
       "simgp_timeblind/random": {
-        "rmse": 0.222,
-        "recall": 0.27,
-        "cov90": 0.293,
-        "recall_night": 0.3
+        "rmse": 0.218,
+        "recall": 0.298,
+        "cov90": 0.433,
+        "recall_night": 0.375
       }
     },
     "15": {
@@ -320,52 +385,41 @@
         "recall_night": 0.0
       },
       "simgp24/random": {
+        "rmse": 0.082,
+        "recall": 0.981,
+        "cov90": 0.872,
+        "recall_night": 0.842
+      },
+      "simgp24/straddle": {
+        "rmse": 0.147,
+        "recall": 0.975,
+        "cov90": 0.755,
+        "recall_night": 0.856
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.121,
+        "recall": 0.991,
+        "cov90": 0.786,
+        "recall_night": 0.955
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.137,
+        "recall": 0.984,
+        "cov90": 0.849,
+        "recall_night": 0.959
+      },
+      "simgp24_g75/random": {
         "rmse": 0.123,
         "recall": 0.888,
         "cov90": 0.505,
-        "recall_night": 0.778
-      },
-      "simgp24/straddle": {
-        "rmse": 0.131,
-        "recall": 0.839,
-        "cov90": 0.651,
-        "recall_night": 0.781
-      },
-      "simgp24/straddle_min": {
-        "rmse": 0.126,
-        "recall": 0.931,
-        "cov90": 0.651,
-        "recall_night": 0.847
-      },
-      "simgp24/uncertainty": {
-        "rmse": 0.135,
-        "recall": 0.931,
-        "cov90": 0.644,
-        "recall_night": 0.71
+        "recall_night": NaN
       },
       "simgp_timeblind/random": {
-        "rmse": 0.212,
-        "recall": 0.381,
-        "cov90": 0.351,
-        "recall_night": 0.45
+        "rmse": 0.207,
+        "recall": 0.347,
+        "cov90": 0.437,
+        "recall_night": 0.453
       }
-    }
-  },
-  "map_params_mean_by_n": {
-    "3": {
-      "map_kb": 0.48,
-      "map_kw": 0.6,
-      "map_gamma": 0.88
-    },
-    "8": {
-      "map_kb": 0.21,
-      "map_kw": 0.8,
-      "map_gamma": 0.75
-    },
-    "15": {
-      "map_kb": 0.23,
-      "map_kw": 0.7,
-      "map_gamma": 0.94
     }
   }
 }

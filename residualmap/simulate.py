@@ -94,14 +94,24 @@ def _last_day(df: pd.DataFrame, cols) -> pd.DataFrame:
 
 
 def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float, gamma: float,
-                              source_dose: float = 1.2) -> pd.DataFrame:
-    """Chlorine on the operator's NOMINAL model for a candidate (kb, kw, gamma).  hour x junction."""
+                              source_dose: float = 1.2, demand_mult: float = 1.0,
+                              rough_mult: float = 1.0) -> pd.DataFrame:
+    """Chlorine on the operator's NOMINAL model for a candidate (kb, kw, gamma).  hour x junction.
+
+    demand_mult / rough_mult are the hydraulic-mismatch axes of the grid: the operator's demands and
+    Hazen-Williams C are scaled globally.  The wall-decay hypothesis stays on the operator's C table
+    (as in the truth: roughness noise is a hydraulic error, not a chemistry one)."""
     wn = load(name)
     wn.options.quality.parameter = "CHEMICAL"
     wn.options.reaction.bulk_coeff = -kb_per_day / DAY
     wn.options.reaction.wall_coeff = -kw_m_per_day / DAY
     for _, pipe in wn.pipes():
         pipe.wall_coeff = -kw_m_per_day * roughness_factor(pipe.roughness, gamma) / DAY
+        pipe.roughness = pipe.roughness * rough_mult
+    if demand_mult != 1.0:
+        for _, j in wn.junctions():
+            for ts in j.demand_timeseries_list:
+                ts.base_value = ts.base_value * demand_mult
     for res in wn.reservoir_name_list:
         wn.add_source(f"src_{res}", res, "CONCEN", source_dose)
     q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]

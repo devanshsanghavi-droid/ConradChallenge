@@ -110,15 +110,17 @@ def baseline_decay_only(sc, X: pd.DataFrame, sampled: list[str], y: np.ndarray) 
 # ----------------------------------------------------------------------------- acquisition
 def acquire(strategy: str, pred: pd.DataFrame, candidates: list[str], rng,
             threshold: float = 0.2) -> str:
-    """Pick the next junction to sample."""
+    """Pick the next junction to sample.  Uses the REDUCIBLE predictive sd (z_sd_acq) when the model
+    provides it: sampling cannot shrink the local hydraulic-error term, so it should not attract samples."""
     p = pred.loc[candidates]
+    sd = p["z_sd_acq"] if "z_sd_acq" in p else p["z_sd"]
     if strategy == "random":
         return str(rng.choice(candidates))
     if strategy == "uncertainty":
-        return str(p["z_sd"].idxmax())
+        return str(sd.idxmax())
     if strategy == "straddle":
         # level-set estimation (Bryan et al. 2005): most ambiguous w.r.t. the threshold
-        score = 1.96 * p["z_sd"] - (p["z_mu"] - np.log(threshold)).abs()
+        score = 1.96 * sd - (p["z_mu"] - np.log(threshold)).abs()
         return str(score.idxmax())
     raise ValueError(strategy)
 
@@ -131,6 +133,8 @@ def acquire_time(strategy: str, hourly: tuple[pd.DataFrame, pd.DataFrame], daily
     daily_min : SimGP24.predict_daily_min output (z_mu / z_sd of ln daily-min per junction)
     """
     mu, sd = hourly[0].loc[hours, candidates], hourly[1].loc[hours, candidates]
+    if len(hourly) > 2:                       # reducible sd supplied (SimGP24.z_sd_acq_)
+        sd = hourly[2].loc[hours, candidates]
     if strategy == "random":
         return str(rng.choice(candidates)), int(rng.choice(hours))
     if strategy == "uncertainty":

@@ -53,10 +53,30 @@ def _metrics(truth, pred_median, p_viol, lo, hi, mask) -> dict:
     return out
 
 
+LEVELS = (50, 80, 90, 95)   # nominal band levels for the reliability diagram
+
+
+def _coverage_levels(truth, pred, mask, suffix="") -> dict:
+    """Empirical coverage of the central 50/80/95% bands (90 is already in the metrics)."""
+    from scipy.stats import norm
+    t = truth.loc[mask]; z_mu, z_sd = pred.loc[mask, "z_mu"], pred.loc[mask, "z_sd"]
+    out = {}
+    for q in LEVELS:
+        if q == 90:
+            continue
+        if f"lo{q}" in pred:
+            lo, hi = pred.loc[mask, f"lo{q}"], pred.loc[mask, f"hi{q}"]
+        else:
+            k = norm.ppf(0.5 + q / 200); lo, hi = np.exp(z_mu - k * z_sd), np.exp(z_mu + k * z_sd)
+        out[f"coverage{q}{suffix}"] = float(((t >= lo) & (t <= hi)).mean())
+    return out
+
+
 def _row(model_name, strategy, n, seed, truth, pred, unsampled, model_cls):
     pv = model_cls.p_below(pred, THRESHOLD)
     return {"model": model_name, "strategy": strategy, "n": n, "seed": seed,
-            **_metrics(truth, pred["median"], pv, pred["lo90"], pred["hi90"], unsampled)}, pv
+            **_metrics(truth, pred["median"], pv, pred["lo90"], pred["hi90"], unsampled),
+            **_coverage_levels(truth, pred, unsampled)}, pv
 
 
 def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outputs/cache"):
@@ -80,9 +100,19 @@ def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outpu
             main = SimGP(sc, seed=seed, cache_dir=cache_dir).fit(Xs, ys)
             pred = main.predict(X)
             r, pv = _row("simgp_core", strat, n, seed, truth, pred, unsampled, SimGP)
-            r["map_kb"], r["map_kw"], r["map_gamma"] = main.map_params_
+            r["map_kb"], r["map_kw"], r["map_gamma"], r["map_demand"], r["map_rough"] = main.map_params_
+            r["map_dose"] = main.map_dose_
+            # operational recall: a violation is found if its grab sample read below the limit OR the
+            # model flags it — the unsampled-only recall above penalises a rule for sampling the violators
+            found = int(((truth.loc[sampled] < THRESHOLD) & (np.array(y) < THRESHOLD)).sum()) + \
+                    int(((truth.loc[unsampled] < THRESHOLD) & (pv.loc[unsampled] > 0.5)).sum())
+            r["recall_all"] = found / max(int((truth < THRESHOLD).sum()), 1)
             rows.append(r)
             if strat == "random":
+                # iteration-2 grid (decay parameters only) for the before/after calibration comparison
+                p0 = SimGP(sc, seed=seed, cache_dir=cache_dir, grid="decay", lik_sd=0.25, doses=[1.0],
+                           lik="gauss").fit(Xs, ys).predict(X)   # exactly the iteration-2 model
+                rows.append(_row("simgp_core_g75", strat, n, seed, truth, p0, unsampled, SimGP)[0])
                 p1 = PhysicsGP(seed=seed, columns=CORE).fit(Xs, ys).predict(X)
                 rows.append(_row("physgp_core", strat, n, seed, truth, p1, unsampled, PhysicsGP)[0])
                 p2 = PhysicsGP(seed=seed, columns=rich).fit(Xs, ys).predict(X)
@@ -118,6 +148,8 @@ def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask) ->
     out = {"rmse_min": float(np.sqrt(np.mean((t - m["median"]) ** 2))), "precision_min": prec, "recall_min": rec,
            "f1_min": (2 * prec * rec / (prec + rec)) if prec + rec else 0.0, "n_true_viol_min": int(tv.sum()),
            "coverage90_min": float(((t >= m["lo90"]) & (t <= m["hi90"])).mean())}
+    if "lo50" in pmin:
+        out.update(_coverage_levels(sc.truth_daily_min, pmin, mask, "_min"))
     if p_night is not None:
         tn, mn = sc.truth_by_hour.loc[NIGHT_HOUR, mask], p_night.loc[mask]
         tvn, pvn = tn < THRESHOLD, mn["p_below"] > 0.5
@@ -150,9 +182,14 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
             pmin = m.predict_daily_min()
             pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight)
             r = {"model": "simgp24", "strategy": strat, "n": n, "seed": seed, **_metrics_time(sc, pmin, pnight, unsampled)}
-            r["map_kb"], r["map_kw"], r["map_gamma"] = m.map_params_
+            r["map_kb"], r["map_kw"], r["map_gamma"], r["map_demand"], r["map_rough"] = m.map_params_
+            r["map_dose"] = m.map_dose_
             rows.append(r)
             if strat == "random":
+                m0 = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid="decay", lik_sd=0.25, doses=[1.0],
+                             smooth_hours=False).fit(S)   # the task-1 model, for the before/after comparison
+                rows.append({"model": "simgp24_g75", "strategy": strat, "n": n, "seed": seed,
+                             **_metrics_time(sc, m0.predict_daily_min(), None, unsampled)})
                 tb = SimGP(sc, seed=seed, cache_dir=cache_dir, lik="t").fit(X.loc[S.junction], S.y.values).predict(X)
                 tb["p_below"] = SimGP.p_below(tb)          # its 14:00 flags, scored against the daily minimum
                 rows.append({"model": "simgp_timeblind", "strategy": strat, "n": n, "seed": seed,
@@ -167,7 +204,8 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
             if n == n_max:
                 break
             cols = sc.junctions
-            hourly_df = (pd.DataFrame(hourly[0], columns=cols), pd.DataFrame(hourly[1], columns=cols))
+            hourly_df = (pd.DataFrame(hourly[0], columns=cols), pd.DataFrame(hourly[1], columns=cols),
+                         pd.DataFrame(m.z_sd_acq_, columns=cols))
             j, h = acquire_time(strat, hourly_df, pmin, unsampled, DAY_HOURS, rng, THRESHOLD)
             S = pd.concat([S, pd.DataFrame({"junction": [j], "hour": [h], "y": observe([j], [h])})], ignore_index=True)
     return pd.DataFrame(rows), snapshots
@@ -252,6 +290,7 @@ def plot_curves_time(df, out):
              ("simgp24", "uncertainty"): ("tab:red", ":", "time-aware GP, max-uncertainty rule"),
              ("simgp24", "straddle"): ("tab:red", "-", "time-aware GP, straddle rule"),
              ("simgp24", "straddle_min"): ("tab:purple", "-", "time-aware GP, straddle on daily min"),
+             ("simgp24_g75", "random"): ("tab:pink", "--", "time-aware GP, decay-only grid, random"),
              ("simgp_timeblind", "random"): ("tab:orange", "-", "time-blind GP (iteration 2, every sample = 14:00)"),
              ("mean_of_samples", "random"): ("gray", "--", "mean of samples (today's practice)")}
     n15 = agg[(agg.n == agg.n.max()) & (agg.model == "simgp24") & (agg.strategy == TIME_MAIN)].iloc[0]
@@ -263,7 +302,7 @@ def plot_curves_time(df, out):
             c, ls, lab = style[(mname, strat)]
             axes[0].plot(g.n, g.rmse, ls, color=c, marker="o", ms=4, label=lab)
             axes[1].plot(g.n, g.recall, ls, color=c, marker="o", ms=4, label=lab)
-            if mname == "simgp24":
+            if mname.startswith("simgp24"):
                 axes[2].plot(g.n, g.cov90, ls, color=c, marker="o", ms=4, label=lab)
         axes[1].axhline(0.8, color="k", lw=0.8, ls=":"); axes[1].text(3.1, 0.81, "target 0.80", fontsize=10)
         axes[2].axhline(0.9, color="k", lw=0.8, ls=":"); axes[2].text(3.1, 0.905, "target 0.90", fontsize=10)
@@ -280,11 +319,34 @@ def plot_curves_time(df, out):
     return agg
 
 
+def plot_reliability(df, df_t, out):
+    """Nominal vs empirical coverage at 50/80/90/95%, averaged over seeds and n (random samples)."""
+    def curve(d, suffix=""):
+        return [d[f"coverage{q}{suffix}"].mean() for q in LEVELS]
+    snap = df[df.strategy == "random"]; tm = df_t[df_t.strategy == "random"]
+    series = [("14:00 snapshot — iteration 2 (decay grid, 75 runs)", curve(snap[snap.model == "simgp_core_g75"]), "tab:orange", "--"),
+              ("14:00 snapshot — iteration 3 (+ demand, roughness, dose axes; local hydraulic error)", curve(snap[snap.model == "simgp_core"]), "tab:red", "-"),
+              ("daily minimum — task 1 (decay grid)", curve(tm[tm.model == "simgp24_g75"], "_min"), "tab:blue", "--"),
+              ("daily minimum — iteration 3", curve(tm[tm.model == "simgp24"], "_min"), "tab:purple", "-")]
+    before, after = series[0][1][2], series[1][1][2]
+    with plt.rc_context(BIG):
+        fig, ax = plt.subplots(figsize=(8.5, 7.5))
+        ax.plot([0.4, 1.0], [0.4, 1.0], "k:", lw=1.2, label="perfect calibration")
+        ax.axhspan(0.88, 0.95, xmin=0.78, xmax=0.86, color="green", alpha=0.12)
+        for lab, ys, c, ls in series:
+            ax.plot([q / 100 for q in LEVELS], ys, ls, color=c, marker="o", ms=7, lw=2, label=lab)
+        ax.set(xlabel="nominal band level", ylabel="empirical coverage (unsampled junctions)", xlim=(0.4, 1.0), ylim=(0.2, 1.0),
+               title=f"90% band now holds the truth {after:.2f} of the time (was {before:.2f}); target 0.88-0.95")
+        ax.grid(alpha=0.3); ax.legend(loc="upper left", fontsize=10)
+        fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+
+
 def plot_curves(df, out):
     d = df[df.strategy == "random"]
     agg = d.groupby(["model", "n"]).agg(rmse=("rmse", "mean"), f1=("f1", "mean"), recall=("recall", "mean"),
                                         cov90=("coverage90", "mean")).reset_index()
     style = {"simgp_core": ("tab:red", "-", "calibrated-simulator GP (core)"),
+             "simgp_core_g75": ("tab:pink", "-", "calibrated-simulator GP (core, decay-only grid)"),
              "simgp_rich": ("tab:red", ":", "calibrated-simulator GP (rich)"),
              "physgp_core": ("tab:green", "-", "decay-law GP (core)"),
              "physgp_rich": ("tab:green", ":", "decay-law GP (rich)"),
@@ -308,7 +370,8 @@ def plot_curves(df, out):
     fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
 
     s = df[df.model == "simgp_core"]
-    agg2 = s.groupby(["strategy", "n"]).agg(rmse=("rmse", "mean"), recall=("recall", "mean"), f1=("f1", "mean")).reset_index()
+    agg2 = s.groupby(["strategy", "n"]).agg(rmse=("rmse", "mean"), recall=("recall", "mean"), f1=("f1", "mean"),
+                                             recall_all=("recall_all", "mean"), cov90=("coverage90", "mean")).reset_index()
     fig, axes = plt.subplots(1, 3, figsize=(18, 4.6))
     for st, g in agg2.groupby("strategy"):
         for ax, col in zip(axes, ["rmse", "recall", "f1"]):
@@ -353,13 +416,14 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
         str(n): agg[agg.n == n].set_index("model")[["rmse", "recall", "f1", "cov90"]].round(3).to_dict("index")
         for n in (n_seed, 8, n_max)}
     summary["strategies_simgp"] = {
-        str(n): agg2[agg2.n == n].set_index("strategy")[["rmse", "recall", "f1"]].round(3).to_dict("index")
+        str(n): agg2[agg2.n == n].set_index("strategy")[["rmse", "recall", "f1", "recall_all", "cov90"]].round(3).to_dict("index")
         for n in (n_seed, 8, n_max)}
     mp = df[(df.model == "simgp_core") & (df.strategy == "random")].groupby("n")[["map_kb", "map_kw", "map_gamma"]].mean()
     summary["map_params_mean_by_n"] = {str(n): mp.loc[n].round(2).to_dict() for n in (n_seed, 8, n_max)}
     df_t = pd.concat(frames_t, ignore_index=True)
     df_t.to_csv(os.path.join(outdir, f"results_time_{network}.csv"), index=False)
     agg_t = plot_curves_time(df_t, os.path.join(outdir, f"curves_time_{network}.png"))
+    plot_reliability(df, df_t, os.path.join(outdir, f"reliability_{network}.png"))
     agg_t["key"] = agg_t.model + "/" + agg_t.strategy
     summary["time_aware_daily_min"] = {
         str(n): agg_t[agg_t.n == n].set_index("key")[["rmse", "recall", "cov90", "recall_night"]].round(3).to_dict("index")
@@ -378,8 +442,10 @@ if __name__ == "__main__":
     for col in ("rmse", "recall", "cov90"):
         print(f"\n== models under random sampling: {col}")
         print(agg[agg.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="model", values=col).round(3))
-    print("\n== sampling rules with calibrated-simulator GP: recall")
+    print("\n== sampling rules with calibrated-simulator GP: recall on unsampled junctions")
     print(agg2[agg2.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="strategy", values="recall").round(3))
+    print("\n== sampling rules: recall counting violations found by the sample itself")
+    print(agg2[agg2.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="strategy", values="recall_all").round(3))
     for col in ("rmse", "recall", "cov90", "recall_night"):
         print(f"\n== time-aware: DAILY MINIMUM from daytime samples, {col}")
         print(agg_t[agg_t.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="key", values=col).round(3))
