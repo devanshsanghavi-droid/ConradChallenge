@@ -54,10 +54,10 @@ def classical_mds(D: np.ndarray, k: int) -> np.ndarray:
 
 
 def _path_features(sc) -> pd.DataFrame:
-    from .simulate import roughness_factor
+    from .simulate import roughness_factor, source_nodes
     g = sc.graph
     wn = sc.wn
-    sources = wn.reservoir_name_list
+    sources = source_nodes(wn)
     tanks = wn.tank_name_list
     pipe_by_link = sc.pipes
     d_src = {s: nx.single_source_dijkstra_path_length(g, s, weight="weight") for s in sources}

@@ -26,6 +26,8 @@ from __future__ import annotations
 import itertools
 import os
 import pickle
+import tempfile
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -54,7 +56,15 @@ DAY_HOURS = list(range(7, 18))                  # 07:00-17:00: when an operator 
 STATIC = ["emb0", "emb1", "emb2", "path_wall_index", "dist_src_km"]   # CORE minus the hour-dependent age
 
 
-def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full") -> tuple[list[tuple], np.ndarray]:
+def _grid_member(args):
+    """One EPANET run of the grid (module-level so it can run in a worker process)."""
+    name, kb, kw, g, dose, dm, rm, junctions, prefix = args
+    c = simulate_nominal_chlorine(name, kb, kw, g, dose, dm, rm, file_prefix=prefix)
+    return np.log(np.clip(c.loc[HOURS, junctions].values, FLOOR, None)).astype(np.float32)
+
+
+def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
+                       n_jobs: int | None = None) -> tuple[list[tuple], np.ndarray]:
     """All grid members' ln C for every hour of the last day: (params, array [members, 24, junctions]).
     params are (kb, kw, gamma, demand_mult, rough_mult).
 
@@ -62,15 +72,22 @@ def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full")
     model (SimGP24) calibrate on daytime samples and predict the night.  grid="full" adds the two
     hydraulic-mismatch axes (675 runs); grid="decay" is the iteration-2 grid (75 runs)."""
     os.makedirs(cache_dir, exist_ok=True)
-    f = os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}.pkl")
+    dose_tag = "" if abs(sc.source_dose - 1.2) < 1e-9 else f"_d{sc.source_dose:g}"
+    f = os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}.pkl")
     if os.path.exists(f):
         with open(f, "rb") as fh:
             return pickle.load(fh)
-    params, rows = [], []
-    for kb, kw, g, dm, rm in itertools.product(*GRIDS[grid]):
-        c = simulate_nominal_chlorine(sc.wn_name, kb, kw, g, sc.source_dose, dm, rm)
-        params.append((kb, kw, g, dm, rm))
-        rows.append(np.log(np.clip(c.loc[HOURS, sc.junctions].values, FLOOR, None)).astype(np.float32))
+    params = list(itertools.product(*GRIDS[grid]))
+    n_jobs = n_jobs or max(1, (os.cpu_count() or 2) - 1)
+    with tempfile.TemporaryDirectory() as tmp:
+        # EPANET writes temp.inp/.rpt/.bin per run: give every run its own prefix so runs can go in parallel
+        jobs = [(sc.wn_name, kb, kw, g, sc.source_dose, dm, rm, list(sc.junctions), os.path.join(tmp, f"g{i}"))
+                for i, (kb, kw, g, dm, rm) in enumerate(params)]
+        if n_jobs > 1 and len(jobs) > 8:
+            with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+                rows = list(ex.map(_grid_member, jobs, chunksize=4))
+        else:
+            rows = [_grid_member(j) for j in jobs]
     out = (params, np.stack(rows))
     with open(f, "wb") as fh:
         pickle.dump(out, fh)
@@ -350,16 +367,21 @@ class SimGP24:
             Zk = Zk + self.Z[sib] - Zr.mean(axis=1)[grp]
         R = np.zeros((S, 24, self.J))
         if self.gp is not None:
+            # per-junction 24x24 posterior covariance blocks, without the full (24J)^2 matrix:
+            # C_j = k(X_j, X_j) - V_j^T V_j with V = L^{-1} k(X_train, X_*)  (sklearn's L_ is the Cholesky)
             Xs = (self.Xall_ - self.mu_) / self.sd_
-            r_mu, r_cov = self.gp.predict(Xs, return_cov=True)
-            noise = self.gp.kernel_.k2.noise_level
-        for j in range(self.J if self.gp is not None else 0):
-            sl = slice(24 * j, 24 * j + 24)
-            C = r_cov[sl, sl] - noise * np.eye(24)
-            C = 0.5 * (C + C.T)
-            w_, V = np.linalg.eigh(C)
-            L = V * np.sqrt(np.clip(w_, 1e-6, None))
-            R[:, :, j] = r_mu[sl] + (L @ rng.standard_normal((24, S))).T
+            gp = self.gp
+            K_trans = gp.kernel_(Xs, gp.X_train_)                            # (24J) x n
+            r_mu = K_trans @ gp.alpha_
+            V = np.linalg.solve(gp.L_, K_trans.T)                             # n x (24J)
+            noise = gp.kernel_.k2.noise_level
+            for j in range(self.J):
+                sl = slice(24 * j, 24 * j + 24)
+                C = gp.kernel_(Xs[sl]) - V[:, sl].T @ V[:, sl] - noise * np.eye(24)
+                C = 0.5 * (C + C.T)
+                w_, Vv = np.linalg.eigh(C)
+                L = Vv * np.sqrt(np.clip(w_, 1e-6, None))
+                R[:, :, j] = r_mu[sl] + (L @ rng.standard_normal((24, S))).T
         zmin = (Zk + R).min(axis=1)                                     # S x J  ln(daily min)
         out = pd.DataFrame(index=self.sc.junctions)
         out["median"] = np.exp(np.median(zmin, axis=0))

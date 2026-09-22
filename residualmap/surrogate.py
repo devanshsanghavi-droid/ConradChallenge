@@ -71,7 +71,9 @@ class PhysicsGP:
         X = X[self.columns]
         Xs = ((X - self.mu_) / self.sd_).values
         r_mu, r_sd = self.gp.predict(Xs, return_std=True)
-        z_mu = self._mean(X["age_h"].values) + r_mu
+        # the log-linear decay fit can extrapolate absurdly at 3 samples on a network with 120-h water
+        # age (Net2); keep the median inside a physical range (<= 10 mg/L)
+        z_mu = np.minimum(self._mean(X["age_h"].values) + r_mu, np.log(10.0))
         # sklearn's predictive variance includes the WhiteKernel noise; remove it so the
         # band describes the latent residual field, not a future noisy grab sample
         noise = self.gp.kernel_.k2.noise_level

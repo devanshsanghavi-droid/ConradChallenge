@@ -50,6 +50,17 @@ def roughness_factor(c: float, gamma: float = 1.0) -> float:
     return 2.0 ** (-gamma * (c - 130.0) / 30.0)
 
 
+def source_nodes(wn) -> list[str]:
+    """Where water (and chlorine) enters: reservoirs; else junctions with a negative demand (a pumped
+    inflow modelled as a negative demand, as in Net2); else the tanks.  A CONCEN source only acts on
+    external inflow at a node, so on a tank-fed file without a reservoir the source must sit at the
+    inflow junction — at the tank itself it does nothing."""
+    if wn.reservoir_name_list:
+        return list(wn.reservoir_name_list)
+    inflow = [j for j, n in wn.junctions() if any(ts.base_value < 0 for ts in n.demand_timeseries_list)]
+    return inflow or list(wn.tank_name_list)
+
+
 def hydraulic_graph(wn) -> nx.Graph:
     g = nx.Graph()
     for lname, link in wn.links():
@@ -96,7 +107,7 @@ def _last_day(df: pd.DataFrame, cols) -> pd.DataFrame:
 
 def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float, gamma: float,
                               source_dose: float = 1.2, demand_mult: float = 1.0,
-                              rough_mult: float = 1.0) -> pd.DataFrame:
+                              rough_mult: float = 1.0, file_prefix: str = "temp") -> pd.DataFrame:
     """Chlorine on the operator's NOMINAL model for a candidate (kb, kw, gamma).  hour x junction.
 
     demand_mult / rough_mult are the hydraulic-mismatch axes of the grid: the operator's demands and
@@ -113,9 +124,9 @@ def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float,
         for _, j in wn.junctions():
             for ts in j.demand_timeseries_list:
                 ts.base_value = ts.base_value * demand_mult
-    for res in wn.reservoir_name_list:
+    for res in source_nodes(wn):
         wn.add_source(f"src_{res}", res, "CONCEN", source_dose)
-    q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
+    q = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=file_prefix).node["quality"]
     return _last_day(q, wn.junction_name_list).clip(lower=0.0)
 
 
@@ -196,7 +207,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     for _, j in wn.junctions():
         for ts in j.demand_timeseries_list:
             ts.base_value = ts.base_value * global_mult * np.exp(rng.normal(0.0, 0.15))
-    for res in wn.reservoir_name_list:
+    for res in source_nodes(wn):
         wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng.uniform(0.9, 1.1))
     q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
     junctions = wn.junction_name_list

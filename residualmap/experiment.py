@@ -38,6 +38,13 @@ TIME_MAIN = "straddle_min"      # rule whose maps are drawn
 NIGHT_HOUR = 22
 BIG = {"font.size": 13, "axes.titlesize": 14, "axes.labelsize": 13, "legend.fontsize": 11,
        "xtick.labelsize": 11, "ytick.labelsize": 11}   # figures must read in a judged video
+NET_DESC = {"Net3": "EPANET example based on North Marin Water District, CA; 92 junctions",
+            "Net2": "EPANET example, tank-fed, 35 junctions",
+            "ky4": "Kentucky utility from the KYPIPE dataset (bundled with WNTR); 959 junctions"}
+# hidden-truth settings that make each network a plausible utility (Net3's defaults leave Net2, whose
+# water is 95 h old at midday, 83% below 0.2 mg/L at its daily minimum at ANY dose: a utility with
+# 4-day-old water only stays compliant with low-demand water; ky4 at 1.2 mg/L is 61% below at the minimum)
+NET_TRUTH = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}
 
 
 def _metrics(truth, pred_median, p_viol, lo, hi, mask) -> dict:
@@ -296,7 +303,7 @@ def plot_maps(sc, snap, out, n):
         ax.scatter([sc.coords[j][0] for j in sampled], [sc.coords[j][1] for j in sampled], s=120,
                    facecolors="none", edgecolors="cyan", linewidths=1.8, zorder=5, label="grab samples")
     axes[1].legend(loc="lower left", fontsize=9)
-    fig.suptitle(f"{sc.wn_name} (EPANET example based on North Marin Water District, CA) — "
+    fig.suptitle(f"{sc.wn_name} ({NET_DESC.get(sc.wn_name, 'operator .inp')}) — "
                  f"{sc.sample_hour}:00 snapshot, scenario {sc.seed}, calibrated-simulator GP", fontsize=12)
     fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
 
@@ -497,7 +504,8 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     os.makedirs(outdir, exist_ok=True)
     frames, frames_t, frames_r, summary = [], [], [], {}
     for s in seeds:
-        sc = build_scenario(network, seed=s, sample_hour=sample_hour, structural_noise=structural_noise)
+        sc = build_scenario(network, seed=s, sample_hour=sample_hour, structural_noise=structural_noise,
+                            **NET_TRUTH.get(network, {}))
         if sc.structural:
             summary.setdefault("structural_noise", {})[str(s)] = sc.structural
             print(f"seed {s}: structural noise -> {sc.structural}", flush=True)
