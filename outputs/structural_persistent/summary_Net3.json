@@ -1,0 +1,525 @@
+{
+  "structural_noise": {
+    "0": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "2",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        15.24,
+        10.67
+      ]
+    },
+    "1": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "1",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        25.91,
+        18.14
+      ]
+    },
+    "2": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "1",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        25.91,
+        18.14
+      ]
+    },
+    "3": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "2",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        15.24,
+        10.67
+      ]
+    },
+    "4": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "1",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        25.91,
+        18.14
+      ]
+    },
+    "5": {
+      "mode": "persistent",
+      "closed_pipe": "323",
+      "tank": "3",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        49.99,
+        34.99
+      ]
+    },
+    "6": {
+      "mode": "persistent",
+      "closed_pipe": "199",
+      "tank": "2",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        15.24,
+        10.67
+      ]
+    },
+    "7": {
+      "mode": "persistent",
+      "closed_pipe": null,
+      "tank": "2",
+      "tank_level_m": null,
+      "tank_diameter_m": [
+        15.24,
+        10.67
+      ]
+    }
+  },
+  "scenario0": {
+    "junctions": 92,
+    "below_threshold_at_sampling_hour": 12,
+    "below_threshold_daily_min": 40,
+    "pct_below_by_hour": {
+      "0": 37.0,
+      "1": 37.0,
+      "2": 29.3,
+      "3": 23.9,
+      "4": 16.3,
+      "5": 16.3,
+      "6": 13.0,
+      "7": 12.0,
+      "8": 12.0,
+      "9": 12.0,
+      "10": 12.0,
+      "11": 13.0,
+      "12": 13.0,
+      "13": 13.0,
+      "14": 13.0,
+      "15": 12.0,
+      "16": 15.2,
+      "17": 18.5,
+      "18": 19.6,
+      "19": 19.6,
+      "20": 22.8,
+      "21": 30.4,
+      "22": 33.7,
+      "23": 37.0
+    }
+  },
+  "models_random_sampling": {
+    "3": {
+      "decay_only": {
+        "rmse": 0.259,
+        "recall": 0.616,
+        "f1": 0.522,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.314,
+        "recall": 0.0,
+        "f1": 0.0,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.269,
+        "recall": 0.062,
+        "f1": 0.058,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.26,
+        "recall": 0.616,
+        "f1": 0.524,
+        "cov90": 0.281
+      },
+      "physgp_rich": {
+        "rmse": 0.259,
+        "recall": 0.616,
+        "f1": 0.522,
+        "cov90": 0.331
+      },
+      "pinn_rich": {
+        "rmse": 0.243,
+        "recall": 0.047,
+        "f1": 0.048,
+        "cov90": 0.292
+      },
+      "simgp_core": {
+        "rmse": 0.113,
+        "recall": 0.687,
+        "f1": 0.724,
+        "cov90": 0.959
+      },
+      "simgp_core_g75": {
+        "rmse": 0.124,
+        "recall": 0.764,
+        "f1": 0.696,
+        "cov90": 0.801
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.114,
+        "recall": 0.684,
+        "f1": 0.715,
+        "cov90": 0.969
+      },
+      "simgp_rich": {
+        "rmse": 0.115,
+        "recall": 0.684,
+        "f1": 0.717,
+        "cov90": 0.968
+      }
+    },
+    "8": {
+      "decay_only": {
+        "rmse": 0.241,
+        "recall": 0.41,
+        "f1": 0.394,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.279,
+        "recall": 0.0,
+        "f1": 0.0,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.238,
+        "recall": 0.299,
+        "f1": 0.316,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.213,
+        "recall": 0.657,
+        "f1": 0.612,
+        "cov90": 0.442
+      },
+      "physgp_rich": {
+        "rmse": 0.228,
+        "recall": 0.545,
+        "f1": 0.531,
+        "cov90": 0.496
+      },
+      "pinn_rich": {
+        "rmse": 0.191,
+        "recall": 0.253,
+        "f1": 0.291,
+        "cov90": 0.363
+      },
+      "simgp_core": {
+        "rmse": 0.114,
+        "recall": 0.78,
+        "f1": 0.781,
+        "cov90": 0.912
+      },
+      "simgp_core_g75": {
+        "rmse": 0.106,
+        "recall": 0.802,
+        "f1": 0.768,
+        "cov90": 0.729
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.105,
+        "recall": 0.739,
+        "f1": 0.787,
+        "cov90": 0.899
+      },
+      "simgp_rich": {
+        "rmse": 0.112,
+        "recall": 0.777,
+        "f1": 0.779,
+        "cov90": 0.909
+      }
+    },
+    "15": {
+      "decay_only": {
+        "rmse": 0.24,
+        "recall": 0.316,
+        "f1": 0.349,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.278,
+        "recall": 0.0,
+        "f1": 0.0,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.188,
+        "recall": 0.304,
+        "f1": 0.334,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.17,
+        "recall": 0.656,
+        "f1": 0.674,
+        "cov90": 0.687
+      },
+      "physgp_rich": {
+        "rmse": 0.175,
+        "recall": 0.705,
+        "f1": 0.692,
+        "cov90": 0.692
+      },
+      "pinn_rich": {
+        "rmse": 0.142,
+        "recall": 0.355,
+        "f1": 0.438,
+        "cov90": 0.416
+      },
+      "simgp_core": {
+        "rmse": 0.081,
+        "recall": 0.801,
+        "f1": 0.827,
+        "cov90": 0.958
+      },
+      "simgp_core_g75": {
+        "rmse": 0.085,
+        "recall": 0.854,
+        "f1": 0.839,
+        "cov90": 0.794
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.095,
+        "recall": 0.75,
+        "f1": 0.805,
+        "cov90": 0.849
+      },
+      "simgp_rich": {
+        "rmse": 0.087,
+        "recall": 0.741,
+        "f1": 0.786,
+        "cov90": 0.927
+      }
+    }
+  },
+  "strategies_simgp": {
+    "3": {
+      "random": {
+        "rmse": 0.113,
+        "recall": 0.687,
+        "f1": 0.724,
+        "recall_all": 0.688,
+        "cov90": 0.959
+      },
+      "straddle": {
+        "rmse": 0.108,
+        "recall": 0.727,
+        "f1": 0.753,
+        "recall_all": 0.715,
+        "cov90": 0.963
+      },
+      "uncertainty": {
+        "rmse": 0.116,
+        "recall": 0.684,
+        "f1": 0.711,
+        "recall_all": 0.672,
+        "cov90": 0.965
+      }
+    },
+    "8": {
+      "random": {
+        "rmse": 0.114,
+        "recall": 0.78,
+        "f1": 0.781,
+        "recall_all": 0.792,
+        "cov90": 0.912
+      },
+      "straddle": {
+        "rmse": 0.099,
+        "recall": 0.82,
+        "f1": 0.86,
+        "recall_all": 0.819,
+        "cov90": 0.876
+      },
+      "uncertainty": {
+        "rmse": 0.117,
+        "recall": 0.65,
+        "f1": 0.686,
+        "recall_all": 0.703,
+        "cov90": 0.885
+      }
+    },
+    "15": {
+      "random": {
+        "rmse": 0.081,
+        "recall": 0.801,
+        "f1": 0.827,
+        "recall_all": 0.819,
+        "cov90": 0.958
+      },
+      "straddle": {
+        "rmse": 0.13,
+        "recall": 0.921,
+        "f1": 0.952,
+        "recall_all": 0.863,
+        "cov90": 0.833
+      },
+      "uncertainty": {
+        "rmse": 0.161,
+        "recall": 0.656,
+        "f1": 0.645,
+        "recall_all": 0.836,
+        "cov90": 0.875
+      }
+    }
+  },
+  "map_params_mean_by_n": {
+    "3": {
+      "map_kb": 0.38,
+      "map_kw": 0.7,
+      "map_gamma": 0.81
+    },
+    "8": {
+      "map_kb": 0.18,
+      "map_kw": 0.75,
+      "map_gamma": 0.88
+    },
+    "15": {
+      "map_kb": 0.18,
+      "map_kw": 0.76,
+      "map_gamma": 0.94
+    }
+  },
+  "time_aware_daily_min": {
+    "3": {
+      "mean_of_samples/random": {
+        "rmse": 0.324,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.077,
+        "recall": 0.932,
+        "cov90": 0.934,
+        "recall_night": 0.732
+      },
+      "simgp24/straddle": {
+        "rmse": 0.077,
+        "recall": 0.932,
+        "cov90": 0.934,
+        "recall_night": 0.732
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.077,
+        "recall": 0.932,
+        "cov90": 0.934,
+        "recall_night": 0.732
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.077,
+        "recall": 0.932,
+        "cov90": 0.934,
+        "recall_night": 0.732
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.089,
+        "recall": 0.871,
+        "cov90": 0.763,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.216,
+        "recall": 0.269,
+        "cov90": 0.489,
+        "recall_night": 0.354
+      }
+    },
+    "8": {
+      "mean_of_samples/random": {
+        "rmse": 0.322,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.088,
+        "recall": 0.956,
+        "cov90": 0.89,
+        "recall_night": 0.794
+      },
+      "simgp24/straddle": {
+        "rmse": 0.089,
+        "recall": 0.937,
+        "cov90": 0.939,
+        "recall_night": 0.807
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.075,
+        "recall": 0.991,
+        "cov90": 0.915,
+        "recall_night": 0.92
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.091,
+        "recall": 0.922,
+        "cov90": 0.903,
+        "recall_night": 0.763
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.145,
+        "recall": 0.857,
+        "cov90": 0.613,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.203,
+        "recall": 0.341,
+        "cov90": 0.457,
+        "recall_night": 0.388
+      }
+    },
+    "15": {
+      "mean_of_samples/random": {
+        "rmse": 0.339,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.072,
+        "recall": 0.968,
+        "cov90": 0.896,
+        "recall_night": 0.823
+      },
+      "simgp24/straddle": {
+        "rmse": 0.1,
+        "recall": 0.984,
+        "cov90": 0.901,
+        "recall_night": 0.889
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.086,
+        "recall": 1.0,
+        "cov90": 0.804,
+        "recall_night": 0.959
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.174,
+        "recall": 0.97,
+        "cov90": 0.899,
+        "recall_night": 0.748
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.138,
+        "recall": 0.905,
+        "cov90": 0.519,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.202,
+        "recall": 0.383,
+        "cov90": 0.461,
+        "recall_night": 0.457
+      }
+    }
+  }
+}

@@ -77,6 +77,7 @@ class Scenario:
     coords: dict
     wn: wntr.network.WaterNetworkModel  # nominal model
     source_dose: float
+    structural: dict | None = None      # what structural_noise did to the truth (None if off)
 
     @property
     def age_snapshot_h(self):
@@ -118,14 +119,74 @@ def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float,
     return _last_day(q, wn.junction_name_list).clip(lower=0.0)
 
 
+def closable_pipes(wn) -> list[str]:
+    """Pipes whose closure keeps the network connected: not a bridge of the link graph, or with a
+    parallel link between the same two nodes."""
+    g = hydraulic_graph(wn)
+    bridges = {frozenset(e) for e in nx.bridges(g)}
+    ends = {}
+    for lname, link in wn.links():
+        ends.setdefault(frozenset((link.start_node_name, link.end_node_name)), []).append(lname)
+    out = []
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        key = frozenset((p.start_node_name, p.end_node_name))
+        if key not in bridges or len(ends[key]) > 1:
+            out.append(pn)
+    return out
+
+
+def apply_structural_noise(wn, rng, mode: str = "spec") -> dict:
+    """Task 3: errors in the operator's file that no grid axis can represent.  With probability 0.5 close
+    one random non-bridge pipe (connectivity re-checked with networkx); always perturb one random tank.
+    Applied to the TRUTH only.
+
+    mode="spec"       : the tank's initial level x0.7 (clipped to its minimum level).  NOTE: a 7-day warm-up
+                        forgets an initial level — on Net3 this changes the scored day by < 0.05 mg/L.
+    mode="persistent" : the tank's diameter x0.7 (it holds half the water the operator's file says), a
+                        geometric error that persists: different turnover, different pump cycling."""
+    info = {"mode": mode, "closed_pipe": None, "tank": None, "tank_level_m": None, "tank_diameter_m": None}
+    if rng.uniform() < 0.5:
+        cands = closable_pipes(wn)
+        rng.shuffle(cands)
+        for pn in cands:
+            g = hydraulic_graph(wn)
+            p = wn.get_link(pn)
+            g2 = g.copy()
+            # remove only if this is the sole link between the two nodes
+            if sum(1 for _, l in wn.links() if {l.start_node_name, l.end_node_name} == {p.start_node_name, p.end_node_name}) == 1:
+                g2.remove_edge(p.start_node_name, p.end_node_name)
+            if nx.is_connected(g2):
+                p.initial_status = wntr.network.LinkStatus.Closed
+                info["closed_pipe"] = pn
+                break
+    if wn.tank_name_list:
+        tn = str(rng.choice(wn.tank_name_list))
+        t = wn.get_node(tn)
+        info["tank"] = tn
+        if mode == "persistent":
+            info["tank_diameter_m"] = (round(float(t.diameter), 2), round(float(0.7 * t.diameter), 2))
+            t.diameter = 0.7 * t.diameter
+        else:
+            new_level = max(t.min_level + 0.05 * (t.max_level - t.min_level), 0.7 * t.init_level)
+            info["tank_level_m"] = (round(float(t.init_level), 2), round(float(new_level), 2))
+            t.init_level = new_level
+    return info
+
+
 def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    source_dose: float = 1.2, kb_per_day: float = 0.40,
-                   kw_m_per_day: float = 0.70) -> Scenario:
+                   kw_m_per_day: float = 0.70, structural_noise: bool | str = False) -> Scenario:
+    """structural_noise: False, True (= "spec") or "persistent" — see apply_structural_noise."""
     rng = np.random.default_rng(seed)
 
     # ---------------- TRUTH (hidden) ----------------
     wn = load(name)
     wn.options.quality.parameter = "CHEMICAL"
+    structural = None
+    if structural_noise:
+        mode = structural_noise if isinstance(structural_noise, str) else "spec"
+        structural = apply_structural_noise(wn, np.random.default_rng(10_000 + seed), mode)
     wn.options.reaction.bulk_coeff = -kb_per_day * rng.uniform(0.8, 1.2) / DAY
     wn.options.reaction.wall_coeff = -kw_m_per_day / DAY
     for _, pipe in wn.pipes():
@@ -175,4 +236,4 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
 
     return Scenario(name, seed, sample_hour, junctions,
                     truth_by_hour.loc[sample_hour], truth_by_hour.min(), truth_by_hour,
-                    age_by_hour, hyd, g, pipes, node_hyd, coords, wn_nom, source_dose)
+                    age_by_hour, hyd, g, pipes, node_hyd, coords, wn_nom, source_dose, structural)

@@ -80,6 +80,12 @@
         "f1": 0.707,
         "cov90": 0.789
       },
+      "simgp_core_nogp": {
+        "rmse": 0.12,
+        "recall": 0.734,
+        "f1": 0.743,
+        "cov90": 0.956
+      },
       "simgp_rich": {
         "rmse": 0.122,
         "recall": 0.748,
@@ -136,6 +142,12 @@
         "f1": 0.732,
         "cov90": 0.746
       },
+      "simgp_core_nogp": {
+        "rmse": 0.107,
+        "recall": 0.8,
+        "f1": 0.818,
+        "cov90": 0.9
+      },
       "simgp_rich": {
         "rmse": 0.114,
         "recall": 0.762,
@@ -191,6 +203,12 @@
         "recall": 0.869,
         "f1": 0.842,
         "cov90": 0.82
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.097,
+        "recall": 0.796,
+        "f1": 0.827,
+        "cov90": 0.831
       },
       "simgp_rich": {
         "rmse": 0.093,

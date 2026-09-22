@@ -200,6 +200,17 @@ class SimGP:
         out["z_sd_acq"] = np.sqrt(self.v_[idx] + r_var)
         return out
 
+    def predict_prior(self, X: pd.DataFrame) -> pd.DataFrame:
+        """The calibrated simulator alone (no discrepancy GP): what the grid posterior says by itself."""
+        idx = [self.jidx[n] for n in X.index]
+        z_mu, z_sd = self.m_[idx], np.sqrt(self.v_[idx] + self.hv_[idx])
+        out = pd.DataFrame(index=X.index)
+        out["median"] = np.exp(z_mu)
+        out["lo90"] = np.exp(z_mu - 1.645 * z_sd)
+        out["hi90"] = np.exp(z_mu + 1.645 * z_sd)
+        out["z_mu"], out["z_sd"] = z_mu, z_sd
+        return out
+
     @staticmethod
     def p_below(pred: pd.DataFrame, threshold: float = 0.2) -> pd.Series:
         return pd.Series(norm.cdf((np.log(threshold) - pred["z_mu"]) / pred["z_sd"]), index=pred.index)

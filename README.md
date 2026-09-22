@@ -93,9 +93,13 @@ RMSE in mg/L on the daily minimum; recall = share of junctions whose true daily 
 
 Figures: `outputs/day_vs_night_predicted_Net3.png` (true 22:00 map next to the prediction from 15 daytime samples; true daily-minimum violations next to `P(daily min < 0.2)`), `outputs/curves_time_Net3.png`, `outputs/reliability_Net3.png`. Numbers: `outputs/results_time_Net3.csv`, `outputs/summary_Net3.json["time_aware_daily_min"]`.
 
+## Stress test — the operator's file is structurally wrong (`outputs/stress_test_Net3.png`)
+
+Real EPANET files have closed valves that are open, missing pipes, wrong tank data. `build_scenario(structural_noise="persistent")` gives the truth a closed non-bridge pipe (probability 0.5 per scenario; 2 of 8 drew one) and one tank with half the volume the file says (every scenario), moving the true chlorine by up to 0.5–0.8 mg/L at 26–77 junctions. Same model, same samples, Net3, 8 seeds, file correct → file wrong: 14:00 snapshot with the straddle rule, recall at 15 samples 0.92 → 0.92 (F1 0.93 → 0.95), random samples 0.84 → 0.80; 90% coverage 0.95 → 0.94. Daily minimum from daytime samples: recall 0.99 → 1.00, coverage 0.88 → 0.88. The discrepancy GP is worth about +5 recall and +11 coverage points at 15 samples over the calibrated simulator alone, wrong file or not; most of the robustness comes from the hydraulic axes and the local-hydraulic term in the band. The literal version of the test — a tank's *initial* level ×0.7 — changes the scored day by < 0.05 mg/L because the 7-day warm-up forgets it; both variants are in `CHANGELOG.md`.
+
 ## Honest limitations
 
-- **Truth shares the nominal model's topology.** Real EPANET files have closed valves that are open, missing pipes, wrong tank levels. Global demand and roughness mismatch are on the grid and local (per-node, per-pipe) mismatch is in the band; structural mismatch is not yet.
+- **Structural mismatch is tested, not represented.** The grid covers global demand, roughness and dose errors and the band carries local ones; a closed pipe or a wrong tank volume is absorbed (recall holds, see the stress test) but never identified. Finding *which* pipe is closed from chlorine samples is a different, later problem.
 - **The band is honest on average, not at every n.** Snapshot: 0.95 for a 90% band over n = 3–15, but the 50% band over-covers (0.68) — slightly too wide in the middle. Daily minimum: 0.93 on average, narrowing from 0.96 at n=3 to 0.87 at n=15 (0.79 with the straddle-on-daily-minimum rule). Treat `P(daily min < 0.2)` from a straddle-chosen set of 15 samples as slightly over-confident.
 - **Recall traded for precision on the 14:00 snapshot.** The better-calibrated posterior shrinks the low junctions' medians toward the grid centre: recall under random samples is about 5% lower than with the iteration-2 grid (precision 10–16 points higher, F1 higher). The max-uncertainty rule lost 20% recall and should not be used.
 - **Synthetic truth.** No real grab-sample data yet. `docs/pilot_protocol.md` (to be written) is the path to it.
@@ -108,12 +112,13 @@ Figures: `outputs/day_vs_night_predicted_Net3.png` (true 22:00 map next to the p
 pip install -r requirements.txt
 python -m residualmap.experiment Net3 8      # network, number of scenario seeds; ~3 min; writes outputs/
 python -m residualmap.experiment ky4 2       # bigger real network, fewer seeds
+python -m residualmap.experiment Net3 8 --structural=persistent   # stress test: truth with a closed pipe / wrong tank volume -> outputs/structural_persistent/
 ```
 
 ## Layout
 
 ```
-residualmap/simulate.py    truth scenario (hidden decay, demand, dose, roughness noise) + nominal model hydraulics, age, pipe table, nominal-chlorine simulator
+residualmap/simulate.py    truth scenario (hidden decay, demand, dose, roughness noise; optional structural noise) + nominal model hydraulics, age, pipe table, nominal-chlorine simulator
 residualmap/features.py    24 physics features from the .inp and one hydraulic run; CORE subset; FEATURE_DOCS
 residualmap/simgp.py       calibrated-simulator GP (main model): grid posterior over kb/kw/gamma + discrepancy GP;
                            SimGP24 = the time-aware version (samples at any hour, 24-h profile, daily minimum)

@@ -109,6 +109,8 @@ def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outpu
             r["recall_all"] = found / max(int((truth < THRESHOLD).sum()), 1)
             rows.append(r)
             if strat == "random":
+                # calibrated simulator alone — does the discrepancy GP absorb what the grid cannot?
+                rows.append(_row("simgp_core_nogp", strat, n, seed, truth, main.predict_prior(X), unsampled, SimGP)[0])
                 # iteration-2 grid (decay parameters only) for the before/after calibration comparison
                 p0 = SimGP(sc, seed=seed, cache_dir=cache_dir, grid="decay", lik_sd=0.25, doses=[1.0],
                            lik="gauss").fit(Xs, ys).predict(X)   # exactly the iteration-2 model
@@ -341,11 +343,45 @@ def plot_reliability(df, df_t, out):
         fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
 
 
+def plot_stress(outdir, structural_dir, out, network="Net3"):
+    """Task 3: the same model scored against a truth with structural errors the grid cannot represent."""
+    a, b = pd.read_csv(os.path.join(outdir, f"results_{network}.csv")), pd.read_csv(os.path.join(structural_dir, f"results_{network}.csv"))
+    at, bt = pd.read_csv(os.path.join(outdir, f"results_time_{network}.csv")), pd.read_csv(os.path.join(structural_dir, f"results_time_{network}.csv"))
+    def g(d, model, strat, cols):
+        return d[(d.model == model) & (d.strategy == strat)].groupby("n")[cols].mean()
+    series = [("14:00 map, GP, straddle rule", g(a, "simgp_core", "straddle", ["rmse", "recall", "coverage90"]), g(b, "simgp_core", "straddle", ["rmse", "recall", "coverage90"]), "tab:red"),
+              ("14:00 map, GP, random", g(a, "simgp_core", "random", ["rmse", "recall", "coverage90"]), g(b, "simgp_core", "random", ["rmse", "recall", "coverage90"]), "tab:orange"),
+              ("14:00 map, simulator alone (no GP), random", g(a, "simgp_core_nogp", "random", ["rmse", "recall", "coverage90"]), g(b, "simgp_core_nogp", "random", ["rmse", "recall", "coverage90"]), "tab:gray")]
+    tm = [("daily minimum, straddle on daily min", g(at, "simgp24", "straddle_min", ["rmse_min", "recall_min", "coverage90_min"]), g(bt, "simgp24", "straddle_min", ["rmse_min", "recall_min", "coverage90_min"]), "tab:purple")]
+    r15 = (g(a, "simgp_core", "straddle", ["recall"]).loc[15, "recall"], g(b, "simgp_core", "straddle", ["recall"]).loc[15, "recall"])
+    c = (a[(a.model == "simgp_core") & (a.strategy == "random")].coverage90.mean(), b[(b.model == "simgp_core") & (b.strategy == "random")].coverage90.mean())
+    with plt.rc_context(BIG):
+        fig, axes = plt.subplots(1, 3, figsize=(21, 5.8))
+        for lab, x, y, col in series + tm:
+            for ax, k in zip(axes, range(3)):
+                ax.plot(x.index, x.iloc[:, k], "-", color=col, marker="o", ms=4, label=f"{lab} — file correct")
+                ax.plot(y.index, y.iloc[:, k], "--", color=col, marker="s", ms=4, label=f"{lab} — file wrong")
+        axes[0].set(title="Error at unsampled junctions", xlabel="grab samples", ylabel="RMSE (mg/L)")
+        axes[1].set(title=f"Recall of junctions below {THRESHOLD} mg/L", xlabel="grab samples", ylabel="recall", ylim=(0.4, 1.02))
+        axes[1].axhline(0.7, color="k", lw=0.8, ls=":"); axes[1].text(3.1, 0.71, "stop line 0.70", fontsize=10)
+        axes[2].set(title="Truth inside the 90% band", xlabel="grab samples", ylabel="coverage", ylim=(0.4, 1.02))
+        axes[2].axhline(0.9, color="k", lw=0.8, ls=":")
+        for ax in axes:
+            ax.grid(alpha=0.3)
+        axes[2].legend(fontsize=8, loc="lower left")
+        info = json.load(open(os.path.join(structural_dir, f"summary_{network}.json"))).get("structural_noise", {})
+        n_closed, n_seeds = sum(1 for v in info.values() if v.get("closed_pipe")), max(len(info), 1)
+        fig.suptitle(f"Stress test: a tank with half the volume the operator's file says ({n_seeds} of {n_seeds} scenarios) and a closed pipe "
+                     f"({n_closed} of {n_seeds}) — straddle-rule recall at 15 samples {r15[0]:.2f} → {r15[1]:.2f}, 90% coverage {c[0]:.2f} → {c[1]:.2f}", fontsize=13)
+        fig.tight_layout(); fig.savefig(out, dpi=130); plt.close(fig)
+
+
 def plot_curves(df, out):
     d = df[df.strategy == "random"]
     agg = d.groupby(["model", "n"]).agg(rmse=("rmse", "mean"), f1=("f1", "mean"), recall=("recall", "mean"),
                                         cov90=("coverage90", "mean")).reset_index()
     style = {"simgp_core": ("tab:red", "-", "calibrated-simulator GP (core)"),
+             "simgp_core_nogp": ("tab:red", "--", "calibrated simulator alone (no discrepancy GP)"),
              "simgp_core_g75": ("tab:pink", "-", "calibrated-simulator GP (core, decay-only grid)"),
              "simgp_rich": ("tab:red", ":", "calibrated-simulator GP (rich)"),
              "physgp_core": ("tab:green", "-", "decay-law GP (core)"),
@@ -385,12 +421,20 @@ def plot_curves(df, out):
     return agg, agg2
 
 
-def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outputs", sample_hour=14):
+def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outputs", sample_hour=14,
+         structural_noise=False, cache=None):
+    """structural_noise=True is the task-3 stress test: the truth gets a closed pipe / low tank the
+    operator's file does not have; outputs go to <outdir>/structural, the grid cache is shared."""
+    cache = cache or os.path.join(outdir, "cache")
+    if structural_noise:
+        outdir = os.path.join(outdir, "structural" if structural_noise is True else f"structural_{structural_noise}")
     os.makedirs(outdir, exist_ok=True)
-    cache = os.path.join(outdir, "cache")
     frames, frames_t, summary = [], [], {}
     for s in seeds:
-        sc = build_scenario(network, seed=s, sample_hour=sample_hour)
+        sc = build_scenario(network, seed=s, sample_hour=sample_hour, structural_noise=structural_noise)
+        if sc.structural:
+            summary.setdefault("structural_noise", {})[str(s)] = sc.structural
+            print(f"seed {s}: structural noise -> {sc.structural}", flush=True)
         df, snaps, X = run_scenario(sc, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
         frames.append(df)
         df_t, snaps_t = run_scenario_time(sc, X, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
@@ -424,6 +468,10 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     df_t.to_csv(os.path.join(outdir, f"results_time_{network}.csv"), index=False)
     agg_t = plot_curves_time(df_t, os.path.join(outdir, f"curves_time_{network}.png"))
     plot_reliability(df, df_t, os.path.join(outdir, f"reliability_{network}.png"))
+    if structural_noise:
+        base = os.path.dirname(outdir)
+        if os.path.exists(os.path.join(base, f"results_{network}.csv")):
+            plot_stress(base, outdir, os.path.join(base, f"stress_test_{network}.png"), network)
     agg_t["key"] = agg_t.model + "/" + agg_t.strategy
     summary["time_aware_daily_min"] = {
         str(n): agg_t[agg_t.n == n].set_index("key")[["rmse", "recall", "cov90", "recall_night"]].round(3).to_dict("index")
@@ -435,9 +483,11 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
 
 if __name__ == "__main__":
     import sys
-    net = sys.argv[1] if len(sys.argv) > 1 else "Net3"
-    seeds = tuple(range(int(sys.argv[2]))) if len(sys.argv) > 2 else tuple(range(8))
-    _, agg, agg2, _, agg_t = main(net, seeds=seeds)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    net = args[0] if args else "Net3"
+    seeds = tuple(range(int(args[1]))) if len(args) > 1 else tuple(range(8))
+    structural = "persistent" if "--structural=persistent" in sys.argv else ("--structural" in sys.argv)
+    _, agg, agg2, _, agg_t = main(net, seeds=seeds, structural_noise=structural)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
     for col in ("rmse", "recall", "cov90"):
         print(f"\n== models under random sampling: {col}")
