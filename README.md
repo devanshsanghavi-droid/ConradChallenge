@@ -156,6 +156,7 @@ residualmap/pinn.py        graph-PINN baseline (numpy, L-BFGS, deep ensemble)
 residualmap/experiment.py  sequential-sampling loops (snapshot and time-aware), metrics, all figures
 residualmap/pilot.py       the real-data path: grab log + tap map -> rolling hold-out validation (RMSE, coverage, recall vs persistence)
 docs/pilot_protocol.md     what a pilot utility gives us, tap-to-junction mapping, monthly deliverable, the validation and its criteria
+docs/iteration3_journal.md the iteration-3 work journal: what was asked, built and found per task, every figure, bug-risk scores per code feature
 docs/feature_dictionary.md what every feature means physically
 CHANGELOG.md               dated results per iteration
 app.py                     the operator-facing Streamlit app (upload .inp, enter samples, four panels, route, PDF)
