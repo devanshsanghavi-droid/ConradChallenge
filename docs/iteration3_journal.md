@@ -49,9 +49,9 @@ In scenario 0 on Net3, 11 of 92 junctions are below 0.2 mg/L at 14:00, 31 at 22:
 5. The time-aware GP's hour length-scales often sat at the lower bound, about 15 minutes. That made the joint 24-hour draws white noise, and the minimum of 24 noisy values is biased low by about 2 standard deviations, so flat high-chlorine junctions sat above the band. A discrepancy driven by the diurnal demand pattern cannot change in 15 minutes; the hour inputs now have a floor of about 3 hours. Age-scaled discrepancy was tried and rejected: mean water age on Net3 is 15.1 h at 02:00 and 16.4 h at 14:00, the night mismatch is tank timing, not age.
 6. Student-t became the default for the snapshot model too, and acquisition rules now use only the reducible part of the uncertainty (parameter spread plus GP), because the local hydraulic term never shrinks when you sample.
 
-**Numbers (Net3, 8 seeds, random samples):** 90% coverage over n = 3 to 15 went from 0.756 to **0.947**; at the 50/80/95% levels from 0.45/0.67/0.81 to 0.68/0.90/0.97. RMSE 0.136/0.122/0.089 to 0.122/0.107/0.085. Daily minimum coverage 0.65 to 0.93 (random) and 0.88 (straddle_min); daily-minimum recall 0.99 at n=15. **Acceptance met.**
+**Numbers (Net3, 8 seeds, random samples):** 90% coverage over n = 3 to 15 went from 0.756 to **0.947**; at the 50/80/95% levels from 0.45/0.67/0.81 to 0.68/0.90/0.97. RMSE 0.136/0.122/0.089 to 0.122/0.107/0.085. Daily minimum coverage 0.65 to 0.93 (random) and 0.89 (straddle_min); daily-minimum recall 1.00 at n=15. **Acceptance met.**
 
-**Regressions, recorded not hidden:** the max-uncertainty rule lost 20% recall (0.90 to 0.70 at n=15) and is marked not-for-use in the README. Snapshot recall under random samples is about 5% lower on average, in exchange for 10 to 16 points more precision and a higher F1. The 50% band over-covers (0.68). Daily-minimum coverage still narrows with n (0.96 to 0.87).
+**Regressions, recorded not hidden:** the max-uncertainty rule lost 20% recall (0.90 to 0.70 at n=15) and is marked not-for-use in the README. Snapshot recall under random samples is about 5% lower on average, in exchange for 10 to 16 points more precision and a higher F1. The 50% band over-covers (0.68). Daily-minimum coverage still narrows with n (0.96 to 0.88).
 
 ![Reliability diagram](../outputs/reliability_Net3.png)
 
@@ -71,7 +71,7 @@ In scenario 0 on Net3, 11 of 92 junctions are below 0.2 mg/L at 14:00, 31 at 22:
 
 **Found:** the tank initial-level change is a no-op on the scored day. The truth is a 7-day run scored on day 7, and a tank forgets its initial level by then: the scored day changes by less than 0.05 mg/L, no junction changes category, in all 8 seeds. Only the closed pipe bites, and the coin gave it to 2 of 8 seeds. I kept the spec'd option as-is and added a `persistent` variant (tank diameter x0.7, half the volume the file says) that moves the truth by 0.5 to 0.8 mg/L at 26 to 77 junctions in every seed.
 
-**Numbers (persistent variant, file correct to file wrong):** snapshot straddle recall at n=15 0.92 to 0.92, random 0.84 to 0.80, coverage 0.95 to 0.94. Daily minimum recall 0.99 to 1.00, coverage 0.88 to 0.88. Recall stays above 0.7 in every configuration, no fix required. The GP is worth about +5 recall and +11 coverage points at 15 samples, wrong file or not; most of the robustness comes from the hydraulic axes and the local error term in the band.
+**Numbers (persistent variant, file correct to file wrong):** snapshot straddle recall at n=15 0.92 to 0.92, random 0.84 to 0.80, coverage 0.95 to 0.94. Daily minimum recall 1.00 to 1.00, coverage 0.89 to 0.84. Recall stays above 0.7 in every configuration, no fix required. The GP is worth about +5 recall and +11 coverage points at 15 samples, wrong file or not; most of the robustness comes from the hydraulic axes and the local error term in the band.
 
 ![Stress test](../outputs/stress_test_Net3.png)
 
@@ -81,9 +81,9 @@ In scenario 0 on Net3, 11 of 92 junctions are below 0.2 mg/L at 14:00, 31 at 22:
 
 **Built:** `route.py` with `plan_route` (planned from the `.inp` alone, before any sample, via `SimGP24.fit_prior`), `random_route`, `demand_route`. At most ceil(K/11) sites per daytime hour so one person can drive it. A one-sentence reason per site. The repulsion strength was set by a spatial statistic, not by recall: with repulsion 1.0 and a length scale of 5% of the network's hydraulic diameter, the optimised route has the same nearest-neighbour spacing as a random route.
 
-**Numbers (Net3, 8 scenario-months, night violations missed at unsampled junctions, summed over the months, optimised / highest-demand / random):** K=5: 1 / 9 / 3. K=8: 3 / 10 / 8. K=12: 6 / 8 / 6. Recall 0.997/0.972/0.989, 0.989/0.968/0.973, 0.972/0.974/0.980. F1 highest for the optimised route at every K.
+**Numbers (Net3, 8 scenario-months, night violations missed at unsampled junctions, summed over the months, optimised / highest-demand / random):** K=5: 4 / 9 / 3. K=8: 7 / 10 / 9. K=12: 2 / 8 / 6. Recall 0.986/0.972/0.989, 0.972/0.968/0.969, 0.991/0.974/0.980. F1 highest for the optimised route at every K (0.942, 0.941, 0.949).
 
-**Acceptance met at K=5 and K=8, a tie at K=12.** Six of the eight scenarios are recalled perfectly by every route at every K: after task 2 the daily-minimum classification is nearly saturated on Net3 with any 5 daytime samples. The straddle-chosen sites are the borderline, least-well-modelled junctions, so the route buys flags with some map accuracy (coverage 0.82 to 0.87 against 0.89 to 0.98 for the highest-demand sites).
+**Acceptance met at K=8 and K=12; at K=5 the optimised route beats the highest-demand sites but sits 3 misses behind random sites (recall 0.986 against 0.989).** Before the second pass the numbers were 1 / 9 / 3, 3 / 10 / 8 and 6 / 8 / 6, so the ranking against random sites flips with the random draws: four to six of the eight scenarios are recalled perfectly by every route at every K, because after task 2 the daily-minimum classification is nearly saturated on Net3 with any 5 daytime samples. The straddle-chosen sites are the borderline, least-well-modelled junctions, so the route buys flags with some map accuracy (coverage 0.83 to 0.90 against 0.90 to 0.98 for the highest-demand sites).
 
 ![Route comparison](../outputs/route_comparison_Net3.png)
 
@@ -102,9 +102,9 @@ In scenario 0 on Net3, 11 of 92 junctions are below 0.2 mg/L at 14:00, 31 at 22:
 
 | network | 14:00 RMSE n=3/8/15 | 90% coverage | daily-min recall (straddle rule) n=3/8/15 | daily-min coverage | time-blind recall |
 |---|---|---|---|---|---|
-| Net3, 8 seeds | 0.12 / 0.11 / 0.09 | 0.95 | 0.94 / 0.99 / 0.99 | 0.88 | 0.27 to 0.35 |
-| Net2, 8 seeds | 0.09 / 0.08 / 0.09 | 0.97 | 0.92 / 0.86 / 0.85 | 0.90 | 0.10 to 0.17 |
-| ky4, 2 seeds | 0.08 / 0.09 / 0.11 | 0.96 | 0.89 / 0.95 / 0.98 | 0.91 | 0.42 to 0.63 |
+| Net3, 8 seeds | 0.12 / 0.11 / 0.09 | 0.95 | 0.94 / 0.99 / 1.00 | 0.89 | 0.27 to 0.35 |
+| Net2, 8 seeds | 0.09 / 0.08 / 0.09 | 0.97 | 0.92 / 0.86 / 0.99 | 0.89 | 0.10 to 0.17 |
+| ky4, 2 seeds | 0.08 / 0.09 / 0.11 | 0.96 | 0.86 / 0.98 / 0.98 | 0.94 | 0.43 to 0.63 |
 
 Net2 has a story of its own: only 0 to 5 junctions are low at 14:00 but 20 of 35 dip below 0.2 at some hour, worst at 04:00 to 08:00 and at 18:00. ky4 is low all day (19 to 25% of junctions at every hour); 15 daytime samples still find 98% of the 353 junctions whose daily minimum is below 0.2.
 
@@ -155,10 +155,10 @@ Score 10 means "this decides the headline numbers, check every line"; 1 means co
 
 | score | feature | why it matters, what to check |
 |---|---|---|
-| 10 | `simgp.py::SimGP24.predict_daily_min` | Produces P(daily min < 0.2), the product's main number. Builds 24x24 covariance blocks from sklearn internals (`kernel_`, `L_`, `alpha_`, `X_train_`), subtracts the WhiteKernel noise from the diagonal, clips eigenvalues at 1e-6, draws a random hydraulic sibling of each member (`grp * n_hyd + randint`), adds dose offsets. Check the block algebra against `gp.predict(return_cov=True)` on a small case (it was verified once on Net3), the sibling index arithmetic, and that `n_hyd == 1` (decay grid) skips the sibling step. Efficiency: a Python loop over every junction (959 on ky4), re-run on every fit. |
-| 9 | `simgp.py::grid_loglik`, `grid_weights`, `grid_dose_weights` | Every weight in the model. Student-t log-likelihood, the `-n log(sd)` normalisation (only matters when a list of scales is passed), the FLOOR clip on samples, the joint (member, dose) normalisation with `logsumexp`. A sign or normalisation slip here silently moves every result. |
-| 9 | `simgp.py::SimGP._calibrate` and `SimGP24.fit` moment formulas | `m_` and `v_` of the joint (member, dose) posterior are computed by expanded moments, including a cross term written as `2 * (w * (W @ offs) / max(w, 1e-300)) @ Z` in `SimGP` and `2 * tensordot(wo, Z)` in `SimGP24`. Verified numerically once (max error 1e-8). Simplify to one shared helper and re-verify. |
-| 8 | `simgp.py::local_hydraulic_var` | The reshape `Z.reshape(nd, n_hyd, ...)` assumes `itertools.product` order with the two hydraulic axes last and fastest. If `GRIDS` is ever reordered or an axis added, this silently returns garbage. Add an assertion on `params` order. Efficiency: `Zr.var(axis=1)` does not depend on the samples and is recomputed on every fit. |
+| 10 | `simgp.py::SimGP24.predict_daily_min` | Produces P(daily min < 0.2), the product's main number. **Second pass, done:** the block algebra was checked against `gp.predict(return_cov=True)` on 3 seeds x 2 sample sizes (max difference 1e-17), the sibling draw's mean and variance against `local_hydraulic_var` (exact), the grid-order assumption (now asserted by `check_grid_order`). No bug. One real fragility was found and fixed: about 5 of 24 eigenvalues per block sit below the 1e-6 floor, so their eigenvectors were arbitrary and any 1e-16 change upstream re-mixed the random draws. The draw now uses the Cholesky factor of the floored matrix (basis-independent; a 1e-15 perturbation moves results by 1e-13 instead of Monte-Carlo noise). The junction loop is batched (`_gp_blocks`), and draws went from 256 to 1024 (P(below) error about 0.004 on average against a 20k reference). |
+| 9 | `simgp.py::grid_loglik`, `grid_weights`, `grid_dose_weights` | Every weight in the model. **Second pass, done:** checked against a brute-force joint posterior on a small problem for both the Gaussian and Student-t families (max difference 4e-16, weights sum to 1). The dose sign convention (member k at dose d predicts Z_k + offs_d, scored as Z_k against z_obs - offs_d) is now written in the docstring. No bug. |
+| 9 | `simgp.py::posterior_moments` (was two copies in `SimGP._calibrate`, `SimGP24.fit`, `fit_prior`) | **Second pass, done:** the three copies of the expanded-moment formulas are one helper; the pointless `w * wo / max(w, 1e-300)` factor is gone. Checked against a brute-force mean and variance over all (member, dose) pairs (1e-16) and the snapshot model's predictions reproduce the committed results file exactly. No bug. |
+| 8 | `simgp.py::local_hydraulic_var` | The reshape `Z.reshape(nd, n_hyd, ...)` assumes `itertools.product` order with the two hydraulic axes last and fastest. **Second pass:** `check_grid_order` now raises if that order is broken, in both models. Still open: `Zr.var(axis=1)` does not depend on the samples and is recomputed on every fit (0.1 s on ky4). |
 | 8 | `experiment.py::_metrics`, `_coverage_levels`, `_metrics_time` | Every reported number flows through these. Conventions to check: recall and precision default to 1.0 when there is nothing to find (inflates averages on Net2's snapshot, where 0 to 5 junctions are low); coverage is computed in mg/L space; `_metrics_time` needs a `p_below` column and `lo50/hi50` etc. only if present. |
 | 8 | `simulate.py::build_scenario`, `nominal_scenario`, `month_seed` | The truth generator. The rng draw order (bulk kb, then per pipe wall and roughness, then global demand, per-node demand, dose) must stay byte-identical or every committed number changes; `month_seed` splits the draws across two generators. Structural noise is applied before the truth run. Check that `nominal_scenario` never sees anything from the truth. |
 | 8 | `app.py` | User-facing. Check: a minimum residual other than 0.2 uses a normal approximation on ln(daily min) for P(below); the `data_editor` key is a string built from the sidebar state (a hack to reset rows); the PDF is regenerated on every rerun (about 1 s); `st.cache_resource` returns shared mutable objects (`sc`, `X`); uploaded files are named by content hash; `frac_by_hour` uses the median only. |
@@ -178,9 +178,11 @@ Score 10 means "this decides the headline numbers, check every line"; 1 means co
 
 ### Efficiency hotspots, highest gain first
 
-1. Load each grid pickle once per process (module-level cache keyed by file path) instead of on every `SimGP`/`SimGP24` construction. On ky4 this is a 62 MB read repeated about 60 times per seed.
-2. Precompute the sample-independent parts of `local_hydraulic_var` (the per-group variance across hydraulic siblings) and `Xall_` once per network.
-3. Vectorise the per-junction covariance blocks in `predict_daily_min` (an `einsum` over `(J, 24, 24)` blocks) and lower `n_draws` for the app's interactive path.
+Measured on ky4 in the second pass: `SimGP24.__init__` 0.02 s (the 62 MB pickle read is served from the OS cache, so hotspot 1 below is withdrawn), `fit` 0.14 s, `predict_hours` 0.01 s, `predict_daily_min` 0.19 s batched at 1024 draws, and the old per-junction covariance loop 0.03 s. The per-fit cost was never the problem; a ky4 scenario is dominated by `build_features` (5 s), the PINN baseline, and the one-off 15-minute grid.
+
+1. Withdrawn: the grid pickle reload is 0.02 s.
+2. Precompute the sample-independent parts of `local_hydraulic_var` (the per-group variance across hydraulic siblings) and `Xall_` once per network. Small.
+3. Done: the per-junction covariance blocks are batched (`_gp_blocks`). It was not a speed problem, but it made the basis-independence fix easy.
 4. In `run_scenario_time`, build the hourly DataFrames once per step or pass arrays to `acquire_time`.
 5. In `app.py`, build the PDF lazily (on a button) and cache `predict_daily_min` per sample table.
 6. The graph-PINN at six sample counts is the slowest baseline on ky4 and adds nothing to the current story; make it optional.
@@ -196,6 +198,14 @@ Score 10 means "this decides the headline numbers, check every line"; 1 means co
 - The route optimiser's advantage does not transfer beyond Net3; the mixed objective is proposed, not built.
 - `synthetic_log` rotating taps may repeat a junction across months and then count as "seen".
 - Type hints use `int | None` (Python 3.10+).
+
+## Second pass, 21 September 2026, the score-10 and score-9 items
+
+- `SimGP24.predict_daily_min` (10): no bug. Block covariances equal sklearn's full matrix to 1e-17 on 3 seeds x 2 sample sizes; the hydraulic-sibling draw has zero mean and exactly the variance the band uses; the grid order the reshapes need is true and is now asserted (`check_grid_order`). Fixed a fragility: with about 5 of 24 eigenvalues per block under the 1e-6 floor, the old eigenvector-based draw changed at Monte-Carlo level with any 1e-16 change upstream; the draw is now the Cholesky factor of the floored matrix, batched over junctions, at 1024 draws instead of 256. Old and new code agree to 0.003 in P(below) at 50,000 draws on the same model.
+- `grid_dose_weights` and friends (9): no bug. Match a brute-force joint posterior to 4e-16 for both likelihood families.
+- Posterior moments (9): three copies became one `posterior_moments` helper; matches brute force to 1e-16; the snapshot model's predictions reproduce the committed results file exactly, so nothing in the 14:00 tables moves.
+- Because the daily-minimum draws changed, every daily-minimum and route number was re-run (Net3, the Net3 stress test, Net2, ky4). The 14:00 snapshot tables did not move by a digit. Under random sampling the daily-minimum numbers moved by draw noise only. The adaptive rules and the route planner choose each sample from the Monte-Carlo estimates, so their sample paths changed and some of their numbers moved by more: the Net3 route misses went from 1 / 9 / 3, 3 / 10 / 8, 6 / 8 / 6 to 4 / 9 / 3, 7 / 10 / 9, 2 / 8 / 6 (optimised / highest-demand / random at K = 5 / 8 / 12), which changes the task-4 verdict from 'wins at K=5 and 8, tie at 12' to 'wins at K=8 and 12, 3 misses behind random at K=5'. The README and this journal were updated where a printed digit changed; the CHANGELOG keeps the numbers as they were measured at the time.
+- One lesson for anyone comparing runs: replay the exact sample sequence. A first comparison drew a fresh sample set and reported a 0.23 difference in P(below) at one junction that was two different models, not two implementations.
 
 ## How to run
 

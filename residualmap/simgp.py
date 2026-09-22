@@ -31,6 +31,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
+from scipy.linalg import solve_triangular
 from scipy.special import logsumexp
 from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -130,10 +131,25 @@ def grid_weights(z_sim, z_obs, lik_sd, lik="gauss", nu=3.0) -> np.ndarray:
 
 def grid_dose_weights(z_sim: np.ndarray, z_obs: np.ndarray, lik_sd: float, lik: str, nu: float,
                       doses=DOSE_GRID) -> tuple[np.ndarray, np.ndarray]:
-    """Joint posterior over (grid member, dose multiplier): W [members x doses], and the ln-offsets."""
+    """Joint posterior over (grid member, dose multiplier): W [members x doses], and the ln-offsets.
+    A dose multiplier m shifts every simulated ln C by ln m, so member k at dose d predicts Z_k + offs_d,
+    which is scored against z_obs as Z_k against (z_obs - offs_d)."""
     offs = np.log(np.asarray(doses, dtype=float))
     ll = np.stack([grid_loglik(z_sim, z_obs - d, lik_sd, lik, nu) for d in offs], axis=1)
     return np.exp(ll - logsumexp(ll)), offs
+
+
+def posterior_moments(W: np.ndarray, offs: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Mean and variance of ln C under the joint (member, dose) posterior W, for Z of shape
+    (members, ...) — per junction for SimGP, per (hour, junction) for SimGP24.
+        E[Z + d]       = sum_k w_k Z_k + sum_d wd_d offs_d
+        E[(Z + d)^2]   = sum_k w_k Z_k^2 + 2 sum_k (sum_d W_kd offs_d) Z_k + sum_d wd_d offs_d^2
+    with w, wd the marginals.  Variance floored at 1e-6."""
+    w, wd = W.sum(axis=1), W.sum(axis=0)
+    wo = W @ offs
+    m = np.tensordot(w, Z, axes=1) + wd @ offs
+    v = np.tensordot(w, Z ** 2, axes=1) + 2 * np.tensordot(wo, Z, axes=1) + wd @ offs ** 2 - m ** 2
+    return m, np.clip(v, 1e-6, None)
 
 
 LIK_SD = 0.35   # log-space scale of the calibration likelihood = the day-time RMS mismatch between the truth
@@ -142,6 +158,14 @@ LIK_SD = 0.35   # log-space scale of the calibration likelihood = the day-time R
 
 def n_hydraulic(grid: str) -> int:
     return len(GRIDS[grid][3]) * len(GRIDS[grid][4])
+
+
+def check_grid_order(params: list[tuple], n_hyd: int) -> None:
+    """The reshapes in local_hydraulic_var and SimGP24.predict_daily_min assume itertools.product order:
+    consecutive blocks of n_hyd members share one decay triple and run through the hydraulic pairs."""
+    P = np.asarray(params, dtype=float).reshape(-1, n_hyd, 5)
+    if not ((P[:, :, :3] == P[:, :1, :3]).all() and (P[:, :, 3:] == P[:1, :, 3:]).all()):
+        raise ValueError("grid members are not in (decay-major, hydraulic-minor) order; GRIDS changed?")
 
 
 def local_hydraulic_var(w: np.ndarray, Z: np.ndarray, n_hyd: int) -> np.ndarray:
@@ -167,17 +191,17 @@ class SimGP:
         self.doses = doses
         self.params, self.Z = simulator_grid(sc, cache_dir, grid)   # Z: members x junctions
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
+        if self.n_hyd > 1:
+            check_grid_order(self.params, self.n_hyd)
         self.jidx = {j: i for i, j in enumerate(sc.junctions)}
 
     def _calibrate(self, nodes: list[str], y: np.ndarray) -> None:
         idx = [self.jidx[n] for n in nodes]
         z_obs = np.log(np.clip(y, FLOOR, None))
         W, offs = grid_dose_weights(self.Z[:, idx], z_obs, self.lik_sd, self.lik, self.nu, self.doses)
-        w, wd = W.sum(axis=1), W.sum(axis=0)              # marginals over members / over dose
+        w = W.sum(axis=1)                                 # marginal over members
         self.w_, self.W_, self.offs_ = w, W, offs
-        self.m_ = w @ self.Z + wd @ offs                  # per junction
-        self.v_ = w @ self.Z ** 2 + 2 * (w * (W @ offs) / np.maximum(w, 1e-300)) @ self.Z + wd @ offs ** 2 - self.m_ ** 2
-        self.v_ = np.clip(self.v_, 1e-6, None)
+        self.m_, self.v_ = posterior_moments(W, offs, self.Z)          # per junction
         self.hv_ = local_hydraulic_var(w, self.Z, self.n_hyd) if self.n_hyd > 1 else np.zeros_like(self.v_)
         k, d = np.unravel_index(int(np.argmax(W)), W.shape)
         self.map_params_ = self.params[k]
@@ -249,14 +273,17 @@ class SimGP24:
     """
 
     def __init__(self, sc, X: pd.DataFrame, seed: int = 0, lik_sd: float = LIK_SD,
-                 cache_dir: str = "outputs/cache", n_draws: int = 256, lik: str = "t", nu: float = 3.0,
+                 cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
                  grid: str = "full", local_hydraulic: bool = True, doses=DOSE_GRID, smooth_hours: bool = True):
         self.sc, self.seed, self.lik_sd, self.n_draws = sc, seed, lik_sd, n_draws
         self.lik, self.nu, self.doses, self.smooth_hours = lik, nu, doses, smooth_hours
         self.params, self.Z = simulator_grid_24h(sc, cache_dir, grid)  # members x 24 x J
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
+        if self.n_hyd > 1:
+            check_grid_order(self.params, self.n_hyd)
         self.jidx = {j: i for i, j in enumerate(sc.junctions)}
         self.J = len(sc.junctions)
+        self._grp_mean = None                                            # lazily: mean over hydraulic siblings
         self.age = sc.age_by_hour_h.loc[HOURS, sc.junctions].values     # 24 x J, nominal model
         self.static = X.loc[sc.junctions, STATIC].values                # J x |STATIC|
         # design rows for every (junction, hour), junction-major; scaling is fixed by this full grid so
@@ -278,12 +305,9 @@ class SimGP24:
         the operator gets from the .inp alone, and what the first route is planned from."""
         W = np.full((len(self.params), len(self.doses)), 1.0 / (len(self.params) * len(self.doses)))
         offs = np.log(np.asarray(self.doses, dtype=float))
-        w, wd = W.sum(axis=1), W.sum(axis=0)
+        w = W.sum(axis=1)
         self.w_, self.W_, self.offs_ = w, W, offs
-        self.m_ = np.tensordot(w, self.Z, axes=1) + wd @ offs
-        wo = W @ offs
-        self.v_ = np.clip(np.tensordot(w, self.Z ** 2, axes=1) + 2 * np.tensordot(wo, self.Z, axes=1)
-                          + wd @ offs ** 2 - self.m_ ** 2, 1e-6, None)
+        self.m_, self.v_ = posterior_moments(W, offs, self.Z)
         self.hv_ = local_hydraulic_var(w, self.Z, self.n_hyd) if self.n_hyd > 1 else np.zeros_like(self.v_)
         self.map_params_, self.map_dose_ = None, None
         self.gp = None
@@ -298,14 +322,9 @@ class SimGP24:
         h = samples.hour.astype(int).values
         z_obs = np.log(np.clip(samples.y.values, FLOOR, None))
         W, offs = grid_dose_weights(self.Z[:, h, idx], z_obs, self.lik_sd, self.lik, self.nu, self.doses)
-        w, wd = W.sum(axis=1), W.sum(axis=0)
+        w = W.sum(axis=1)
         self.w_, self.W_, self.offs_ = w, W, offs
-        self.m_ = np.tensordot(w, self.Z, axes=1) + wd @ offs           # 24 x J
-        # E[(Z+d)^2] - m^2 with (member, dose) jointly distributed
-        wo = W @ offs                                                   # per member: sum_d W[k,d] offs[d]
-        self.v_ = (np.tensordot(w, self.Z ** 2, axes=1) + 2 * np.tensordot(wo, self.Z, axes=1)
-                   + wd @ offs ** 2 - self.m_ ** 2)
-        self.v_ = np.clip(self.v_, 1e-6, None)
+        self.m_, self.v_ = posterior_moments(W, offs, self.Z)          # 24 x J
         self.hv_ = local_hydraulic_var(w, self.Z, self.n_hyd) if self.n_hyd > 1 else np.zeros_like(self.v_)
         k_, d_ = np.unravel_index(int(np.argmax(W)), W.shape)
         self.map_params_, self.map_dose_ = self.params[k_], float(np.exp(offs[d_]))
@@ -348,6 +367,26 @@ class SimGP24:
         out["hi90"] = np.exp(z_mu[hour] + 1.645 * z_sd[hour]); out["z_mu"], out["z_sd"] = z_mu[hour], z_sd[hour]
         return out
 
+    def _gp_blocks(self):
+        """Posterior mean and 24x24 covariance blocks of the discrepancy GP for every junction, without
+        forming the full (24J)^2 matrix:  C_j = k(X_j, X_j) - V_j^T V_j,  V = L^{-1} k(X_train, X_*).
+        Returns (r_mu [J, 24], C [J, 24, 24]) — the covariance of the LATENT field (noise removed)."""
+        gp = self.gp
+        Xs = (self.Xall_ - self.mu_) / self.sd_
+        K_trans = gp.kernel_(Xs, gp.X_train_)                                # (24J) x n
+        r_mu = (K_trans @ gp.alpha_).reshape(self.J, 24)
+        V = solve_triangular(gp.L_, K_trans.T, lower=True).reshape(-1, self.J, 24)   # n x J x 24
+        VtV = np.einsum("nja,njb->jab", V, V)
+        k1, k2 = gp.kernel_.k1, gp.kernel_.k2                                # Constant * Matern, White
+        Xb = Xs.reshape(self.J, 24, -1) / k1.k2.length_scale
+        d = np.sqrt(np.maximum(((Xb[:, :, None, :] - Xb[:, None, :, :]) ** 2).sum(-1), 0.0))
+        if k1.k2.nu == 1.5:
+            Kb = k1.k1.constant_value * (1.0 + np.sqrt(3.0) * d) * np.exp(-np.sqrt(3.0) * d)
+        else:                                                                # any other kernel: per-block fallback
+            Kb = np.stack([k1(Xs[24 * j:24 * j + 24]) for j in range(self.J)])
+        C = Kb - VtV
+        return r_mu, 0.5 * (C + C.transpose(0, 2, 1))
+
     def predict_daily_min(self) -> pd.DataFrame:
         """Per junction: median / 90% band of the daily minimum, P(daily min < 0.2), and the mean/sd of
         ln(daily min) for acquisition.  Monte Carlo over grid members and joint 24-h GP draws."""
@@ -361,27 +400,22 @@ class SimGP24:
             # drawn member from its decay group's mean (same variance as local_hydraulic_var, but as a
             # correlated 24-h profile so the minimum is taken over a coherent day)
             nd = len(self.w_) // self.n_hyd
-            Zr = self.Z.reshape(nd, self.n_hyd, 24, self.J)
+            if self._grp_mean is None:
+                self._grp_mean = self.Z.reshape(nd, self.n_hyd, 24, self.J).mean(axis=1)
             grp = members // self.n_hyd
             sib = grp * self.n_hyd + rng.integers(self.n_hyd, size=S)
-            Zk = Zk + self.Z[sib] - Zr.mean(axis=1)[grp]
+            Zk = Zk + self.Z[sib] - self._grp_mean[grp]
         R = np.zeros((S, 24, self.J))
         if self.gp is not None:
-            # per-junction 24x24 posterior covariance blocks, without the full (24J)^2 matrix:
-            # C_j = k(X_j, X_j) - V_j^T V_j with V = L^{-1} k(X_train, X_*)  (sklearn's L_ is the Cholesky)
-            Xs = (self.Xall_ - self.mu_) / self.sd_
-            gp = self.gp
-            K_trans = gp.kernel_(Xs, gp.X_train_)                            # (24J) x n
-            r_mu = K_trans @ gp.alpha_
-            V = np.linalg.solve(gp.L_, K_trans.T)                             # n x (24J)
-            noise = gp.kernel_.k2.noise_level
-            for j in range(self.J):
-                sl = slice(24 * j, 24 * j + 24)
-                C = gp.kernel_(Xs[sl]) - V[:, sl].T @ V[:, sl] - noise * np.eye(24)
-                C = 0.5 * (C + C.T)
-                w_, Vv = np.linalg.eigh(C)
-                L = Vv * np.sqrt(np.clip(w_, 1e-6, None))
-                R[:, :, j] = r_mu[sl] + (L @ rng.standard_normal((24, S))).T
+            r_mu, C = self._gp_blocks()
+            # about 5 of the 24 eigenvalues per block sit below the 1e-6 floor; their eigenvectors are
+            # arbitrary, so a draw built from them changes with any 1e-16 change upstream.  Rebuild the
+            # floored matrix (basis-independent) and take its Cholesky factor (unique) instead.
+            w_, Vv = np.linalg.eigh(C)                                       # batched over junctions
+            C_psd = (Vv * np.clip(w_, 1e-6, None)[:, None, :]) @ Vv.transpose(0, 2, 1)
+            L = np.linalg.cholesky(0.5 * (C_psd + C_psd.transpose(0, 2, 1)))
+            eps = rng.standard_normal((self.J, 24, S))
+            R = (r_mu[:, :, None] + L @ eps).transpose(2, 1, 0)              # S x 24 x J
         zmin = (Zk + R).min(axis=1)                                     # S x J  ln(daily min)
         out = pd.DataFrame(index=self.sc.junctions)
         out["median"] = np.exp(np.median(zmin, axis=0))

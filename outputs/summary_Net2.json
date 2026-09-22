@@ -315,33 +315,33 @@
         "recall_night": 0.125
       },
       "simgp24/random": {
-        "rmse": 0.066,
+        "rmse": 0.065,
         "recall": 0.916,
-        "cov90": 0.969,
+        "cov90": 0.973,
         "recall_night": 0.581
       },
       "simgp24/straddle": {
-        "rmse": 0.066,
+        "rmse": 0.065,
         "recall": 0.916,
-        "cov90": 0.969,
+        "cov90": 0.973,
         "recall_night": 0.581
       },
       "simgp24/straddle_min": {
-        "rmse": 0.066,
+        "rmse": 0.065,
         "recall": 0.916,
-        "cov90": 0.969,
+        "cov90": 0.973,
         "recall_night": 0.581
       },
       "simgp24/uncertainty": {
-        "rmse": 0.066,
+        "rmse": 0.065,
         "recall": 0.916,
-        "cov90": 0.969,
+        "cov90": 0.973,
         "recall_night": 0.581
       },
       "simgp24_g75/random": {
-        "rmse": 0.093,
+        "rmse": 0.092,
         "recall": 0.789,
-        "cov90": 0.785,
+        "cov90": 0.816,
         "recall_night": NaN
       },
       "simgp_timeblind/random": {
@@ -360,32 +360,32 @@
       },
       "simgp24/random": {
         "rmse": 0.06,
-        "recall": 0.817,
-        "cov90": 0.949,
+        "recall": 0.825,
+        "cov90": 0.963,
         "recall_night": 0.433
       },
       "simgp24/straddle": {
         "rmse": 0.079,
-        "recall": 0.736,
-        "cov90": 0.884,
+        "recall": 0.716,
+        "cov90": 0.898,
         "recall_night": 0.604
       },
       "simgp24/straddle_min": {
-        "rmse": 0.082,
+        "rmse": 0.084,
         "recall": 0.863,
-        "cov90": 0.894,
+        "cov90": 0.889,
         "recall_night": 0.77
       },
       "simgp24/uncertainty": {
-        "rmse": 0.074,
+        "rmse": 0.072,
         "recall": 0.684,
         "cov90": 0.949,
         "recall_night": 0.616
       },
       "simgp24_g75/random": {
-        "rmse": 0.064,
+        "rmse": 0.063,
         "recall": 0.669,
-        "cov90": 0.838,
+        "cov90": 0.856,
         "recall_night": NaN
       },
       "simgp_timeblind/random": {
@@ -403,33 +403,33 @@
         "recall_night": 0.25
       },
       "simgp24/random": {
-        "rmse": 0.052,
+        "rmse": 0.053,
         "recall": 0.853,
-        "cov90": 0.925,
+        "cov90": 0.938,
         "recall_night": 0.781
       },
       "simgp24/straddle": {
         "rmse": 0.096,
-        "recall": 0.7,
-        "cov90": 0.9,
+        "recall": 0.686,
+        "cov90": 0.906,
         "recall_night": 0.708
       },
       "simgp24/straddle_min": {
-        "rmse": 0.077,
-        "recall": 0.854,
-        "cov90": 0.844,
-        "recall_night": 0.78
+        "rmse": 0.091,
+        "recall": 0.99,
+        "cov90": 0.838,
+        "recall_night": 0.699
       },
       "simgp24/uncertainty": {
         "rmse": 0.106,
         "recall": 0.753,
-        "cov90": 0.794,
+        "cov90": 0.806,
         "recall_night": 0.625
       },
       "simgp24_g75/random": {
         "rmse": 0.046,
-        "recall": 0.789,
-        "cov90": 0.85,
+        "recall": 0.778,
+        "cov90": 0.869,
         "recall_night": NaN
       },
       "simgp_timeblind/random": {
@@ -444,147 +444,147 @@
     "5": {
       "highest_demand": {
         "recall_min": 0.985,
-        "precision_min": 0.699,
-        "f1_min": 0.803,
-        "rmse_min": 0.058,
-        "coverage90_min": 0.938,
+        "precision_min": 0.708,
+        "f1_min": 0.808,
+        "rmse_min": 0.057,
+        "coverage90_min": 0.942,
         "recall_min_all": 0.977,
-        "f1_min_all": 0.783
+        "f1_min_all": 0.787
       },
       "optimised": {
-        "recall_min": 0.903,
-        "precision_min": 0.695,
-        "f1_min": 0.737,
-        "rmse_min": 0.093,
-        "coverage90_min": 0.871,
-        "recall_min_all": 0.899,
-        "f1_min_all": 0.719
+        "recall_min": 0.96,
+        "precision_min": 0.698,
+        "f1_min": 0.796,
+        "rmse_min": 0.091,
+        "coverage90_min": 0.846,
+        "recall_min_all": 0.965,
+        "f1_min_all": 0.785
       },
       "random": {
-        "recall_min": 0.922,
-        "precision_min": 0.752,
-        "f1_min": 0.806,
-        "rmse_min": 0.052,
-        "coverage90_min": 0.983,
-        "recall_min_all": 0.914,
-        "f1_min_all": 0.791
+        "recall_min": 0.911,
+        "precision_min": 0.743,
+        "f1_min": 0.796,
+        "rmse_min": 0.051,
+        "coverage90_min": 0.979,
+        "recall_min_all": 0.904,
+        "f1_min_all": 0.789
       }
     },
     "8": {
       "highest_demand": {
         "recall_min": 0.975,
-        "precision_min": 0.733,
-        "f1_min": 0.825,
+        "precision_min": 0.744,
+        "f1_min": 0.834,
         "rmse_min": 0.059,
-        "coverage90_min": 0.931,
+        "coverage90_min": 0.917,
         "recall_min_all": 0.963,
-        "f1_min_all": 0.798
+        "f1_min_all": 0.806
       },
       "optimised": {
-        "recall_min": 0.968,
-        "precision_min": 0.756,
-        "f1_min": 0.843,
-        "rmse_min": 0.079,
-        "coverage90_min": 0.921,
-        "recall_min_all": 0.967,
-        "f1_min_all": 0.804
+        "recall_min": 0.939,
+        "precision_min": 0.805,
+        "f1_min": 0.852,
+        "rmse_min": 0.081,
+        "coverage90_min": 0.898,
+        "recall_min_all": 0.953,
+        "f1_min_all": 0.826
       },
       "random": {
         "recall_min": 0.992,
-        "precision_min": 0.694,
-        "f1_min": 0.811,
+        "precision_min": 0.698,
+        "f1_min": 0.815,
         "rmse_min": 0.057,
-        "coverage90_min": 0.894,
+        "coverage90_min": 0.898,
         "recall_min_all": 0.988,
-        "f1_min_all": 0.822
+        "f1_min_all": 0.825
       }
     },
     "12": {
       "highest_demand": {
         "recall_min": 0.971,
-        "precision_min": 0.748,
-        "f1_min": 0.833,
+        "precision_min": 0.742,
+        "f1_min": 0.827,
         "rmse_min": 0.061,
-        "coverage90_min": 0.864,
+        "coverage90_min": 0.886,
         "recall_min_all": 0.967,
-        "f1_min_all": 0.797
+        "f1_min_all": 0.789
       },
       "optimised": {
-        "recall_min": 0.964,
-        "precision_min": 0.791,
-        "f1_min": 0.862,
-        "rmse_min": 0.1,
-        "coverage90_min": 0.821,
-        "recall_min_all": 0.958,
-        "f1_min_all": 0.812
+        "recall_min": 0.927,
+        "precision_min": 0.743,
+        "f1_min": 0.811,
+        "rmse_min": 0.103,
+        "coverage90_min": 0.886,
+        "recall_min_all": 0.916,
+        "f1_min_all": 0.749
       },
       "random": {
-        "recall_min": 0.884,
-        "precision_min": 0.815,
-        "f1_min": 0.836,
+        "recall_min": 0.897,
+        "precision_min": 0.82,
+        "f1_min": 0.845,
         "rmse_min": 0.046,
-        "coverage90_min": 0.978,
-        "recall_min_all": 0.887,
-        "f1_min_all": 0.825
+        "coverage90_min": 0.973,
+        "recall_min_all": 0.895,
+        "f1_min_all": 0.829
       }
     }
   },
   "route_scenario0_K8": [
     {
-      "junction": "12",
-      "hour": 16,
-      "p_below": 0.83,
-      "score": 0.773,
-      "reason": "P(daily min < 0.2) = 0.83 \u2014 likely violation, confirm it; sample at 16:00 where the band is widest by day; first site."
-    },
-    {
       "junction": "8",
       "hour": 14,
-      "p_below": 0.94,
-      "score": 0.744,
-      "reason": "P(daily min < 0.2) = 0.94 \u2014 likely violation, confirm it; sample at 14:00 where the band is widest by day; 1.3 km from the nearest other route site."
+      "p_below": 0.92,
+      "score": 0.778,
+      "reason": "P(daily min < 0.2) = 0.92 \u2014 likely violation, confirm it; sample at 14:00 where the band is widest by day; first site."
     },
     {
-      "junction": "25",
-      "hour": 17,
-      "p_below": 0.83,
-      "score": 0.676,
-      "reason": "P(daily min < 0.2) = 0.83 \u2014 likely violation, confirm it; sample at 17:00 where the band is widest by day; 0.7 km from the nearest other route site."
+      "junction": "12",
+      "hour": 16,
+      "p_below": 0.81,
+      "score": 0.768,
+      "reason": "P(daily min < 0.2) = 0.81 \u2014 likely violation, confirm it; sample at 16:00 where the band is widest by day; 1.3 km from the nearest other route site."
     },
     {
-      "junction": "16",
-      "hour": 12,
-      "p_below": 0.93,
-      "score": 0.492,
-      "reason": "P(daily min < 0.2) = 0.93 \u2014 likely violation, confirm it; sample at 12:00 where the band is widest by day; 0.6 km from the nearest other route site."
+      "junction": "27",
+      "hour": 9,
+      "p_below": 0.92,
+      "score": 0.642,
+      "reason": "P(daily min < 0.2) = 0.92 \u2014 likely violation, confirm it; sample at 09:00 where the band is widest by day; 1.1 km from the nearest other route site."
     },
     {
-      "junction": "11",
+      "junction": "23",
       "hour": 15,
-      "p_below": 0.91,
-      "score": 0.48,
-      "reason": "P(daily min < 0.2) = 0.91 \u2014 likely violation, confirm it; sample at 15:00 where the band is widest by day; 0.6 km from the nearest other route site."
-    },
-    {
-      "junction": "10",
-      "hour": 11,
-      "p_below": 0.96,
+      "p_below": 0.84,
       "score": 0.634,
-      "reason": "P(daily min < 0.2) = 0.96 \u2014 likely violation, confirm it; sample at 11:00 where the band is widest by day; 0.3 km from the nearest other route site."
+      "reason": "P(daily min < 0.2) = 0.84 \u2014 likely violation, confirm it; sample at 15:00 where the band is widest by day; 0.4 km from the nearest other route site."
     },
     {
       "junction": "20",
       "hour": 8,
-      "p_below": 0.95,
-      "score": 0.41,
-      "reason": "P(daily min < 0.2) = 0.95 \u2014 likely violation, confirm it; sample at 08:00 where the band is widest by day; 0.6 km from the nearest other route site."
+      "p_below": 0.94,
+      "score": 0.499,
+      "reason": "P(daily min < 0.2) = 0.94 \u2014 likely violation, confirm it; sample at 08:00 where the band is widest by day; 0.6 km from the nearest other route site."
     },
     {
-      "junction": "15",
-      "hour": 13,
-      "p_below": 0.89,
-      "score": 0.524,
-      "reason": "P(daily min < 0.2) = 0.89 \u2014 likely violation, confirm it; sample at 13:00 where the band is widest by day; 0.4 km from the nearest other route site."
+      "junction": "16",
+      "hour": 17,
+      "p_below": 0.92,
+      "score": 0.467,
+      "reason": "P(daily min < 0.2) = 0.92 \u2014 likely violation, confirm it; sample at 17:00 where the band is widest by day; 0.6 km from the nearest other route site."
+    },
+    {
+      "junction": "10",
+      "hour": 11,
+      "p_below": 0.95,
+      "score": 0.667,
+      "reason": "P(daily min < 0.2) = 0.95 \u2014 likely violation, confirm it; sample at 11:00 where the band is widest by day; 0.3 km from the nearest other route site."
+    },
+    {
+      "junction": "11",
+      "hour": 12,
+      "p_below": 0.9,
+      "score": 0.443,
+      "reason": "P(daily min < 0.2) = 0.90 \u2014 likely violation, confirm it; sample at 12:00 where the band is widest by day; 0.6 km from the nearest other route site."
     }
   ]
 }
