@@ -29,9 +29,9 @@ import numpy as np
 import pandas as pd
 import wntr
 
-from .chemistry import (ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TREF_C, TRUTH_SEED_OFFSET,
-                        Chemistry, Warming, apply_water_temperature, arrhenius, remove_epanet_files, toc_ratio,
-                        use_mg_per_litre)
+from .chemistry import (ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TOC_REF_MGL, TREF_C, TRUTH_SEED_OFFSET,
+                        Chemistry, Warming, apply_water_temperature, arrhenius, remove_epanet_files, set_bulk_kinetics,
+                        toc_ratio, use_mg_per_litre)
 
 DAY = 86400
 TRUTH_WALL_LAWS = ("theta_w", "arrhenius", "none")
@@ -358,14 +358,24 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
     dose per source); the new ones come from hidden_chem_draws (their own generator).
     At T = 20 C (or None), TOC = TOC_ref (or None) and first order, every factor is exactly 1 and the truth
     equals build_scenario(chem=None) bit for bit (a saved check).  kinetics 'first_si' runs the same first
-    order with the corrected unit recipe (chemistry.use_mg_per_litre); 'order2' and 'clark' arrive with the
-    tasks that use them, and a chloramine truth is refused until task 12 builds its decay physics.
+    order with the corrected unit recipe (chemistry.use_mg_per_litre); 'order2' arrives with task 12, and a
+    chloramine truth is refused until task 12 builds its decay physics.
+    kinetics 'clark' (task 11, Clark 1998, J Environ Eng 124(1):16): the bulk and tank reaction is EPANET order 2
+    with a limiting potential, dC/dt = -k2 C (C - CL), with CL = d - phi TOC (d the mean of the month's drawn source
+    doses, one CL per run, so one plant dose is assumed) and k2 = kb_per_day u f(T; E_true) / (phi TOC_ref): at
+    TOC_ref the initial apparent first-order rate k2 (d - CL) equals the committed truth's kb u f.  The decay slows
+    as the water ages, the residual responds nonlinearly to the dose, and when CL > 0 the bulk demand runs out.  The
+    wall stays first order as committed (it consumes chlorine, not organics: Clark's invariant does not hold at the
+    walls, which is acceptable for a truth generator).  Corrected units (use_mg_per_litre); no new draw.  In-network
+    warming with Clark kinetics is refused (not built).
     warming (task 10, V3): every pipe gets its own bulk coefficient and wall factor at its own temperature, every
     tank its own bulk coefficient, and the viscosity and diffusivity options are set at the flow-weighted mixed
     temperature (warming_temperatures); no extra draw is made."""
     chem.require_built()
-    if chem.kinetics not in ("first", "first_si"):
-        raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built yet (tasks 11 and 12)")
+    if chem.kinetics not in ("first", "first_si", "clark"):
+        raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built yet (task 12)")
+    if chem.kinetics == "clark" and warming is not None:
+        raise NotImplementedError("in-network warming with Clark kinetics is not built")
     hd = hidden_chem_draws(chem.disinfectant, seed)
     er_true, theta_w = hd["E_true_K"], hd["theta_w"]
     T = chem.temp_C
@@ -407,6 +417,14 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
         scale = 1.0
     else:
         scale = use_mg_per_litre(wn, doses)
+    clark = None
+    if chem.kinetics == "clark":     # task 11: replaces the first-order bulk and tank coefficient set above
+        # rounded to the 4 decimals WNTR's .inp writer keeps, so the record is exactly what EPANET runs
+        k2 = round(kb_per_day * u * fb / (chem.phi * TOC_REF_MGL), 4)
+        cl = round(float(np.mean(list(doses.values()))) - chem.phi * chem.toc_mgL, 4)
+        set_bulk_kinetics(wn, 2, -k2, cl)
+        clark = {"phi_mg_per_mgC": chem.phi, "k2_L_per_mg_day": k2, "limiting_mgL": cl,
+                 "bulk_demand_mgL": chem.phi * chem.toc_mgL}
     q = _run_quality(wn) * scale
     info = {"disinfectant": chem.disinfectant, "species": chem.species, "kinetics": chem.kinetics,
             "temp_C": T, "toc_mgL": chem.toc_mgL, "rng_seed": hd["rng_seed"],
@@ -415,6 +433,9 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
             "viscosity_ratio": v_ratio, "diffusivity_ratio": d_ratio,
             "kb_per_day_effective": kb_per_day * u * fb * tr,
             "source_doses_mgL": {k: float(v) for k, v in doses.items()}, "quality_scale": scale}
+    if clark is not None:   # TOC acts through CL, not as a rate factor; the initial apparent rate is k2 phi TOC
+        info.update(bulk_toc_factor=None, kb_per_day_effective=clark["k2_L_per_mg_day"] * clark["bulk_demand_mgL"],
+                    clark=clark)
     if wall_law != "theta_w":
         info["truth_wall_law"] = wall_law
     if wt is not None:

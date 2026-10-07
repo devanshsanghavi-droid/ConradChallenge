@@ -162,7 +162,8 @@ class Chemistry:
     disinfectant  : 'free_chlorine' (measured as free chlorine) or 'chloramine' (measured as total chlorine);
                     a chloramine truth or grid is refused (NotImplementedError) until task 12 builds its physics
     kinetics      : 'first' (the repo's path), 'first_si' (first order with the corrected unit recipe),
-                    'order2' and 'clark' (EPANET order 2, truth only; built in later tasks)
+                    'order2' and 'clark' (EPANET order 2, truth only; 'clark' is built in task 11 and needs
+                    toc_mgL and phi, 'order2' comes with task 12)
     temp_C        : water temperature; None = the file's own properties and the calibrated 20 C rates
     toc_mgL       : plant TOC; None = not logged (bulk rate unscaled)
     threshold_mgL : compliance threshold; None = 0.2 free chlorine / 0.5 total chlorine (see THRESHOLD_NOTE)
@@ -174,6 +175,10 @@ class Chemistry:
                     er_K, as before.  It is stored in canonical form, so a condition that is physically one of the
                     task-10 conditions IS that condition, with its cache tag and its cached grid: wall_er_K equal to
                     er_K is stored as None, and wall_er_K = 0 (f = 1 at every T) as wall_mode 'mass_transfer_only'.
+    phi           : task 11, kinetics 'clark' only (a hidden truth): mg of fast chlorine demand per mg of TOC, so the
+                    month's bulk demand is phi x toc_mgL and the limiting concentration is CL = dose - phi x toc_mgL
+                    (Clark 1998; simulate._chem_truth).  None for every other kinetics, and then left out of cache_tag,
+                    so every earlier tag is unchanged.
     """
     disinfectant: str = FREE_CHLORINE
     kinetics: str = "first"
@@ -183,10 +188,11 @@ class Chemistry:
     er_K: float = ER_DEFAULT_K
     wall_mode: str = "arrhenius"
     wall_er_K: float | None = None
+    phi: float | None = None
 
     def __post_init__(self):
         # numbers are stored as Python floats, so equal conditions (10, 10.0, numpy 10) share one cache_tag
-        for f in ("temp_C", "toc_mgL", "threshold_mgL", "er_K"):
+        for f in ("temp_C", "toc_mgL", "threshold_mgL", "er_K", "phi"):
             v = getattr(self, f)
             if v is not None:
                 object.__setattr__(self, f, float(v))
@@ -217,6 +223,13 @@ class Chemistry:
             raise ValueError(f"toc_mgL {self.toc_mgL} is outside (0, 20] mg/L")
         if self.threshold_mgL is not None and not (0.0 < self.threshold_mgL < 5.0):
             raise ValueError(f"threshold_mgL {self.threshold_mgL} is outside (0, 5) mg/L")
+        if self.kinetics == "clark":      # task 11: Clark's limiting concentration needs the month's TOC and phi
+            if self.toc_mgL is None or self.phi is None:
+                raise ValueError("kinetics 'clark' needs toc_mgL and phi (mg chlorine demand per mg TOC)")
+            if not (0.0 < self.phi <= 5.0):
+                raise ValueError(f"phi {self.phi} is outside (0, 5] mg Cl2 per mg C")
+        elif self.phi is not None:
+            raise ValueError("phi is the Clark truth's demand per mg TOC; it goes with kinetics 'clark' only")
 
     @property
     def species(self) -> str:
@@ -280,6 +293,8 @@ class Chemistry:
             parts.append("M1b")
         if self.wall_er_K is not None:
             parts.append(f"W{self.wall_er_K:g}")
+        if self.phi is not None:
+            parts.append(f"phi{self.phi:g}")
         return "_".join(parts)
 
     def with_(self, **kw) -> "Chemistry":
@@ -290,14 +305,15 @@ def cache_tag(cond: Chemistry | None, grid: str = "full", n_chars: int = 10) -> 
     """Short sha1 over everything that changes a cached grid: CHEM_CACHE_VERSION, the GRIDS contents of `grid`,
     FLOOR, HOURS, the quality step and run length, and the condition's kinetics, temperature, TOC, E/R, wall mode,
     wall E/R and disinfectant.  The threshold is left out on purpose: it does not change a simulated grid.  An unset
-    wall E/R (None, the wall following the bulk E/R) is left out too, so every task-10 tag is unchanged."""
+    wall E/R (None, the wall following the bulk E/R) is left out too, so every task-10 tag is unchanged, and so is an
+    unset phi (task 11's Clark truths carry one; a grid never does)."""
     from . import simgp, simulate      # lazy: simgp imports this module
     payload = {"version": CHEM_CACHE_VERSION, "grid": grid,
                "grid_axes": [list(map(float, ax)) for ax in simgp.GRIDS[grid]],
                "floor": simgp.FLOOR, "hours": list(simgp.HOURS),
                "quality_step_s": simulate.QUALITY_STEP_S, "duration_days": simulate.DURATION_DAYS,
                "cond": None if cond is None else {k: v for k, v in asdict(cond).items()
-                                                  if k != "threshold_mgL" and not (k == "wall_er_K" and v is None)}}
+                                                  if k != "threshold_mgL" and not (k in ("wall_er_K", "phi") and v is None)}}
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:n_chars]
 
 

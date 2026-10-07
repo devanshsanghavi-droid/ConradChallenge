@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 39,
+ "n_pass": 44,
  "n_fail": 0,
  "n_skipped": 0,
  "checks": [
@@ -562,6 +562,101 @@
      }
     },
     "net3_W2_seed16_V1_values_compared": 143,
+    "identical_to_6_significant_digits": true
+   }
+  },
+  {
+   "name": "clark_truth_condition_and_draws",
+   "group": "organics",
+   "pass": true,
+   "detail": {
+    "clark_label": "free_clark_T20_E8000_TOC3_phi0.85",
+    "Net3": {
+     "k2": 0.2373,
+     "CL_mgL": -0.5371,
+     "first_order_max_abs_dev_from_x1.25_mgL": 6.416812539100647e-06,
+     "clark_mean_daily_min_ratio_1.5_over_1.2": 1.2708184719085693
+    },
+    "Net2": {
+     "k2": 0.0593,
+     "CL_mgL": -0.4261,
+     "first_order_max_abs_dev_from_x1.25_mgL": 2.7894973754882812e-05,
+     "clark_mean_daily_min_ratio_1.5_over_1.2": 1.2761317491531372
+    }
+   }
+  },
+  {
+   "name": "toc_bank_and_model_nest_simgp24",
+   "group": "organics",
+   "pass": true,
+   "detail": {
+    "min_ln_gap_toc1.5_minus_toc3.0_decay_grid": 0.0,
+    "prior_0.25": {
+     "max_abs_diff_W": 9.540979117872439e-18,
+     "max_abs_diff_hourly_z_mu": 7.993605777301127e-15,
+     "max_abs_diff_hourly_z_sd": 5.623279619726418e-14
+    },
+    "prior_0.5": {
+     "max_abs_diff_W": 7.37257477290143e-18,
+     "max_abs_diff_hourly_z_mu": 7.549516567451064e-15,
+     "max_abs_diff_hourly_z_sd": 6.289413434501512e-14
+    },
+    "prior_0": {
+     "max_abs_diff_W": 1.3877787807814457e-17,
+     "max_abs_diff_hourly_z_mu": 4.884981308350689e-15,
+     "max_abs_diff_hourly_z_sd": 3.3584246494910985e-14
+    },
+    "dose_offset_max_abs_err": 3.007254445464014e-10,
+    "mean_ln_drop_toc3_vs_toc2": 0.06663338264089685
+   }
+  },
+  {
+   "name": "m2toc_bank_nests_m2",
+   "group": "organics",
+   "pass": true,
+   "detail": {
+    "min_ln_gap_toc2.0_minus_toc2.5_at_10.5C": 0.0,
+    "max_abs_diff_W": 0.0,
+    "max_abs_diff_hourly_z_mu": 0.0
+   }
+  },
+  {
+   "name": "toc_schedules_and_log",
+   "group": "organics",
+   "pass": true,
+   "detail": {
+    "mean_source_dose_by_month": [
+     1.249995,
+     1.491258,
+     1.497785
+    ],
+    "CL_by_month": [
+     -0.025,
+     0.2163,
+     0.2228
+    ]
+   }
+  },
+  {
+   "name": "organics_outputs_reproduce",
+   "group": "organics",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "T3_stop": true,
+     "csv_bytes": {
+      "organics_Net3.csv": 480737,
+      "organics_windows_Net3.csv": 117203
+     }
+    },
+    "Net2": {
+     "T3_stop": true,
+     "csv_bytes": {
+      "organics_Net2.csv": 212018,
+      "organics_windows_Net2.csv": 48857
+     }
+    },
+    "net3_O2_S_seed32_november_values_compared": 111,
     "identical_to_6_significant_digits": true
    }
   },

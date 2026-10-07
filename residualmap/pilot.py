@@ -16,7 +16,8 @@ plant_log.csv : month (YYYY-MM), temp_C                                      [op
                 With a plant log the model is seasonal.SeasonalSimGP24: every grab sample is explained at its own
                 month's water temperature and the held-out month is predicted at its own.  dose_mgL, when given, is
                 the month's plant dose; first-order decay makes it an exact offset against --dose.  toc_mgL is carried
-                for task 11 and not used yet.
+                and not used: task 11 tested a TOC-aware model in simulation (residualmap/organics.py) and it stopped
+                at its pre-registered stop rule, so it is not wired in (journal, task 11).
 """
 from __future__ import annotations
 
@@ -65,6 +66,10 @@ def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, r
     month m's truth is build_scenario(chem=Chemistry(temp_C=...), warming=Warming(soil_temp_C=...) when a soil
     temperature is given); every reading carries its month's logged plant temperature (temp_C); and the plant log
     (month, temp_C, toc_mgL, dose_mgL; TOC not logged here, the dose is the set point) comes back as a third item.
+    Task 11: a schedule month may also give 'toc_mgL' (the plant TOC: the truth's Chemistry gets it, every reading of
+    the month carries it, and the plant log logs it), 'kinetics' and 'phi' (the truth's kinetics, e.g. 'clark' with its
+    demand per mg TOC; default first order) and 'dose_mgL' (the month's plant dose: the truth runs at that dose, and the
+    readings and the plant log carry it).  A schedule without these keys gives task 10's log, draw for draw.
     return_truth=True appends a list with each month's truth: month (1-based), month_seed, truth_by_hour,
     truth_daily_min and chem (the truth's chemistry and hidden draws; None on the committed path)."""
     rng = np.random.default_rng(seed)
@@ -86,10 +91,13 @@ def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, r
             cond = schedule[m]
             ms = 1000 + 100 * seed + m
             warm = Warming(soil_temp_C=cond["soil_temp_C"]) if cond.get("soil_temp_C") is not None else None
-            sc = build_scenario(network, seed=seed, month_seed=ms, chem=Chemistry(temp_C=cond["temp_C"]),
-                                warming=warm, **truth_kw)
-            plant.append({"month": label, "temp_C": float(cond["temp_C"]), "toc_mgL": float("nan"),
-                          "dose_mgL": float(truth_kw.get("source_dose", 1.2))})
+            chem = Chemistry(temp_C=cond["temp_C"], toc_mgL=cond.get("toc_mgL"), kinetics=cond.get("kinetics", "first"),
+                             phi=cond.get("phi"))
+            kw_m = dict(truth_kw, source_dose=float(cond["dose_mgL"])) if cond.get("dose_mgL") is not None else truth_kw
+            sc = build_scenario(network, seed=seed, month_seed=ms, chem=chem, warming=warm, **kw_m)
+            plant.append({"month": label, "temp_C": float(cond["temp_C"]),
+                          "toc_mgL": float(cond["toc_mgL"]) if cond.get("toc_mgL") is not None else float("nan"),
+                          "dose_mgL": float(kw_m.get("source_dose", 1.2))})
         others = [j for j in sc.junctions if j not in taps]
         rot = list(rng.choice(others, rotating, replace=False)) if rotating else []
         for k, j in enumerate(taps + rot):
@@ -99,6 +107,9 @@ def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, r
                    "tap_id": f"T{k + 1}" if k < per_month else f"V{m + 1}-{k - per_month + 1}"}
             if schedule is not None:
                 row["temp_C"] = float(schedule[m]["temp_C"])
+                for key in ("toc_mgL", "dose_mgL"):      # task 11; absent from task 10's schedules
+                    if schedule[m].get(key) is not None:
+                        row[key] = float(schedule[m][key])
             rows.append(row)
         if return_truth:
             truths.append({"month": m + 1, "month_seed": ms, "truth_by_hour": sc.truth_by_hour,

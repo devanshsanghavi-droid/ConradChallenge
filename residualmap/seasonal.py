@@ -306,7 +306,16 @@ class SeasonalSimGP24(SimGP24):
         model.set_target(12.5); model.predict_daily_min()       # the same fit, another month
 
     samples: junction, hour, y (mg/L), temp_C (the plant temperature of the sample's month) and optionally
-    dose_ratio (the month's logged plant dose over the model's dose; first order makes it an exact ln-offset)."""
+    dose_ratio (the month's logged plant dose over the model's dose; first order makes it an exact ln-offset).
+    Subclasses may read another column (condition_column) with another key (_condition_key): task 11's TOC model
+    (organics.TocSimGP24) reads toc_mgL, and its seasonal ablation a condition label.  For this class both are
+    unchanged from task 10 (temp_C, rounded by _tkey)."""
+
+    condition_column = "temp_C"      # the samples' column naming each sample's bank condition
+
+    @staticmethod
+    def _condition_key(value):
+        return _tkey(value)
 
     def __init__(self, sc, X, bank: Bank, prior: str = "uniform", seed: int = 0, lik_sd: float = LIK_SD,
                  cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
@@ -340,11 +349,13 @@ class SeasonalSimGP24(SimGP24):
         self.zmin_ = None
         if samples is None or len(samples) == 0:
             return self.fit_prior(target_temp_C, target_dose_ratio)
-        if "temp_C" not in samples:
-            raise ValueError("samples need a temp_C column: the plant water temperature of each sample's month")
+        col = self.condition_column
+        if col not in samples:
+            raise ValueError(f"samples need a {col} column: " + ("the plant water temperature of each sample's month"
+                                                                  if col == "temp_C" else "each sample's bank condition"))
         idx = np.array([self.jidx[j] for j in samples.junction])
         h = samples.hour.astype(int).values
-        temps = np.array([_tkey(t) for t in samples.temp_C.astype(float).values])
+        temps = np.array([self._condition_key(t) for t in samples[col].values])
         ratio = samples["dose_ratio"].astype(float).values if "dose_ratio" in samples else np.ones(len(samples))
         if not (np.isfinite(ratio).all() and (ratio > 0).all()):
             raise ValueError("dose_ratio must be positive")
@@ -379,7 +390,7 @@ class SeasonalSimGP24(SimGP24):
     def set_target(self, temp_C: float, dose_ratio: float = 1.0) -> "SeasonalSimGP24":
         """Predict the month at temp_C (with the month's plant dose over the model's dose): the same posterior and GP,
         the bank's blocks at that temperature."""
-        self.target_temp_C, self.target_dose_ratio = _tkey(temp_C), float(dose_ratio)
+        self.target_temp_C, self.target_dose_ratio = self._condition_key(temp_C), float(dose_ratio)
         self.Z = self.bank.stack(temp_C)
         self._grp_mean, self.zmin_ = None, None
         self.offs_ = self.offs_base_ + math.log(dose_ratio)

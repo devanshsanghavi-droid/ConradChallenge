@@ -1,9 +1,9 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
 
-    python -m residualmap.checks            # every check, about 75 to 80 s on this machine (39 checks, task 10b)
+    python -m residualmap.checks            # every check, about 125 s on this machine (44 checks, task 11)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
-                                            # seasonal checks (about 15 s)
+                                            # seasonal and organics checks (about 23 s)
 
 Plain asserts on purpose (pytest is not in .venv).  Exits non-zero if any check fails.  A full run writes
 outputs/chem/checks_report.json, which holds only results that do not change from run to run (no dates, timings
@@ -1164,6 +1164,239 @@ def season2_outputs_reproduce():
                 bad[c] = (g[c[len(model) + 1:]], wrow[c])
     assert not bad, bad
     return {**out, "net3_W2_seed16_V1_values_compared": n, "identical_to_6_significant_digits": not bad}
+
+
+# ----------------------------------------------------------------------------- task 11: organics (TOC)
+@check("organics")
+def clark_truth_condition_and_draws():
+    """Task 11's truth side.  Chemistry: kinetics 'clark' needs toc_mgL and phi, phi goes with 'clark' only, and an unset
+    phi leaves every earlier cache tag as it was (the committed T12.5/E8000 tag).  On Net3 and Net2 (seed 0, month seed
+    1000, 20 C, TOC 2.0), a Clark truth consumes the committed draws exactly as the first-order truth does (the same
+    bulk month factor and source doses, and the same water age on the truth's network, so no draw moved) and records
+    k2 = kb u / (phi TOC_ref) and CL = mean dose - phi TOC, each rounded to the 4 decimals the .inp keeps.  The dose
+    response: with every draw the same and the plant dose 1.5 instead of 1.2 mg/L, first-order chlorine scales by
+    exactly 1.25 (to 5e-5 mg/L: EPANET's quality tolerance in the legacy units is 1e-5 mg/L; the first run measured
+    6.4e-6 mg/L against a 1e-6 bar set before any measurement) and Clark chlorine does not (its mean daily minimum
+    moves by a ratio more than 0.01 away from 1.25).  Clark with in-network warming is refused."""
+    from .chemistry import TOC_REF_MGL, Chemistry, Warming, cache_tag
+    from .simulate import build_scenario
+    for bad in ({"kinetics": "clark"}, {"kinetics": "clark", "toc_mgL": 2.0}, {"phi": 0.5},
+                {"kinetics": "clark", "toc_mgL": 2.0, "phi": 0.0}):
+        try:
+            Chemistry(**bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"Chemistry accepted {bad}")
+    assert cache_tag(Chemistry(temp_C=12.5)) == TASK10_TAG_T12_5_E8000
+    out = {"clark_label": Chemistry(kinetics="clark", toc_mgL=3.0, phi=0.85, temp_C=20.0).label()}
+    for net in ("Net3", "Net2"):
+        kw = TRUTHS[net]
+        kb = kw.get("kb_per_day", 0.40)
+        f = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=20.0, toc_mgL=2.0), truth_age=True, **kw)
+        c = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=20.0, toc_mgL=2.0, kinetics="clark", phi=0.85),
+                           truth_age=True, **kw)
+        assert c.chem["bulk_month_factor"] == f.chem["bulk_month_factor"] and c.chem["source_doses_mgL"] == f.chem["source_doses_mgL"]
+        assert np.array_equal(c.truth_age_by_hour_h.values, f.truth_age_by_hour_h.values), net
+        cl = c.chem["clark"]
+        u, d = c.chem["bulk_month_factor"], float(np.mean(list(c.chem["source_doses_mgL"].values())))
+        assert cl["k2_L_per_mg_day"] == round(kb * u / (0.85 * TOC_REF_MGL), 4) and cl["limiting_mgL"] == round(d - 0.85 * 2.0, 4)
+        ratios = {}
+        for kin, phi in (("first", None), ("clark", 0.85)):
+            lo = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=20.0, toc_mgL=3.0, kinetics=kin, phi=phi),
+                                **kw).truth_by_hour
+            hi = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=20.0, toc_mgL=3.0, kinetics=kin, phi=phi),
+                                **{**kw, "source_dose": 1.5}).truth_by_hour
+            ratios[kin] = (float((hi - 1.25 * lo).abs().values.max()), float(hi.min().mean() / lo.min().mean()))
+        assert ratios["first"][0] < 5e-5, ratios
+        assert abs(ratios["clark"][1] - 1.25) > 0.01, ratios
+        out[net] = {"k2": cl["k2_L_per_mg_day"], "CL_mgL": cl["limiting_mgL"],
+                    "first_order_max_abs_dev_from_x1.25_mgL": ratios["first"][0],
+                    "clark_mean_daily_min_ratio_1.5_over_1.2": ratios["clark"][1]}
+    try:
+        build_scenario("Net3", 0, chem=Chemistry(temp_C=15.0, toc_mgL=2.0, kinetics="clark", phi=0.85),
+                       warming=Warming(soil_temp_C=18.0))
+    except NotImplementedError:
+        pass
+    else:
+        raise AssertionError("Clark kinetics with in-network warming was accepted")
+    return out
+
+
+@check("organics")
+def toc_bank_and_model_nest_simgp24():
+    """The TOC bank (decay grid, built in memory): its block at TOC_ref IS the committed grid, its TOC 3.0 block equals a
+    direct build of Chemistry(toc_mgL=3.0) bit for bit, and chlorine never rises with TOC (3.0 <= 1.5 everywhere).
+    M_TOC (full grid; no TOC block is needed) fitted on Net3 scenario 0's 8 samples logged at TOC 2.0: its posterior is
+    SimGP24's split as the prior (H0 1/4, H_TOC 3/4) and stays there, its MAP member and hourly predictions are SimGP24's
+    (to 1e-10), under every prior; the logged dose is an exact ln-offset.  Direction (the TOC 3.0 block read from
+    outputs/cache when the experiment cached it, else built in memory and never written): told the month's TOC is 3.0
+    instead of 2.0, M_TOC predicts less chlorine at every junction and hour."""
+    from .organics import TOC_PRIOR, TocBank, TocSimGP24, toc_bank, toc_condition
+    from .simgp import build_grid_24h, simulator_grid_24h
+    from .simulate import nominal_scenario
+    sc0 = nominal_scenario("Net3")
+    tb = toc_bank(sc0, [1.5, 2.0, 3.0], grid="decay", cache_dir=CACHE, cache="off")
+    p0, Z0 = simulator_grid_24h(sc0, CACHE, "decay")
+    assert isinstance(tb, TocBank) and tb.hypotheses == ("H0", "TOC") and tb.tocs == [1.5, 2.0, 3.0]
+    assert tb.blocks[(2.0, "TOC")] is tb.h0 and np.array_equal(tb.h0, Z0)
+    assert np.array_equal(tb.blocks[(3.0, "TOC")], build_grid_24h(sc0, "decay", cond=toc_condition(3.0))[1])
+    gap = float((tb.blocks[(1.5, "TOC")] - tb.blocks[(3.0, "TOC")]).min())
+    assert gap >= -1e-6, gap
+    sc, X, S, m = _fitted_net3()
+    full = toc_bank(sc, [2.0], cache_dir=CACHE, cache="read")
+    s2 = S.assign(toc_mgL=2.0)
+    out = {"min_ln_gap_toc1.5_minus_toc3.0_decay_grid": gap}
+    for prior in (None, (0.5, 0.5), (0.0, 1.0)):
+        mt = TocSimGP24(sc, X, full, prior_mass=prior, seed=0, cache_dir=CACHE).fit(s2, target_toc_mgL=2.0)
+        p = np.asarray(TOC_PRIOR if prior is None else prior)
+        dW = max(float(np.abs(mt.W_.reshape(2, len(m.params), -1)[b] - p[b] * m.W_).max()) for b in range(2))
+        a, b = m.predict_hours(), mt.predict_hours()
+        d_mu, d_sd = float(np.abs(a[0] - b[0]).max()), float(np.abs(a[1] - b[1]).max())
+        assert dW < 1e-15 and d_mu < 1e-10 and d_sd < 1e-10, (prior, dW, d_mu, d_sd)
+        assert abs(mt.p_h0() - p[0]) < 1e-12 and mt.map_params_ == m.map_params_
+        out[f"prior_{p[0]:g}"] = {"max_abs_diff_W": dW, "max_abs_diff_hourly_z_mu": d_mu, "max_abs_diff_hourly_z_sd": d_sd}
+    Sa = s2[s2.y >= 0.02]
+    m1 = TocSimGP24(sc, X, full, seed=0, cache_dir=CACHE).fit(Sa, target_toc_mgL=2.0)
+    m2 = TocSimGP24(sc, X, full, seed=0, cache_dir=CACHE).fit(Sa.assign(y=Sa.y * 2, dose_ratio=2.0), target_toc_mgL=2.0,
+                                                               target_dose_ratio=2.0)
+    d_dose = float(np.abs(m2.predict_hours()[0] - m1.predict_hours()[0] - np.log(2.0)).max())
+    assert d_dose < 1e-8, d_dose
+    tb3 = toc_bank(sc, [2.0, 3.0], cache_dir=CACHE, cache="read")
+    mt = TocSimGP24(sc, X, tb3, seed=0, cache_dir=CACHE).fit(s2, target_toc_mgL=2.0)
+    h2 = mt.predict_hours()[0]
+    h3 = mt.set_target(3.0).predict_hours()[0]
+    assert (h3 <= h2 + 1e-12).all() and (h3.mean(axis=0) < h2.mean(axis=0)).all()
+    return {**out, "dose_offset_max_abs_err": d_dose, "mean_ln_drop_toc3_vs_toc2": float((h2 - h3).mean())}
+
+
+@check("organics", quick=False)
+def m2toc_bank_nests_m2():
+    """The secondary test's bank and model (decay grid, built in memory, never cached): at TOC_ref a (temperature, TOC)
+    condition is M2's block (the same array), at 20 C it is the TOC bank's block, and a (10.5 C, TOC 2.5) block equals a
+    direct build of Chemistry(temp_C=10.5, er_K=8000, toc_mgL=2.5) bit for bit and has at most the TOC 2.0 block's
+    chlorine.  M2_TOC fitted on samples whose months all sit at TOC_ref is M2: the same posterior and hourly predictions."""
+    from .chemistry import Chemistry
+    from .organics import M2TocSimGP24, cond_key, m2toc_bank, toc_bank
+    from .seasonal import WallSeasonalSimGP24
+    from .simgp import build_grid_24h
+    sc, X, S, _ = _fitted_net3()
+    tb = toc_bank(sc, [1.5, 2.0], grid="decay", cache_dir=CACHE, cache="off")
+    kb, m2 = m2toc_bank(sc, [(10.5, 2.0), (10.5, 2.5), (20.0, 1.5)], tb, grid="decay", cache_dir=CACHE)
+    k20, k25, k_hot = cond_key(10.5, 2.0), cond_key(10.5, 2.5), cond_key(20.0, 1.5)
+    assert all(kb.blocks[(k20, p)] is m2.blocks[(10.5, p)] for p in kb.ers)
+    assert all(kb.blocks[(k_hot, p)] is tb.blocks[(1.5, "TOC")] for p in kb.ers)
+    direct = build_grid_24h(sc, "decay", cond=Chemistry(temp_C=10.5, er_K=8000.0, toc_mgL=2.5))[1]
+    assert np.array_equal(kb.blocks[(k25, (8000.0, 8000.0))], direct)
+    gap = min(float((kb.blocks[(k20, p)] - kb.blocks[(k25, p)]).min()) for p in kb.ers)
+    assert gap >= -1e-6, gap
+    s = S.assign(temp_C=10.5, cond_key=k20)
+    a = WallSeasonalSimGP24(sc, X, m2, seed=0, cache_dir=CACHE).fit(s[["junction", "hour", "y", "temp_C"]], target_temp_C=10.5)
+    b = M2TocSimGP24(sc, X, kb, seed=0, cache_dir=CACHE).fit(s[["junction", "hour", "y", "cond_key"]], target_temp_C=k20)
+    dW = float(np.abs(a.W_ - b.W_).max())
+    ha, hb = a.predict_hours(), b.predict_hours()
+    d_mu, d_sd = float(np.abs(ha[0] - hb[0]).max()), float(np.abs(ha[1] - hb[1]).max())
+    assert dW < 1e-15 and d_mu < 1e-10 and d_sd < 1e-10, (dW, d_mu, d_sd)
+    return {"min_ln_gap_toc2.0_minus_toc2.5_at_10.5C": gap, "max_abs_diff_W": dW, "max_abs_diff_hourly_z_mu": d_mu}
+
+
+@check("organics")
+def toc_schedules_and_log():
+    """The organics schedules and log: S follows chemistry.monthly_toc, C is TOC_ref every month, D steps the plant dose
+    from 1.2 to 1.5 mg/L in July, the temperature is 20 C throughout (task 10's V1 schedule for the secondary test);
+    O2 and O3 carry kinetics 'clark' and their phi.  A 3-month O2 log under D: every reading carries its month's TOC and
+    dose, the plant log logs both, each month's truth is Clark with that TOC and dose, and task 10's schedules still give
+    readings with no TOC or dose column."""
+    from .chemistry import monthly_temperature, monthly_toc
+    from .organics import DOSE_STEP, TRUTHS, toc_schedule
+    from .pilot import synthetic_log
+    from .seasonal import plant_schedule
+    s, c, d = toc_schedule("O1", "S"), toc_schedule("O2", "C"), toc_schedule("O2", "D")
+    assert [x["toc_mgL"] for x in s] == [monthly_toc(m) for m in range(1, 13)] and all(x["temp_C"] == 20.0 for x in s)
+    assert all(x["toc_mgL"] == 2.0 for x in c) and "kinetics" not in s[0] and c[0]["kinetics"] == "clark"
+    assert [x["dose_mgL"] for x in d] == [1.2] * (DOSE_STEP[0] - 1) + [1.5] * (13 - DOSE_STEP[0])
+    assert toc_schedule("O3", "S")[0]["phi"] == TRUTHS["O3"]["phi"] == 0.5
+    assert [x["temp_C"] for x in toc_schedule("O2", "S", seasonal=True)] == [monthly_temperature(m) for m in range(1, 13)]
+    sched = d[5:8]          # June (1.2 mg/L), July and August (1.5 mg/L)
+    log, net, plant, truths = synthetic_log("Net3", months=3, seed=2, schedule=sched, return_truth=True)
+    assert plant.toc_mgL.tolist() == [1.5, 1.5, 1.5] and plant.dose_mgL.tolist() == [1.2, 1.5, 1.5]
+    assert (log.toc_mgL == 1.5).all() and log.groupby("month").dose_mgL.first().tolist() == [1.2, 1.5, 1.5]
+    assert all(t["chem"]["kinetics"] == "clark" and t["chem"]["clark"]["phi_mg_per_mgC"] == 0.85 for t in truths)
+    doses = [np.mean(list(t["chem"]["source_doses_mgL"].values())) for t in truths]
+    assert 1.08 <= doses[0] <= 1.32 and 1.35 <= doses[1] <= 1.65
+    log10 = synthetic_log("Net3", months=1, seed=2, schedule=plant_schedule("V1"))[0]
+    assert "toc_mgL" not in log10 and "dose_mgL" not in log10
+    return {"mean_source_dose_by_month": [round(float(x), 6) for x in doses],
+            "CL_by_month": [t["chem"]["clark"]["limiting_mgL"] for t in truths]}
+
+
+ORGANICS_ROWS_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap.organics import ALL_TOCS, run_task, toc_bank
+from residualmap.simulate import nominal_scenario
+cache = sys.argv[1]
+sc = nominal_scenario("Net3")
+tb = toc_bank(sc, ALL_TOCS, cache_dir=cache, cache="read")
+res = run_task("Net3", 32, "O2", "S", {"TOC": tb}, cache, targets=(11,), models={"B0", "M_TOC", "oracle"},
+               extrapolate=False)
+def conv(v):
+    return v if isinstance(v, (str, bool)) else float(v)
+print("ORGANICS_ROWS_JSON " + json.dumps([{k: conv(v) for k, v in r.items()} for r in res["rows"]]))
+'''
+
+
+@check("organics", quick=False)
+def organics_outputs_reproduce():
+    """Task 11's committed outputs: summary_organics_<net>.json for Net3 and Net2 carries the acceptance key (T1, T2, N,
+    T3, D, G, adoption) and its CSVs exist and are under 1 MB; recomputing Net3 seed 32, truth O2, schedule S, the
+    first-storm month (November, fitted on August to October; B0, M_TOC and the oracle) in a single-threaded subprocess
+    gives the committed rows (one month, so the aggregated row is that month's) and the November row of the windows file,
+    to the CSVs' 6 significant digits."""
+    from .organics import CSV_FLOAT, SUM_COLS
+    out = {}
+    for net in SEASON_NETS:
+        d = json.load(open(os.path.join(OUT_DIR, f"summary_organics_{net}.json")))
+        assert all(k in d["acceptance"] for k in ("T1", "T2", "N", "T3", "D", "G", "adoption")), net
+        sizes = {f: os.path.getsize(os.path.join(OUT_DIR, f)) for f in (f"organics_{net}.csv", f"organics_windows_{net}.csv")}
+        assert all(v < 1_000_000 for v in sizes.values()), sizes
+        out[net] = {"T3_stop": d["acceptance"]["T3"]["stop"], "csv_bytes": sizes}
+    r = subprocess.run([PY, "-c", ORGANICS_ROWS_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV})
+    line = [x for x in r.stdout.splitlines() if x.startswith("ORGANICS_ROWS_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"recompute failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    rows = pd.DataFrame(json.loads(line[-1][len("ORGANICS_ROWS_JSON "):]))
+    agg = pd.read_csv(os.path.join(OUT_DIR, "organics_Net3.csv"), float_precision="round_trip")
+    win = pd.read_csv(os.path.join(OUT_DIR, "organics_windows_Net3.csv"), float_precision="round_trip")
+
+    def same(a, b):
+        if pd.isna(a) and pd.isna(b):
+            return True
+        return float(CSV_FLOAT % float(a)) == float(b)
+    bad, n = {}, 0
+    for model in ("B0", "M_TOC", "oracle"):
+        got = rows[rows.model == model]
+        want = agg[(agg.truth == "O2") & (agg.variant == "S") & (agg.test == "rolling") & (agg.seed == 32)
+                   & (agg.cls == "first_storm") & (agg.model == model)]
+        assert len(got) == 1 and len(want) == 1 and int(want.n_months.iloc[0]) == 1, (model, len(got), len(want))
+        for c in SUM_COLS:
+            n += 1
+            if not same(got[c].iloc[0], want[c].iloc[0]):
+                bad[f"{model}.{c}"] = (got[c].iloc[0], want[c].iloc[0])
+    wrow = win[(win.truth == "O2") & (win.variant == "S") & (win.seed == 32) & (win.month == 11)].iloc[0]
+    for model in ("B0", "M_TOC"):
+        g = rows[rows.model == model].iloc[0]
+        for c in [c for c in win.columns if c.startswith(f"{model}_")]:
+            n += 1
+            v, w = g[c[len(model) + 1:]], wrow[c]
+            if isinstance(v, str) or isinstance(w, str):
+                ok = str(v) == str(w)
+            else:
+                ok = same(v, w)
+            if not ok:
+                bad[c] = (v, w)
+    assert not bad, bad
+    return {**out, "net3_O2_S_seed32_november_values_compared": n, "identical_to_6_significant_digits": not bad}
 
 
 # ----------------------------------------------------------------------------- full-run anchors

@@ -1,0 +1,1976 @@
+{
+ "generated_by": "python -m residualmap.organics Net3 16 --seasonal",
+ "network": "Net3",
+ "seeds": [
+  32,
+  33,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47
+ ],
+ "about": "Simulation only (task 11, the secondary test of the plan's addendum 2; reported, no bar). Truth O2 (Clark chlorine-organics kinetics) on task 10's seasonal truth: the assumed plant temperature schedule (V1), the truth's own bulk Arrhenius E/R, task 10's weak wall response (W1), and the assumed TOC schedule. The ladder B0 (today) -> M2 (task 10b's temperature model, TOC-blind; not adopted) -> M2_TOC (M2 with every bulk rate also times TOC / 2.0), with M_TOC (TOC only, temperature-blind) beside them.",
+ "settings": {
+  "months": 12,
+  "route_taps": 10,
+  "rotating_taps": 3,
+  "noise_sd_mgL": 0.03,
+  "sampling_hours": [
+   7,
+   17
+  ],
+  "threshold_mgL": 0.2,
+  "fixed_temperature_C": 20.0,
+  "toc_ref_mgL": 2.0,
+  "month_seed": "1000 + 100 seed + month index (pilot.synthetic_log with a schedule)",
+  "truths": {
+   "O2": "Clark: dC/dt = -k2 u_m C (C - CL_m), CL_m = d_m - 0.85 TOC_m, k2 = kb_net / 1.7 (ASSUMPTIONS)"
+  },
+  "variants": {
+   "S": "the assumed TOC schedule (chemistry.monthly_toc)"
+  },
+  "toc_schedule_ASSUMPTION": [
+   2.5,
+   2.5,
+   2.5,
+   2.0,
+   1.5,
+   1.5,
+   1.5,
+   1.5,
+   1.5,
+   1.5,
+   3.0,
+   2.5
+  ],
+  "dose_step": [
+   7,
+   1.5
+  ],
+  "M_TOC": "hypotheses H0 (today's grid) and H_TOC (bulk rates times TOC_m / 2.0); prior H0 1/4, H_TOC 3/4",
+  "sensitivity_priors": {
+   "M_TOC_h0half": [
+    0.5,
+    0.5
+   ],
+   "M_TOC_linear": [
+    0.0,
+    1.0
+   ]
+  },
+  "classes": {
+   "falling": [
+    4,
+    5,
+    6,
+    7
+   ],
+   "steady": [
+    8,
+    9,
+    10
+   ],
+   "first_storm": [
+    11
+   ],
+   "after_storm": [
+    12
+   ]
+  },
+  "rolling_targets": [
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12
+  ],
+  "extrapolation": {
+   "jan_mar_to_jul_sep": [
+    [
+     1,
+     2,
+     3
+    ],
+    [
+     7,
+     8,
+     9
+    ]
+   ]
+  },
+  "stop_classes": [
+   [
+    "rolling",
+    "falling"
+   ],
+   [
+    "rolling",
+    "steady"
+   ],
+   [
+    "rolling",
+    "first_storm"
+   ],
+   [
+    "rolling",
+    "after_storm"
+   ],
+   [
+    "jan_mar_to_jul_sep",
+    "all_months"
+   ]
+  ],
+  "map_junctions": "every junction not sampled in the 3-month window, the same set for every model",
+  "age_terciles": "by the operator's nominal daily-mean water age over all junctions (1 youngest, 3 oldest)",
+  "oracle": "the best single member and dose of M_TOC's bank at the target month's TOC (times the logged dose)",
+  "bootstrap": {
+   "resamples": 2000,
+   "rng_seed": 2026,
+   "unit": "seed"
+  },
+  "csv": {
+   "float_format": "%.6g",
+   "aggregated_over": "the target months of each class"
+  },
+  "truth": {
+   "source_dose": 1.2,
+   "kb_per_day": 0.4,
+   "kw_m_per_day": 0.7,
+   "hidden_draws": "per scenario: bulk rate x U(0.8, 1.2); per pipe: wall rate x roughness factor (gamma = 1) x lognormal(0, 0.4) and Hazen-Williams C x lognormal(0, 0.10); demand x U(0.85, 1.15) globally and x lognormal(0, 0.15) per junction; dose x U(0.9, 1.1) per source (simulate.build_scenario)",
+   "E_true_K_range": [
+    4660.0,
+    12104.0
+   ],
+   "theta_w_range_ASSUMPTION": [
+    1.0,
+    1.07
+   ],
+   "warming_tau_h_ASSUMPTION": {
+    "pipe": 12.0,
+    "tank": 72.0
+   },
+   "chemistry_draws": "default_rng(20000 + seed): E_true, theta_w (simulate.hidden_chem_draws)"
+  },
+  "temperature_schedule_ASSUMPTION": [
+   10.5,
+   10.0,
+   10.5,
+   12.5,
+   15.0,
+   17.5,
+   19.5,
+   20.0,
+   19.5,
+   17.5,
+   15.0,
+   12.5
+  ],
+  "models": [
+   "B0",
+   "M2",
+   "M_TOC",
+   "M2_TOC",
+   "oracle"
+  ],
+  "M2_TOC_new_blocks_in_memory": 105,
+  "wall_world": "W1, task 10's weak wall theta_w^(T - 20), theta_w ~ U(1.00, 1.07) (an ASSUMPTION)"
+ },
+ "pooled": {
+  "O2": {
+   "S": {
+    "jan_mar_to_jul_sep": {
+     "all_months": {
+      "B0": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.151533,
+        "mae": 0.124571,
+        "n_low": 58,
+        "recall": 0.344828,
+        "false_alarms": 2,
+        "precision": 0.909091,
+        "coverage50": 0.225962,
+        "coverage80": 0.408654,
+        "coverage90": 0.509615,
+        "coverage95": 0.586538,
+        "n_seen": 497,
+        "coverage90_seen": 0.484909,
+        "n_new": 127,
+        "coverage90_new": 0.606299
+       },
+       "daily_min_map": {
+        "n": 3528,
+        "rmse": 0.0890563,
+        "mae": 0.067593,
+        "bias": 0.00952769,
+        "coverage90": 0.84042,
+        "n_low": 1056,
+        "recall": 0.905303,
+        "false_alarms": 184,
+        "precision": 0.838596,
+        "by_age_tercile": {
+         "1": {
+          "n": 1191,
+          "rmse": 0.105518,
+          "bias": 0.031469
+         },
+         "2": {
+          "n": 1131,
+          "rmse": 0.0774883,
+          "bias": 0.0337285
+         },
+         "3": {
+          "n": 1206,
+          "rmse": 0.0810848,
+          "bias": -0.0348365
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.119421,
+        "mae": 0.0862532,
+        "n_low": 58,
+        "recall": 0.948276,
+        "false_alarms": 51,
+        "precision": 0.518868,
+        "coverage50": 0.63141,
+        "coverage80": 0.887821,
+        "coverage90": 0.956731,
+        "coverage95": 0.980769,
+        "n_seen": 497,
+        "coverage90_seen": 0.947686,
+        "n_new": 127,
+        "coverage90_new": 0.992126
+       },
+       "daily_min_map": {
+        "n": 3528,
+        "rmse": 0.126986,
+        "mae": 0.107082,
+        "bias": -0.104814,
+        "coverage90": 0.81576,
+        "n_low": 1056,
+        "recall": 0.995265,
+        "false_alarms": 570,
+        "precision": 0.648365,
+        "by_age_tercile": {
+         "1": {
+          "n": 1191,
+          "rmse": 0.129587,
+          "bias": -0.102768
+         },
+         "2": {
+          "n": 1131,
+          "rmse": 0.12373,
+          "bias": -0.105573
+         },
+         "3": {
+          "n": 1206,
+          "rmse": 0.127406,
+          "bias": -0.106123
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.111657,
+        "mae": 0.0798748,
+        "n_low": 58,
+        "recall": 0.913793,
+        "false_alarms": 40,
+        "precision": 0.569892,
+        "coverage50": 0.657051,
+        "coverage80": 0.911859,
+        "coverage90": 0.963141,
+        "coverage95": 0.982372,
+        "n_seen": 497,
+        "coverage90_seen": 0.955734,
+        "n_new": 127,
+        "coverage90_new": 0.992126
+       },
+       "daily_min_map": {
+        "n": 3528,
+        "rmse": 0.115025,
+        "mae": 0.0952322,
+        "bias": -0.0911876,
+        "coverage90": 0.860544,
+        "n_low": 1056,
+        "recall": 0.992424,
+        "false_alarms": 492,
+        "precision": 0.680519,
+        "by_age_tercile": {
+         "1": {
+          "n": 1191,
+          "rmse": 0.120513,
+          "bias": -0.0894129
+         },
+         "2": {
+          "n": 1131,
+          "rmse": 0.111294,
+          "bias": -0.0914136
+         },
+         "3": {
+          "n": 1206,
+          "rmse": 0.112899,
+          "bias": -0.0927282
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.160619,
+        "mae": 0.133805,
+        "n_low": 58,
+        "recall": 0.258621,
+        "false_alarms": 2,
+        "precision": 0.882353,
+        "coverage50": 0.211538,
+        "coverage80": 0.370192,
+        "coverage90": 0.461538,
+        "coverage95": 0.549679,
+        "n_seen": 497,
+        "coverage90_seen": 0.434608,
+        "n_new": 127,
+        "coverage90_new": 0.566929
+       },
+       "daily_min_map": {
+        "n": 3528,
+        "rmse": 0.0914985,
+        "mae": 0.0699293,
+        "bias": 0.0251648,
+        "coverage90": 0.824263,
+        "n_low": 1056,
+        "recall": 0.869318,
+        "false_alarms": 162,
+        "precision": 0.85,
+        "by_age_tercile": {
+         "1": {
+          "n": 1191,
+          "rmse": 0.111151,
+          "bias": 0.0456832
+         },
+         "2": {
+          "n": 1131,
+          "rmse": 0.08529,
+          "bias": 0.0496746
+         },
+         "3": {
+          "n": 1206,
+          "rmse": 0.0739479,
+          "bias": -0.0180839
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0671896,
+        "mae": 0.0446178,
+        "n_low": 58,
+        "recall": 0.827586,
+        "false_alarms": 16,
+        "precision": 0.75,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 497,
+        "coverage90_seen": null,
+        "n_new": 127,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 3528,
+        "rmse": 0.0498071,
+        "mae": 0.0334169,
+        "bias": -0.00436126,
+        "coverage90": null,
+        "n_low": 1056,
+        "recall": 0.964015,
+        "false_alarms": 76,
+        "precision": 0.93053,
+        "by_age_tercile": {
+         "1": {
+          "n": 1191,
+          "rmse": 0.0599893,
+          "bias": 0.00500643
+         },
+         "2": {
+          "n": 1131,
+          "rmse": 0.0415842,
+          "bias": -0.0106071
+         },
+         "3": {
+          "n": 1206,
+          "rmse": 0.0456227,
+          "bias": -0.00775501
+         }
+        }
+       }
+      }
+     }
+    },
+    "rolling": {
+     "all_months": {
+      "B0": {
+       "n_rows": 64,
+       "n_months": 144,
+       "readings": {
+        "n": 1872,
+        "rmse": 0.102641,
+        "mae": 0.0752239,
+        "n_low": 127,
+        "recall": 0.606299,
+        "false_alarms": 46,
+        "precision": 0.626016,
+        "coverage50": 0.384081,
+        "coverage80": 0.674679,
+        "coverage90": 0.775107,
+        "coverage95": 0.846688,
+        "n_seen": 1481,
+        "coverage90_seen": 0.777178,
+        "n_new": 391,
+        "coverage90_new": 0.767263
+       },
+       "daily_min_map": {
+        "n": 10567,
+        "rmse": 0.098214,
+        "mae": 0.072735,
+        "bias": -0.0517592,
+        "coverage90": 0.768998,
+        "n_low": 2890,
+        "recall": 0.968512,
+        "false_alarms": 871,
+        "precision": 0.76267,
+        "by_age_tercile": {
+         "1": {
+          "n": 3617,
+          "rmse": 0.107483,
+          "bias": -0.0471593
+         },
+         "2": {
+          "n": 3370,
+          "rmse": 0.0853191,
+          "bias": -0.0409095
+         },
+         "3": {
+          "n": 3580,
+          "rmse": 0.0997369,
+          "bias": -0.06662
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 64,
+       "n_months": 144,
+       "readings": {
+        "n": 1872,
+        "rmse": 0.0971643,
+        "mae": 0.0687124,
+        "n_low": 127,
+        "recall": 0.669291,
+        "false_alarms": 57,
+        "precision": 0.598592,
+        "coverage50": 0.485577,
+        "coverage80": 0.785791,
+        "coverage90": 0.881944,
+        "coverage95": 0.93109,
+        "n_seen": 1481,
+        "coverage90_seen": 0.887238,
+        "n_new": 391,
+        "coverage90_new": 0.861893
+       },
+       "daily_min_map": {
+        "n": 10567,
+        "rmse": 0.100212,
+        "mae": 0.0755932,
+        "bias": -0.0583507,
+        "coverage90": 0.798145,
+        "n_low": 2890,
+        "recall": 0.975433,
+        "false_alarms": 911,
+        "precision": 0.755764,
+        "by_age_tercile": {
+         "1": {
+          "n": 3617,
+          "rmse": 0.10818,
+          "bias": -0.0551674
+         },
+         "2": {
+          "n": 3370,
+          "rmse": 0.0893624,
+          "bias": -0.0513653
+         },
+         "3": {
+          "n": 3580,
+          "rmse": 0.101495,
+          "bias": -0.0681426
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 64,
+       "n_months": 144,
+       "readings": {
+        "n": 1872,
+        "rmse": 0.0956951,
+        "mae": 0.0677456,
+        "n_low": 127,
+        "recall": 0.692913,
+        "false_alarms": 53,
+        "precision": 0.624113,
+        "coverage50": 0.491453,
+        "coverage80": 0.78953,
+        "coverage90": 0.886218,
+        "coverage95": 0.936966,
+        "n_seen": 1481,
+        "coverage90_seen": 0.89129,
+        "n_new": 391,
+        "coverage90_new": 0.867008
+       },
+       "daily_min_map": {
+        "n": 10567,
+        "rmse": 0.0977508,
+        "mae": 0.0735136,
+        "bias": -0.0574791,
+        "coverage90": 0.805716,
+        "n_low": 2890,
+        "recall": 0.977509,
+        "false_alarms": 886,
+        "precision": 0.76125,
+        "by_age_tercile": {
+         "1": {
+          "n": 3617,
+          "rmse": 0.106909,
+          "bias": -0.0547675
+         },
+         "2": {
+          "n": 3370,
+          "rmse": 0.0876447,
+          "bias": -0.0507525
+         },
+         "3": {
+          "n": 3580,
+          "rmse": 0.0970837,
+          "bias": -0.0665507
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 64,
+       "n_months": 144,
+       "readings": {
+        "n": 1872,
+        "rmse": 0.104134,
+        "mae": 0.0768431,
+        "n_low": 127,
+        "recall": 0.582677,
+        "false_alarms": 53,
+        "precision": 0.582677,
+        "coverage50": 0.378205,
+        "coverage80": 0.658654,
+        "coverage90": 0.769231,
+        "coverage95": 0.834936,
+        "n_seen": 1481,
+        "coverage90_seen": 0.775152,
+        "n_new": 391,
+        "coverage90_new": 0.746803
+       },
+       "daily_min_map": {
+        "n": 10567,
+        "rmse": 0.098006,
+        "mae": 0.0725714,
+        "bias": -0.0505134,
+        "coverage90": 0.764361,
+        "n_low": 2890,
+        "recall": 0.966436,
+        "false_alarms": 867,
+        "precision": 0.763115,
+        "by_age_tercile": {
+         "1": {
+          "n": 3617,
+          "rmse": 0.10891,
+          "bias": -0.0469095
+         },
+         "2": {
+          "n": 3370,
+          "rmse": 0.0866989,
+          "bias": -0.0403339
+         },
+         "3": {
+          "n": 3580,
+          "rmse": 0.0963924,
+          "bias": -0.0637369
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 64,
+       "n_months": 144,
+       "readings": {
+        "n": 1872,
+        "rmse": 0.0655344,
+        "mae": 0.0430119,
+        "n_low": 127,
+        "recall": 0.748031,
+        "false_alarms": 37,
+        "precision": 0.719697,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 1481,
+        "coverage90_seen": null,
+        "n_new": 391,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 10567,
+        "rmse": 0.0469768,
+        "mae": 0.0329255,
+        "bias": -0.00440485,
+        "coverage90": null,
+        "n_low": 2890,
+        "recall": 0.949135,
+        "false_alarms": 242,
+        "precision": 0.918928,
+        "by_age_tercile": {
+         "1": {
+          "n": 3617,
+          "rmse": 0.0532153,
+          "bias": 0.0027075
+         },
+         "2": {
+          "n": 3370,
+          "rmse": 0.042074,
+          "bias": -0.0112014
+         },
+         "3": {
+          "n": 3580,
+          "rmse": 0.0445679,
+          "bias": -0.00519284
+         }
+        }
+       }
+      }
+     },
+     "falling": {
+      "B0": {
+       "n_rows": 16,
+       "n_months": 64,
+       "readings": {
+        "n": 832,
+        "rmse": 0.101427,
+        "mae": 0.0757598,
+        "n_low": 50,
+        "recall": 0.48,
+        "false_alarms": 9,
+        "precision": 0.727273,
+        "coverage50": 0.391827,
+        "coverage80": 0.688702,
+        "coverage90": 0.77524,
+        "coverage95": 0.838942,
+        "n_seen": 655,
+        "coverage90_seen": 0.772519,
+        "n_new": 177,
+        "coverage90_new": 0.785311
+       },
+       "daily_min_map": {
+        "n": 4695,
+        "rmse": 0.0955072,
+        "mae": 0.0692024,
+        "bias": -0.0406241,
+        "coverage90": 0.833014,
+        "n_low": 1201,
+        "recall": 0.954205,
+        "false_alarms": 373,
+        "precision": 0.754444,
+        "by_age_tercile": {
+         "1": {
+          "n": 1606,
+          "rmse": 0.103637,
+          "bias": -0.0322555
+         },
+         "2": {
+          "n": 1495,
+          "rmse": 0.0721424,
+          "bias": -0.0200471
+         },
+         "3": {
+          "n": 1594,
+          "rmse": 0.105661,
+          "bias": -0.0683548
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 16,
+       "n_months": 64,
+       "readings": {
+        "n": 832,
+        "rmse": 0.0923425,
+        "mae": 0.0653885,
+        "n_low": 50,
+        "recall": 0.74,
+        "false_alarms": 29,
+        "precision": 0.560606,
+        "coverage50": 0.530048,
+        "coverage80": 0.819712,
+        "coverage90": 0.917067,
+        "coverage95": 0.955529,
+        "n_seen": 655,
+        "coverage90_seen": 0.922137,
+        "n_new": 177,
+        "coverage90_new": 0.898305
+       },
+       "daily_min_map": {
+        "n": 4695,
+        "rmse": 0.110712,
+        "mae": 0.0848371,
+        "bias": -0.0775898,
+        "coverage90": 0.766347,
+        "n_low": 1201,
+        "recall": 0.989176,
+        "false_alarms": 482,
+        "precision": 0.711377,
+        "by_age_tercile": {
+         "1": {
+          "n": 1606,
+          "rmse": 0.11839,
+          "bias": -0.0756882
+         },
+         "2": {
+          "n": 1495,
+          "rmse": 0.0953202,
+          "bias": -0.0678896
+         },
+         "3": {
+          "n": 1594,
+          "rmse": 0.116013,
+          "bias": -0.0886036
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 16,
+       "n_months": 64,
+       "readings": {
+        "n": 832,
+        "rmse": 0.0907719,
+        "mae": 0.0646271,
+        "n_low": 50,
+        "recall": 0.74,
+        "false_alarms": 25,
+        "precision": 0.596774,
+        "coverage50": 0.536058,
+        "coverage80": 0.822115,
+        "coverage90": 0.921875,
+        "coverage95": 0.957933,
+        "n_seen": 655,
+        "coverage90_seen": 0.926718,
+        "n_new": 177,
+        "coverage90_new": 0.903955
+       },
+       "daily_min_map": {
+        "n": 4695,
+        "rmse": 0.106036,
+        "mae": 0.0807141,
+        "bias": -0.0728275,
+        "coverage90": 0.785091,
+        "n_low": 1201,
+        "recall": 0.989176,
+        "false_alarms": 453,
+        "precision": 0.723949,
+        "by_age_tercile": {
+         "1": {
+          "n": 1606,
+          "rmse": 0.115303,
+          "bias": -0.0720731
+         },
+         "2": {
+          "n": 1495,
+          "rmse": 0.0917623,
+          "bias": -0.0640994
+         },
+         "3": {
+          "n": 1594,
+          "rmse": 0.108744,
+          "bias": -0.0817737
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 16,
+       "n_months": 64,
+       "readings": {
+        "n": 832,
+        "rmse": 0.103091,
+        "mae": 0.0777735,
+        "n_low": 50,
+        "recall": 0.42,
+        "false_alarms": 9,
+        "precision": 0.7,
+        "coverage50": 0.384615,
+        "coverage80": 0.655048,
+        "coverage90": 0.770433,
+        "coverage95": 0.828125,
+        "n_seen": 655,
+        "coverage90_seen": 0.772519,
+        "n_new": 177,
+        "coverage90_new": 0.762712
+       },
+       "daily_min_map": {
+        "n": 4695,
+        "rmse": 0.0909805,
+        "mae": 0.0655803,
+        "bias": -0.0329417,
+        "coverage90": 0.844515,
+        "n_low": 1201,
+        "recall": 0.946711,
+        "false_alarms": 346,
+        "precision": 0.766689,
+        "by_age_tercile": {
+         "1": {
+          "n": 1606,
+          "rmse": 0.101766,
+          "bias": -0.0259581
+         },
+         "2": {
+          "n": 1495,
+          "rmse": 0.0692378,
+          "bias": -0.0133165
+         },
+         "3": {
+          "n": 1594,
+          "rmse": 0.0972121,
+          "bias": -0.0583844
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 16,
+       "n_months": 64,
+       "readings": {
+        "n": 832,
+        "rmse": 0.0585422,
+        "mae": 0.0417952,
+        "n_low": 50,
+        "recall": 0.68,
+        "false_alarms": 18,
+        "precision": 0.653846,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 655,
+        "coverage90_seen": null,
+        "n_new": 177,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 4695,
+        "rmse": 0.0486252,
+        "mae": 0.0332298,
+        "bias": -0.00396882,
+        "coverage90": null,
+        "n_low": 1201,
+        "recall": 0.937552,
+        "false_alarms": 101,
+        "precision": 0.917685,
+        "by_age_tercile": {
+         "1": {
+          "n": 1606,
+          "rmse": 0.0558438,
+          "bias": 0.00366346
+         },
+         "2": {
+          "n": 1495,
+          "rmse": 0.0426635,
+          "bias": -0.0100893
+         },
+         "3": {
+          "n": 1594,
+          "rmse": 0.0459897,
+          "bias": -0.00591821
+         }
+        }
+       }
+      }
+     },
+     "steady": {
+      "B0": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0989313,
+        "mae": 0.07059,
+        "n_low": 52,
+        "recall": 0.653846,
+        "false_alarms": 18,
+        "precision": 0.653846,
+        "coverage50": 0.386218,
+        "coverage80": 0.682692,
+        "coverage90": 0.783654,
+        "coverage95": 0.860577,
+        "n_seen": 493,
+        "coverage90_seen": 0.787018,
+        "n_new": 131,
+        "coverage90_new": 0.770992
+       },
+       "daily_min_map": {
+        "n": 3518,
+        "rmse": 0.0962367,
+        "mae": 0.0703753,
+        "bias": -0.0554852,
+        "coverage90": 0.756964,
+        "n_low": 1037,
+        "recall": 0.979749,
+        "false_alarms": 286,
+        "precision": 0.780338,
+        "by_age_tercile": {
+         "1": {
+          "n": 1209,
+          "rmse": 0.104011,
+          "bias": -0.0492414
+         },
+         "2": {
+          "n": 1119,
+          "rmse": 0.0861488,
+          "bias": -0.0475894
+         },
+         "3": {
+          "n": 1190,
+          "rmse": 0.0970049,
+          "bias": -0.0692534
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0928227,
+        "mae": 0.0641901,
+        "n_low": 52,
+        "recall": 0.673077,
+        "false_alarms": 18,
+        "precision": 0.660377,
+        "coverage50": 0.477564,
+        "coverage80": 0.770833,
+        "coverage90": 0.855769,
+        "coverage95": 0.915064,
+        "n_seen": 493,
+        "coverage90_seen": 0.862069,
+        "n_new": 131,
+        "coverage90_new": 0.832061
+       },
+       "daily_min_map": {
+        "n": 3518,
+        "rmse": 0.0919003,
+        "mae": 0.0687773,
+        "bias": -0.0563387,
+        "coverage90": 0.794201,
+        "n_low": 1037,
+        "recall": 0.983607,
+        "false_alarms": 287,
+        "precision": 0.780413,
+        "by_age_tercile": {
+         "1": {
+          "n": 1209,
+          "rmse": 0.0963433,
+          "bias": -0.0490818
+         },
+         "2": {
+          "n": 1119,
+          "rmse": 0.082787,
+          "bias": -0.0496626
+         },
+         "3": {
+          "n": 1190,
+          "rmse": 0.0953569,
+          "bias": -0.0699892
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0926702,
+        "mae": 0.0639687,
+        "n_low": 52,
+        "recall": 0.692308,
+        "false_alarms": 17,
+        "precision": 0.679245,
+        "coverage50": 0.475962,
+        "coverage80": 0.762821,
+        "coverage90": 0.857372,
+        "coverage95": 0.919872,
+        "n_seen": 493,
+        "coverage90_seen": 0.864097,
+        "n_new": 131,
+        "coverage90_new": 0.832061
+       },
+       "daily_min_map": {
+        "n": 3518,
+        "rmse": 0.0900007,
+        "mae": 0.0671442,
+        "bias": -0.053926,
+        "coverage90": 0.805287,
+        "n_low": 1037,
+        "recall": 0.984571,
+        "false_alarms": 275,
+        "precision": 0.787809,
+        "by_age_tercile": {
+         "1": {
+          "n": 1209,
+          "rmse": 0.0959459,
+          "bias": -0.0474909
+         },
+         "2": {
+          "n": 1119,
+          "rmse": 0.0816721,
+          "bias": -0.0479986
+         },
+         "3": {
+          "n": 1190,
+          "rmse": 0.091222,
+          "bias": -0.0660377
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0989211,
+        "mae": 0.070618,
+        "n_low": 52,
+        "recall": 0.653846,
+        "false_alarms": 18,
+        "precision": 0.653846,
+        "coverage50": 0.38141,
+        "coverage80": 0.679487,
+        "coverage90": 0.783654,
+        "coverage95": 0.850962,
+        "n_seen": 493,
+        "coverage90_seen": 0.789047,
+        "n_new": 131,
+        "coverage90_new": 0.763359
+       },
+       "daily_min_map": {
+        "n": 3518,
+        "rmse": 0.0946195,
+        "mae": 0.068974,
+        "bias": -0.0531672,
+        "coverage90": 0.766913,
+        "n_low": 1037,
+        "recall": 0.977821,
+        "false_alarms": 268,
+        "precision": 0.790952,
+        "by_age_tercile": {
+         "1": {
+          "n": 1209,
+          "rmse": 0.103506,
+          "bias": -0.0477597
+         },
+         "2": {
+          "n": 1119,
+          "rmse": 0.0853368,
+          "bias": -0.0459396
+         },
+         "3": {
+          "n": 1190,
+          "rmse": 0.0934604,
+          "bias": -0.0654573
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 16,
+       "n_months": 48,
+       "readings": {
+        "n": 624,
+        "rmse": 0.0737416,
+        "mae": 0.0445164,
+        "n_low": 52,
+        "recall": 0.846154,
+        "false_alarms": 14,
+        "precision": 0.758621,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 493,
+        "coverage90_seen": null,
+        "n_new": 131,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 3518,
+        "rmse": 0.0432374,
+        "mae": 0.0316852,
+        "bias": -0.00456841,
+        "coverage90": null,
+        "n_low": 1037,
+        "recall": 0.963356,
+        "false_alarms": 71,
+        "precision": 0.933645,
+        "by_age_tercile": {
+         "1": {
+          "n": 1209,
+          "rmse": 0.0514509,
+          "bias": 0.00244979
+         },
+         "2": {
+          "n": 1119,
+          "rmse": 0.0399432,
+          "bias": -0.0106294
+         },
+         "3": {
+          "n": 1190,
+          "rmse": 0.0365649,
+          "bias": -0.00599933
+         }
+        }
+       }
+      }
+     },
+     "first_storm": {
+      "B0": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.0944186,
+        "mae": 0.0707253,
+        "n_low": 16,
+        "recall": 0.6875,
+        "false_alarms": 7,
+        "precision": 0.611111,
+        "coverage50": 0.375,
+        "coverage80": 0.653846,
+        "coverage90": 0.769231,
+        "coverage95": 0.826923,
+        "n_seen": 169,
+        "coverage90_seen": 0.775148,
+        "n_new": 39,
+        "coverage90_new": 0.74359
+       },
+       "daily_min_map": {
+        "n": 1176,
+        "rmse": 0.0804607,
+        "mae": 0.0621333,
+        "bias": -0.0341273,
+        "coverage90": 0.760204,
+        "n_low": 371,
+        "recall": 0.959569,
+        "false_alarms": 73,
+        "precision": 0.829837,
+        "by_age_tercile": {
+         "1": {
+          "n": 400,
+          "rmse": 0.0831874,
+          "bias": -0.0294195
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.083667,
+          "bias": -0.0406043
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0743346,
+          "bias": -0.0327073
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.112173,
+        "mae": 0.0861181,
+        "n_low": 16,
+        "recall": 0.5,
+        "false_alarms": 5,
+        "precision": 0.615385,
+        "coverage50": 0.322115,
+        "coverage80": 0.682692,
+        "coverage90": 0.817308,
+        "coverage95": 0.879808,
+        "n_seen": 169,
+        "coverage90_seen": 0.828402,
+        "n_new": 39,
+        "coverage90_new": 0.769231
+       },
+       "daily_min_map": {
+        "n": 1176,
+        "rmse": 0.0717169,
+        "mae": 0.0545335,
+        "bias": 0.0127298,
+        "coverage90": 0.915816,
+        "n_low": 371,
+        "recall": 0.921833,
+        "false_alarms": 42,
+        "precision": 0.890625,
+        "by_age_tercile": {
+         "1": {
+          "n": 400,
+          "rmse": 0.0774844,
+          "bias": 0.0222297
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.0693349,
+          "bias": 0.0136314
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0678054,
+          "bias": 0.00232597
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.107003,
+        "mae": 0.082673,
+        "n_low": 16,
+        "recall": 0.5625,
+        "false_alarms": 6,
+        "precision": 0.6,
+        "coverage50": 0.322115,
+        "coverage80": 0.706731,
+        "coverage90": 0.822115,
+        "coverage95": 0.899038,
+        "n_seen": 169,
+        "coverage90_seen": 0.83432,
+        "n_new": 39,
+        "coverage90_new": 0.769231
+       },
+       "daily_min_map": {
+        "n": 1176,
+        "rmse": 0.072781,
+        "mae": 0.0549393,
+        "bias": -0.00412132,
+        "coverage90": 0.903912,
+        "n_low": 371,
+        "recall": 0.93531,
+        "false_alarms": 57,
+        "precision": 0.858911,
+        "by_age_tercile": {
+         "1": {
+          "n": 400,
+          "rmse": 0.0753971,
+          "bias": 0.00769994
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.0713906,
+          "bias": -0.00187155
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0713993,
+          "bias": -0.0181387
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.0978009,
+        "mae": 0.0745376,
+        "n_low": 16,
+        "recall": 0.6875,
+        "false_alarms": 12,
+        "precision": 0.478261,
+        "coverage50": 0.375,
+        "coverage80": 0.658654,
+        "coverage90": 0.75,
+        "coverage95": 0.826923,
+        "n_seen": 169,
+        "coverage90_seen": 0.763314,
+        "n_new": 39,
+        "coverage90_new": 0.692308
+       },
+       "daily_min_map": {
+        "n": 1176,
+        "rmse": 0.0919813,
+        "mae": 0.0725681,
+        "bias": -0.0536282,
+        "coverage90": 0.695578,
+        "n_low": 371,
+        "recall": 0.973046,
+        "false_alarms": 104,
+        "precision": 0.776344,
+        "by_age_tercile": {
+         "1": {
+          "n": 400,
+          "rmse": 0.0920469,
+          "bias": -0.0476837
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.0964816,
+          "bias": -0.0599809
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0874236,
+          "bias": -0.0535692
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.0651391,
+        "mae": 0.0399747,
+        "n_low": 16,
+        "recall": 0.6875,
+        "false_alarms": 4,
+        "precision": 0.733333,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 169,
+        "coverage90_seen": null,
+        "n_new": 39,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 1176,
+        "rmse": 0.0518055,
+        "mae": 0.034916,
+        "bias": -0.00318871,
+        "coverage90": null,
+        "n_low": 371,
+        "recall": 0.956873,
+        "false_alarms": 39,
+        "precision": 0.901015,
+        "by_age_tercile": {
+         "1": {
+          "n": 400,
+          "rmse": 0.0500836,
+          "bias": 0.00440452
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.043877,
+          "bias": -0.0110963
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0598384,
+          "bias": -0.00330988
+         }
+        }
+       }
+      }
+     },
+     "after_storm": {
+      "B0": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.124056,
+        "mae": 0.0914803,
+        "n_low": 9,
+        "recall": 0.888889,
+        "false_alarms": 12,
+        "precision": 0.4,
+        "coverage50": 0.355769,
+        "coverage80": 0.615385,
+        "coverage90": 0.754808,
+        "coverage95": 0.855769,
+        "n_seen": 164,
+        "coverage90_seen": 0.768293,
+        "n_new": 44,
+        "coverage90_new": 0.704545
+       },
+       "daily_min_map": {
+        "n": 1178,
+        "rmse": 0.126692,
+        "mae": 0.104445,
+        "bias": -0.102614,
+        "coverage90": 0.558574,
+        "n_low": 281,
+        "recall": 1.0,
+        "false_alarms": 139,
+        "precision": 0.669048,
+        "by_age_tercile": {
+         "1": {
+          "n": 402,
+          "rmse": 0.147021,
+          "bias": -0.11809
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.123868,
+          "bias": -0.103952
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.105369,
+          "bias": -0.0857112
+         }
+        }
+       }
+      },
+      "M2": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.111484,
+        "mae": 0.0781692,
+        "n_low": 9,
+        "recall": 0.555556,
+        "false_alarms": 5,
+        "precision": 0.5,
+        "coverage50": 0.495192,
+        "coverage80": 0.798077,
+        "coverage90": 0.884615,
+        "coverage95": 0.932692,
+        "n_seen": 164,
+        "coverage90_seen": 0.884146,
+        "n_new": 44,
+        "coverage90_new": 0.886364
+       },
+       "daily_min_map": {
+        "n": 1178,
+        "rmse": 0.104288,
+        "mae": 0.0801299,
+        "bias": -0.0586402,
+        "coverage90": 0.819185,
+        "n_low": 281,
+        "recall": 0.957295,
+        "false_alarms": 100,
+        "precision": 0.728997,
+        "by_age_tercile": {
+         "1": {
+          "n": 402,
+          "rmse": 0.12415,
+          "bias": -0.0685001
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.100813,
+          "bias": -0.0560484
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0834878,
+          "bias": -0.0511429
+         }
+        }
+       }
+      },
+      "M2_TOC": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.110666,
+        "mae": 0.0766226,
+        "n_low": 9,
+        "recall": 0.666667,
+        "false_alarms": 5,
+        "precision": 0.545455,
+        "coverage50": 0.528846,
+        "coverage80": 0.822115,
+        "coverage90": 0.894231,
+        "coverage95": 0.942308,
+        "n_seen": 164,
+        "coverage90_seen": 0.890244,
+        "n_new": 44,
+        "coverage90_new": 0.909091
+       },
+       "daily_min_map": {
+        "n": 1178,
+        "rmse": 0.106874,
+        "mae": 0.0823796,
+        "bias": -0.0601851,
+        "coverage90": 0.791171,
+        "n_low": 281,
+        "recall": 0.957295,
+        "false_alarms": 101,
+        "precision": 0.727027,
+        "by_age_tercile": {
+         "1": {
+          "n": 402,
+          "rmse": 0.127995,
+          "bias": -0.0696725
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.101679,
+          "bias": -0.0549983
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0862603,
+          "bias": -0.0555283
+         }
+        }
+       }
+      },
+      "M_TOC": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.127129,
+        "mae": 0.0941023,
+        "n_low": 9,
+        "recall": 0.888889,
+        "false_alarms": 14,
+        "precision": 0.363636,
+        "coverage50": 0.346154,
+        "coverage80": 0.610577,
+        "coverage90": 0.740385,
+        "coverage95": 0.822115,
+        "n_seen": 164,
+        "coverage90_seen": 0.756098,
+        "n_new": 44,
+        "coverage90_new": 0.681818
+       },
+       "daily_min_map": {
+        "n": 1178,
+        "rmse": 0.134118,
+        "mae": 0.111182,
+        "bias": -0.109511,
+        "coverage90": 0.505942,
+        "n_low": 281,
+        "recall": 1.0,
+        "false_alarms": 149,
+        "precision": 0.653488,
+        "by_age_tercile": {
+         "1": {
+          "n": 402,
+          "rmse": 0.15716,
+          "bias": -0.127283
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.1311,
+          "bias": -0.110946
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.109402,
+          "bias": -0.0901975
+         }
+        }
+       }
+      },
+      "oracle": {
+       "n_rows": 16,
+       "n_months": 16,
+       "readings": {
+        "n": 208,
+        "rmse": 0.0662378,
+        "mae": 0.0464023,
+        "n_low": 9,
+        "recall": 0.666667,
+        "false_alarms": 1,
+        "precision": 0.857143,
+        "coverage50": null,
+        "coverage80": null,
+        "coverage90": null,
+        "coverage95": null,
+        "n_seen": 164,
+        "coverage90_seen": null,
+        "n_new": 44,
+        "coverage90_new": null
+       },
+       "daily_min_map": {
+        "n": 1178,
+        "rmse": 0.045935,
+        "mae": 0.0334298,
+        "bias": -0.00686824,
+        "coverage90": null,
+        "n_low": 281,
+        "recall": 0.935943,
+        "false_alarms": 31,
+        "precision": 0.894558,
+        "by_age_tercile": {
+         "1": {
+          "n": 402,
+          "rmse": 0.0506356,
+          "bias": -0.00202515
+         },
+         "2": {
+          "n": 378,
+          "rmse": 0.0439893,
+          "bias": -0.017398
+         },
+         "3": {
+          "n": 398,
+          "rmse": 0.0426343,
+          "bias": -0.00175935
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "bootstrap": {
+  "O2": {
+   "S": {
+    "jan_mar_to_jul_sep": {
+     "all_months": {
+      "readings": {
+       "ratio": 0.736851,
+       "lo90": 0.580069,
+       "hi90": 0.921742,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 1.2916,
+       "lo90": 1.10526,
+       "hi90": 1.50457,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 0.788087,
+       "lo90": 0.613219,
+       "hi90": 0.991891,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 1.42591,
+       "lo90": 1.23253,
+       "hi90": 1.64736,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 1.05996,
+       "lo90": 1.03941,
+       "hi90": 1.07782,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 1.02742,
+       "lo90": 0.987727,
+       "hi90": 1.05844,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     }
+    },
+    "rolling": {
+     "all_months": {
+      "readings": {
+       "ratio": 0.932329,
+       "lo90": 0.895064,
+       "hi90": 0.973799,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 0.995284,
+       "lo90": 0.968077,
+       "hi90": 1.02429,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 0.946642,
+       "lo90": 0.906341,
+       "hi90": 0.990855,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 1.02035,
+       "lo90": 0.994706,
+       "hi90": 1.04726,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 1.01454,
+       "lo90": 1.00707,
+       "hi90": 1.02435,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 0.997881,
+       "lo90": 0.987295,
+       "hi90": 1.00759,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     },
+     "falling": {
+      "readings": {
+       "ratio": 0.89495,
+       "lo90": 0.831316,
+       "hi90": 0.957804,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 1.11025,
+       "lo90": 1.06841,
+       "hi90": 1.15475,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 0.910434,
+       "lo90": 0.842024,
+       "hi90": 0.977393,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 1.1592,
+       "lo90": 1.12005,
+       "hi90": 1.20148,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 1.01641,
+       "lo90": 1.00683,
+       "hi90": 1.02758,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 0.952604,
+       "lo90": 0.938664,
+       "hi90": 0.966614,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     },
+     "steady": {
+      "readings": {
+       "ratio": 0.936712,
+       "lo90": 0.88219,
+       "hi90": 1.00369,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 0.935201,
+       "lo90": 0.894685,
+       "hi90": 0.972666,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 0.938254,
+       "lo90": 0.884261,
+       "hi90": 1.00393,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 0.95494,
+       "lo90": 0.916052,
+       "hi90": 0.992424,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 0.999896,
+       "lo90": 0.996467,
+       "hi90": 1.00436,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 0.983196,
+       "lo90": 0.971998,
+       "hi90": 0.990559,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     },
+     "first_storm": {
+      "readings": {
+       "ratio": 1.13328,
+       "lo90": 1.00586,
+       "hi90": 1.25709,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 0.904554,
+       "lo90": 0.813367,
+       "hi90": 1.02325,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 1.18804,
+       "lo90": 1.0302,
+       "hi90": 1.33258,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 0.891329,
+       "lo90": 0.769617,
+       "hi90": 1.05461,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 1.03582,
+       "lo90": 0.988793,
+       "hi90": 1.08221,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 1.14318,
+       "lo90": 1.09576,
+       "hi90": 1.18587,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     },
+     "after_storm": {
+      "readings": {
+       "ratio": 0.892069,
+       "lo90": 0.823224,
+       "hi90": 0.985937,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map": {
+       "ratio": 0.843576,
+       "lo90": 0.768018,
+       "hi90": 0.91739,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M2": {
+       "ratio": 0.898659,
+       "lo90": 0.835783,
+       "hi90": 0.987624,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M2": {
+       "ratio": 0.82316,
+       "lo90": 0.74517,
+       "hi90": 0.886685,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "readings_M_TOC": {
+       "ratio": 1.02478,
+       "lo90": 1.01621,
+       "hi90": 1.03644,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      },
+      "daily_min_map_M_TOC": {
+       "ratio": 1.05861,
+       "lo90": 1.02457,
+       "hi90": 1.10683,
+       "n_seeds": 16,
+       "n_resamples": 2000
+      }
+     }
+    }
+   }
+  }
+ },
+ "truth_share_below_threshold_daily_min_by_month": {
+  "O2": {
+   "S": {
+    "1": 0.2269,
+    "2": 0.1916,
+    "3": 0.1984,
+    "4": 0.2167,
+    "5": 0.2452,
+    "6": 0.2582,
+    "7": 0.2969,
+    "8": 0.3016,
+    "9": 0.3064,
+    "10": 0.2629,
+    "11": 0.3091,
+    "12": 0.233
+   }
+  }
+ }
+}
