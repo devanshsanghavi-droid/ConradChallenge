@@ -26,6 +26,7 @@ from __future__ import annotations
 import itertools
 import os
 import pickle
+import shutil
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
@@ -37,6 +38,7 @@ from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
+from .chemistry import Chemistry, cache_tag, remove_epanet_files
 from .features import CORE
 from .simulate import simulate_nominal_chlorine
 
@@ -57,42 +59,98 @@ DAY_HOURS = list(range(7, 18))                  # 07:00-17:00: when an operator 
 STATIC = ["emb0", "emb1", "emb2", "path_wall_index", "dist_src_km"]   # CORE minus the hour-dependent age
 
 
+MIN_FREE_GB = 1.5   # a grid build is refused below this much free disk (an EPANET run that fills its temp dir
+                    # fails with error 308; a fresh ky4 grid needs about 6 GB of temp files without cleanup)
+
+
+def disk_free_gb(path: str) -> float:
+    """Free space, in GB (1e9 bytes), on the volume holding `path` (or its nearest existing parent)."""
+    p = os.path.abspath(path)
+    while not os.path.exists(p):
+        p = os.path.dirname(p)
+    return shutil.disk_usage(p).free / 1e9
+
+
+def disk_preflight(paths=None, min_gb: float = MIN_FREE_GB) -> float:
+    """Refuse to start a grid build with less than `min_gb` GB free on the cache or temp volume.  Returns the
+    smallest free space found (GB)."""
+    paths = list(paths) if paths else [tempfile.gettempdir()]
+    free = min(disk_free_gb(p) for p in paths)
+    if free < min_gb:
+        raise RuntimeError(f"refusing to build an EPANET grid: {free:.2f} GB free on the cache or temp volume, "
+                           f"below the {min_gb:g} GB floor.  Free some disk space first.")
+    return free
+
+
 def _grid_member(args):
-    """One EPANET run of the grid (module-level so it can run in a worker process)."""
-    name, kb, kw, g, dose, dm, rm, junctions, prefix = args
-    c = simulate_nominal_chlorine(name, kb, kw, g, dose, dm, rm, file_prefix=prefix)
+    """One EPANET run of the grid (module-level so it can run in a worker process).  Its .inp, .rpt and .bin
+    are deleted as soon as the result is read (about 0.9 MB per Net3 run and 9 MB per ky4 run used to stay on
+    disk until the pool closed).  An optional 10th element holds extra simulate_nominal_chlorine keywords
+    (a chemistry condition's kb_scale, kw_scale, temp_C)."""
+    name, kb, kw, g, dose, dm, rm, junctions, prefix, *extra = args
+    try:
+        c = simulate_nominal_chlorine(name, kb, kw, g, dose, dm, rm, file_prefix=prefix, **(extra[0] if extra else {}))
+    finally:
+        remove_epanet_files(prefix)
     return np.log(np.clip(c.loc[HOURS, junctions].values, FLOOR, None)).astype(np.float32)
 
 
+def _non_default(cond: Chemistry | None) -> bool:
+    return cond is not None and not cond.is_default
+
+
+def grid_cache_path(sc, cache_dir: str = "outputs/cache", grid: str = "full", cond: Chemistry | None = None) -> str:
+    """Cache file of a grid.  Default calls (cond None, or a condition that reproduces today's path) keep the
+    committed names, so existing pickles stay valid; any other condition appends its label and
+    chemistry.cache_tag (a hash of the grid definition and the condition)."""
+    dose_tag = "" if abs(sc.source_dose - 1.2) < 1e-9 else f"_d{sc.source_dose:g}"
+    cond_tag = f"_{cond.label()}_{cache_tag(cond, grid)}" if _non_default(cond) else ""
+    return os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}{cond_tag}.pkl")
+
+
 def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
-                       n_jobs: int | None = None) -> tuple[list[tuple], np.ndarray]:
+                       n_jobs: int | None = None, cond: Chemistry | None = None) -> tuple[list[tuple], np.ndarray]:
     """All grid members' ln C for every hour of the last day: (params, array [members, 24, junctions]).
     params are (kb, kw, gamma, demand_mult, rough_mult).
 
     Each EPANET run already produces the whole day; storing all of it is what lets the time-aware
     model (SimGP24) calibrate on daytime samples and predict the night.  grid="full" adds the two
-    hydraulic-mismatch axes (675 runs); grid="decay" is the iteration-2 grid (75 runs)."""
+    hydraulic-mismatch axes (675 runs); grid="decay" is the iteration-2 grid (75 runs).
+    cond: a chemistry.Chemistry; params stay the 20 C values, the runs use cond's rate multipliers and water
+    properties.  Cached under grid_cache_path; a build (not a cache hit) is refused below MIN_FREE_GB free disk.
+    A condition the grid cannot run (chloramine before task 12, kinetics other than 'first') is refused before
+    the cache is read, so a file under its name is never served."""
+    if _non_default(cond):
+        cond.sim_kwargs()      # raises for a condition that is not built
     os.makedirs(cache_dir, exist_ok=True)
-    dose_tag = "" if abs(sc.source_dose - 1.2) < 1e-9 else f"_d{sc.source_dose:g}"
-    f = os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}.pkl")
+    f = grid_cache_path(sc, cache_dir, grid, cond)
     if os.path.exists(f):
         with open(f, "rb") as fh:
             return pickle.load(fh)
+    out = build_grid_24h(sc, grid, n_jobs, cond, preflight_paths=[cache_dir])
+    with open(f, "wb") as fh:
+        pickle.dump(out, fh)
+    return out
+
+
+def build_grid_24h(sc, grid: str = "full", n_jobs: int | None = None, cond: Chemistry | None = None,
+                   preflight_paths=None) -> tuple[list[tuple], np.ndarray]:
+    """The grid itself, without the cache (simulator_grid_24h caches it).  Every run's EPANET files are deleted
+    as soon as it is read, and the whole build is refused below MIN_FREE_GB free disk."""
+    extra = (cond.sim_kwargs(),) if _non_default(cond) else ()
+    disk_preflight(list(preflight_paths or []) + [tempfile.gettempdir()])
     params = list(itertools.product(*GRIDS[grid]))
     n_jobs = n_jobs or max(1, (os.cpu_count() or 2) - 1)
     with tempfile.TemporaryDirectory() as tmp:
         # EPANET writes temp.inp/.rpt/.bin per run: give every run its own prefix so runs can go in parallel
-        jobs = [(sc.wn_name, kb, kw, g, sc.source_dose, dm, rm, list(sc.junctions), os.path.join(tmp, f"g{i}"))
+        jobs = [(sc.wn_name, kb, kw, g, sc.source_dose, dm, rm, list(sc.junctions), os.path.join(tmp, f"g{i}")) + extra
                 for i, (kb, kw, g, dm, rm) in enumerate(params)]
         if n_jobs > 1 and len(jobs) > 8:
             with ProcessPoolExecutor(max_workers=n_jobs) as ex:
                 rows = list(ex.map(_grid_member, jobs, chunksize=4))
         else:
             rows = [_grid_member(j) for j in jobs]
-    out = (params, np.stack(rows))
-    with open(f, "wb") as fh:
-        pickle.dump(out, fh)
-    return out
+    return params, np.stack(rows)
 
 
 def simulator_grid(sc, cache_dir: str = "outputs/cache", grid: str = "full") -> tuple[list[tuple], np.ndarray]:
@@ -166,6 +224,45 @@ def check_grid_order(params: list[tuple], n_hyd: int) -> None:
     P = np.asarray(params, dtype=float).reshape(-1, n_hyd, 5)
     if not ((P[:, :, :3] == P[:, :1, :3]).all() and (P[:, :, 3:] == P[:1, :, 3:]).all()):
         raise ValueError("grid members are not in (decay-major, hydraulic-minor) order; GRIDS changed?")
+
+
+PARAM_NAMES = ("kb", "kw", "gamma", "demand", "rough")
+
+
+def grid_edge_mass(W: np.ndarray, params: list[tuple], doses=None) -> dict:
+    """Posterior mass on the edges of each grid axis: for every parameter, the weight of members at its
+    smallest value (`<name>_low`), at its largest (`<name>_high`) and their sum (`<name>`).  A large edge mass
+    says the data want a value outside the grid.  W is the joint (member x dose) posterior or the member
+    marginal; with the joint, `doses` must be the model's own dose multipliers (model.doses, in W's column
+    order) and the dose axis is reported too (its smallest and largest multiplier).  Axes with a single value
+    give NaN."""
+    W = np.asarray(W, dtype=float)
+    if W.ndim not in (1, 2) or W.shape[0] != len(params):
+        raise ValueError(f"W has shape {W.shape}; expected ({len(params)},) or ({len(params)}, n_doses)")
+    if W.ndim == 2:
+        if doses is None:
+            raise ValueError("a joint (member x dose) posterior needs doses=model.doses")
+        if len(doses) != W.shape[1]:
+            raise ValueError(f"{len(doses)} doses for a posterior with {W.shape[1]} dose columns")
+    w = W.sum(axis=1) if W.ndim == 2 else W
+    P = np.asarray(params, dtype=float)
+    out = {}
+    for i, name in enumerate(PARAM_NAMES):
+        vals = np.unique(P[:, i])
+        if len(vals) < 2:
+            out[f"{name}_low"] = out[f"{name}_high"] = out[name] = float("nan")
+            continue
+        lo, hi = float(w[P[:, i] == vals[0]].sum()), float(w[P[:, i] == vals[-1]].sum())
+        out[f"{name}_low"], out[f"{name}_high"], out[name] = lo, hi, lo + hi
+    if W.ndim == 2:
+        d = np.asarray(doses, dtype=float)
+        wd = W.sum(axis=0)
+        if len(d) < 2:
+            out["dose_low"] = out["dose_high"] = out["dose"] = float("nan")
+        else:
+            lo, hi = float(wd[d == d.min()].sum()), float(wd[d == d.max()].sum())
+            out["dose_low"], out["dose_high"], out["dose"] = lo, hi, lo + hi
+    return out
 
 
 def local_hydraulic_var(w: np.ndarray, Z: np.ndarray, n_hyd: int) -> np.ndarray:
@@ -274,9 +371,11 @@ class SimGP24:
 
     def __init__(self, sc, X: pd.DataFrame, seed: int = 0, lik_sd: float = LIK_SD,
                  cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
-                 grid: str = "full", local_hydraulic: bool = True, doses=DOSE_GRID, smooth_hours: bool = True):
+                 grid: str = "full", local_hydraulic: bool = True, doses=DOSE_GRID, smooth_hours: bool = True,
+                 threshold: float = 0.2):
         self.sc, self.seed, self.lik_sd, self.n_draws = sc, seed, lik_sd, n_draws
         self.lik, self.nu, self.doses, self.smooth_hours = lik, nu, doses, smooth_hours
+        self.threshold = float(threshold)   # compliance threshold of predict_daily_min's p_below column (mg/L)
         self.params, self.Z = simulator_grid_24h(sc, cache_dir, grid)  # members x 24 x J
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
         if self.n_hyd > 1:
@@ -284,6 +383,7 @@ class SimGP24:
         self.jidx = {j: i for i, j in enumerate(sc.junctions)}
         self.J = len(sc.junctions)
         self._grp_mean = None                                            # lazily: mean over hydraulic siblings
+        self.zmin_ = None             # S x J draws of ln(daily min) from the last predict_daily_min; a refit clears them
         self.age = sc.age_by_hour_h.loc[HOURS, sc.junctions].values     # 24 x J, nominal model
         self.static = X.loc[sc.junctions, STATIC].values                # J x |STATIC|
         # design rows for every (junction, hour), junction-major; scaling is fixed by this full grid so
@@ -312,10 +412,12 @@ class SimGP24:
         self.map_params_, self.map_dose_ = None, None
         self.gp = None
         self.samples_ = pd.DataFrame(columns=["junction", "hour", "y"])
+        self.zmin_ = None
         return self
 
     def fit(self, samples: pd.DataFrame) -> "SimGP24":
         """samples: columns junction, hour (int 0-23), y (mg/L)."""
+        self.zmin_ = None
         if samples is None or len(samples) == 0:
             return self.fit_prior()
         idx = np.array([self.jidx[j] for j in samples.junction])
@@ -388,8 +490,11 @@ class SimGP24:
         return r_mu, 0.5 * (C + C.transpose(0, 2, 1))
 
     def predict_daily_min(self) -> pd.DataFrame:
-        """Per junction: median / 90% band of the daily minimum, P(daily min < 0.2), and the mean/sd of
-        ln(daily min) for acquisition.  Monte Carlo over grid members and joint 24-h GP draws."""
+        """Per junction: median / 90% band of the daily minimum, P(daily min < self.threshold), and the mean/sd
+        of ln(daily min) for acquisition.  Monte Carlo over grid members and joint 24-h GP draws.  The draws stay
+        on the model (self.zmin_), so P(daily min < t) at any other t is a Monte-Carlo count through
+        self.p_below_mc(t) or SimGP24.p_below(frame, t, model=self).  The frame's attrs hold only the threshold
+        its p_below column was computed at (a float)."""
         rng = np.random.default_rng(self.seed)
         S = self.n_draws
         flat = rng.choice(self.W_.size, size=S, p=self.W_.ravel())
@@ -424,12 +529,38 @@ class SimGP24:
             out[f"lo{q}"] = np.exp(np.quantile(zmin, a, axis=0))
             out[f"hi{q}"] = np.exp(np.quantile(zmin, 1 - a, axis=0))
         out["z_mu"], out["z_sd"] = zmin.mean(axis=0), zmin.std(axis=0)
-        out["p_below"] = (zmin < np.log(0.2)).mean(axis=0)
+        out["p_below"] = (zmin < np.log(self.threshold)).mean(axis=0)
         out["argmin_hour"] = np.argmin(self.m_, axis=0)
+        self.zmin_ = zmin
+        out.attrs["p_below_threshold"] = self.threshold
         return out
 
+    def p_below_mc(self, threshold: float) -> pd.Series:
+        """Monte-Carlo P(daily min < threshold) per junction, from the draws of the last predict_daily_min."""
+        if getattr(self, "zmin_", None) is None:
+            raise RuntimeError("call predict_daily_min first: there are no daily-minimum draws yet")
+        return pd.Series((self.zmin_ < np.log(threshold)).mean(axis=0), index=self.sc.junctions)
+
     @staticmethod
-    def p_below(pred: pd.DataFrame, threshold: float = 0.2) -> pd.Series:
-        if "p_below" in pred and threshold == 0.2:
+    def p_below(pred: pd.DataFrame, threshold: float = 0.2, model: "SimGP24 | None" = None) -> pd.Series:
+        """P(value < threshold).  A frame from predict_daily_min returns its own p_below column at the threshold
+        it was computed for (attrs['p_below_threshold'], 0.2 when absent).  At any other threshold:
+          * with model=<the SimGP24 that produced the frame>: a Monte-Carlo count over that model's draws of the
+            daily minimum, for the frame's junctions (the frame's z_mu must still be the one those draws give,
+            so an edited or foreign frame raises instead of reading stale draws);
+          * without a model (and for every other frame, e.g. an hourly prediction): the normal approximation on
+            ln C, as in the committed code."""
+        if "p_below" in pred and threshold == pred.attrs.get("p_below_threshold", 0.2):
             return pred["p_below"]
+        if model is not None:
+            zmin = getattr(model, "zmin_", None)
+            if zmin is None:
+                raise RuntimeError("model has no daily-minimum draws: call model.predict_daily_min() first")
+            cols = pd.Index(model.sc.junctions).get_indexer(pred.index)
+            if (cols < 0).any():
+                raise KeyError("the frame's index has junctions the model's draws do not cover")
+            if "z_mu" not in pred or not np.array_equal(pred["z_mu"].to_numpy(), zmin.mean(axis=0)[cols]):
+                raise ValueError("the frame's z_mu is not the one the model's last draws give: it was edited, or it "
+                                 "comes from another model or an earlier predict_daily_min call")
+            return pd.Series((zmin[:, cols] < np.log(threshold)).mean(axis=0), index=pred.index)
         return pd.Series(norm.cdf((np.log(threshold) - pred["z_mu"]) / pred["z_sd"]), index=pred.index)

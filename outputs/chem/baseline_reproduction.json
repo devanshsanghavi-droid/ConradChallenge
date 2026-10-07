@@ -1,0 +1,781 @@
+{
+ "about": "Reruns of the committed experiments from a scratch working directory, compared file by file (and CSV row by row) with the committed outputs/, plus the app's default demo. Written by python -m residualmap.checks --compare/--reproduce. The workdir paths are scratch directories of the session that made each entry and do not persist; the comparison results are the record.",
+ "runs": {
+  "pre_edit": {
+   "entry_written": "2026-10-06 20:10",
+   "outputs_written_between": "2026-10-06 19:25:33 and 2026-10-06 19:35:23 (file times)",
+   "workdir": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/baseline",
+   "code": "unchanged tree: git 8090ed8 (residualmap/ and app.py copied aside before any edit and run with PYTHONPATH pointing at the copy)",
+   "commands": {
+    "net3": [
+     "residualmap.experiment Net3 8",
+     "residualmap.experiment Net3 8 --structural=persistent"
+    ],
+    "net2": [
+     "residualmap.experiment Net2 8"
+    ],
+    "pilot": [
+     "residualmap.pilot --synthetic Net3"
+    ]
+   },
+   "runs": null,
+   "all_runs_ok": null,
+   "not_written_by_run": "unknown (--compare of an existing rerun)",
+   "note": "Run by hand from scratch directories with outputs/cache linked to the repo cache, before any edit, Net3 and Net2 in parallel; wall-clock 166 s (Net3), 155 s (structural), 141 s (Net2), 2 s (pilot); return codes were not recorded, but every run printed its final timing line and wrote all its outputs. The structural run first crashed in the fresh directory (FileNotFoundError: experiment.plot_stress reads outputs/structural_persistent/summary_Net3.json before main() writes it); it was rerun after copying the committed summary there, which is what --reproduce does, and the run overwrote that copy at 19:35:23 together with its other outputs. The app's default demo in app_default_demo was run when this entry was written, on the same unchanged copy of the code (code_root).",
+   "vs_committed": {
+    "files": {
+     "curves_Net3.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "stress_test_Net3.png": {
+      "byte_identical": true
+     },
+     "summary_Net3.json": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "structural_persistent/map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "structural_persistent/route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/summary_Net3.json": {
+      "byte_identical": true
+     },
+     "curves_Net2.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net2.png": {
+      "byte_identical": true
+     },
+     "features_Net2_seed0.csv": {
+      "rows": 35,
+      "byte_identical": true,
+      "rows_identical": 35,
+      "rows_drifting": 0
+     },
+     "map_Net2_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net2.png": {
+      "byte_identical": true
+     },
+     "results_Net2.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net2.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net2.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net2.png": {
+      "byte_identical": true
+     },
+     "strategies_Net2.png": {
+      "byte_identical": true
+     },
+     "summary_Net2.json": {
+      "byte_identical": true
+     },
+     "pilot/predictions_Net3.csv": {
+      "rows": 39,
+      "byte_identical": true,
+      "rows_identical": 39,
+      "rows_drifting": 0
+     },
+     "pilot/synthetic_log_Net3.csv": {
+      "rows": 78,
+      "byte_identical": true,
+      "rows_identical": 78,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.csv": {
+      "rows": 9,
+      "byte_identical": true,
+      "rows_identical": 9,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.json": {
+      "byte_identical": true
+     }
+    },
+    "n_files": 50,
+    "n_byte_identical": 50,
+    "not_byte_identical": [],
+    "drifting_rows": [],
+    "not_compared_not_written_by_run": [],
+    "committed_outputs_not_regenerated": [
+     "outputs/curves_ky4.png",
+     "outputs/curves_time_ky4.png",
+     "outputs/day_vs_night_ky4.png",
+     "outputs/day_vs_night_predicted_ky4.png",
+     "outputs/features_ky4_seed0.csv",
+     "outputs/map_ky4_n15.png",
+     "outputs/map_ky4_n3.png",
+     "outputs/map_ky4_n8.png",
+     "outputs/reliability_ky4.png",
+     "outputs/results_ky4.csv",
+     "outputs/results_routes_ky4.csv",
+     "outputs/results_time_ky4.csv",
+     "outputs/route_comparison_ky4.png",
+     "outputs/strategies_ky4.png",
+     "outputs/structural/curves_Net3.png",
+     "outputs/structural/curves_time_Net3.png",
+     "outputs/structural/day_vs_night_Net3.png",
+     "outputs/structural/day_vs_night_predicted_Net3.png",
+     "outputs/structural/features_Net3_seed0.csv",
+     "outputs/structural/map_Net3_n15.png",
+     "outputs/structural/map_Net3_n3.png",
+     "outputs/structural/map_Net3_n8.png",
+     "outputs/structural/reliability_Net3.png",
+     "outputs/structural/results_Net3.csv",
+     "outputs/structural/results_time_Net3.csv",
+     "outputs/structural/strategies_Net3.png",
+     "outputs/structural/summary_Net3.json",
+     "outputs/summary_ky4.json"
+    ]
+   },
+   "app_default_demo": {
+    "code_root": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/baseline_tree",
+    "run_at": "2026-10-06 20:10",
+    "matches_changelog": true,
+    "violations": 41,
+    "junctions": 92,
+    "found": 36,
+    "unsampled_violations": 36,
+    "false_alarms": 1,
+    "flagged": 42,
+    "flagged_label": "Junctions likely below 0.2 mg/L (daily minimum)",
+    "sample_mean_mgL": 0.53,
+    "reveal_text": "True daily-minimum violations: **41 of 92** junctions. On the unsampled junctions the map found **36 of 36** (recall 100%) with 1 false alarms. Mean of your samples: 0.53 mg/L \u2014 which flags nothing."
+   }
+  },
+  "post_edit": {
+   "entry_written": "2026-10-06 20:17",
+   "outputs_written_between": "2026-10-06 20:11:01 and 2026-10-06 20:17:57 (file times)",
+   "workdir": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/post_edit_final",
+   "code": "edited tree, task 8 after the review fixes: git 8090ed8 plus the task-8 changes (residualmap/simulate.py, residualmap/simgp.py, new residualmap/chemistry.py and residualmap/checks.py). Every rerun started (20:10:41) after the last edit to the modules the reruns and the app import (simulate.py, simgp.py and chemistry.py, last edited 20:05:55). checks.py, which none of them imports, was edited afterwards: a docstring at 20:13 and, at 20:20, the .inp comparison helper of one saved check (it now ignores WNTR's '; Created:' time stamp).",
+   "commands": {
+    "net3": [
+     "residualmap.experiment Net3 8",
+     "residualmap.experiment Net3 8 --structural=persistent"
+    ],
+    "net2": [
+     "residualmap.experiment Net2 8"
+    ],
+    "pilot": [
+     "residualmap.pilot --synthetic Net3"
+    ]
+   },
+   "runs": {
+    "residualmap.experiment Net3 8": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/post_edit_final/net3",
+     "started": "2026-10-06 20:10:41",
+     "ended": "2026-10-06 20:13:14",
+     "seconds": 153.3,
+     "returncode": 0
+    },
+    "residualmap.experiment Net3 8 --structural=persistent": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/post_edit_final/net3",
+     "started": "2026-10-06 20:13:14",
+     "ended": "2026-10-06 20:15:47",
+     "seconds": 152.8,
+     "returncode": 0
+    },
+    "residualmap.experiment Net2 8": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/post_edit_final/net2",
+     "started": "2026-10-06 20:15:47",
+     "ended": "2026-10-06 20:17:55",
+     "seconds": 128.3,
+     "returncode": 0
+    },
+    "residualmap.pilot --synthetic Net3": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/post_edit_final/pilot",
+     "started": "2026-10-06 20:17:55",
+     "ended": "2026-10-06 20:17:57",
+     "seconds": 2.0,
+     "returncode": 0
+    }
+   },
+   "all_runs_ok": true,
+   "not_written_by_run": [],
+   "vs_committed": {
+    "files": {
+     "curves_Net3.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "stress_test_Net3.png": {
+      "byte_identical": true
+     },
+     "summary_Net3.json": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "structural_persistent/map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "structural_persistent/route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/summary_Net3.json": {
+      "byte_identical": true
+     },
+     "curves_Net2.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net2.png": {
+      "byte_identical": true
+     },
+     "features_Net2_seed0.csv": {
+      "rows": 35,
+      "byte_identical": true,
+      "rows_identical": 35,
+      "rows_drifting": 0
+     },
+     "map_Net2_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net2.png": {
+      "byte_identical": true
+     },
+     "results_Net2.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net2.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net2.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net2.png": {
+      "byte_identical": true
+     },
+     "strategies_Net2.png": {
+      "byte_identical": true
+     },
+     "summary_Net2.json": {
+      "byte_identical": true
+     },
+     "pilot/predictions_Net3.csv": {
+      "rows": 39,
+      "byte_identical": true,
+      "rows_identical": 39,
+      "rows_drifting": 0
+     },
+     "pilot/synthetic_log_Net3.csv": {
+      "rows": 78,
+      "byte_identical": true,
+      "rows_identical": 78,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.csv": {
+      "rows": 9,
+      "byte_identical": true,
+      "rows_identical": 9,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.json": {
+      "byte_identical": true
+     }
+    },
+    "n_files": 50,
+    "n_byte_identical": 50,
+    "not_byte_identical": [],
+    "drifting_rows": [],
+    "not_compared_not_written_by_run": [],
+    "committed_outputs_not_regenerated": [
+     "outputs/curves_ky4.png",
+     "outputs/curves_time_ky4.png",
+     "outputs/day_vs_night_ky4.png",
+     "outputs/day_vs_night_predicted_ky4.png",
+     "outputs/features_ky4_seed0.csv",
+     "outputs/map_ky4_n15.png",
+     "outputs/map_ky4_n3.png",
+     "outputs/map_ky4_n8.png",
+     "outputs/reliability_ky4.png",
+     "outputs/results_ky4.csv",
+     "outputs/results_routes_ky4.csv",
+     "outputs/results_time_ky4.csv",
+     "outputs/route_comparison_ky4.png",
+     "outputs/strategies_ky4.png",
+     "outputs/structural/curves_Net3.png",
+     "outputs/structural/curves_time_Net3.png",
+     "outputs/structural/day_vs_night_Net3.png",
+     "outputs/structural/day_vs_night_predicted_Net3.png",
+     "outputs/structural/features_Net3_seed0.csv",
+     "outputs/structural/map_Net3_n15.png",
+     "outputs/structural/map_Net3_n3.png",
+     "outputs/structural/map_Net3_n8.png",
+     "outputs/structural/reliability_Net3.png",
+     "outputs/structural/results_Net3.csv",
+     "outputs/structural/results_time_Net3.csv",
+     "outputs/structural/strategies_Net3.png",
+     "outputs/structural/summary_Net3.json",
+     "outputs/summary_ky4.json"
+    ]
+   },
+   "vs_reference": {
+    "reference": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/baseline",
+    "files": {
+     "curves_Net3.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "stress_test_Net3.png": {
+      "byte_identical": true
+     },
+     "summary_Net3.json": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "structural_persistent/map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "structural_persistent/route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/summary_Net3.json": {
+      "byte_identical": true
+     },
+     "curves_Net2.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net2.png": {
+      "byte_identical": true
+     },
+     "features_Net2_seed0.csv": {
+      "rows": 35,
+      "byte_identical": true,
+      "rows_identical": 35,
+      "rows_drifting": 0
+     },
+     "map_Net2_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net2.png": {
+      "byte_identical": true
+     },
+     "results_Net2.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net2.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net2.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net2.png": {
+      "byte_identical": true
+     },
+     "strategies_Net2.png": {
+      "byte_identical": true
+     },
+     "summary_Net2.json": {
+      "byte_identical": true
+     },
+     "pilot/predictions_Net3.csv": {
+      "rows": 39,
+      "byte_identical": true,
+      "rows_identical": 39,
+      "rows_drifting": 0
+     },
+     "pilot/synthetic_log_Net3.csv": {
+      "rows": 78,
+      "byte_identical": true,
+      "rows_identical": 78,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.csv": {
+      "rows": 9,
+      "byte_identical": true,
+      "rows_identical": 9,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.json": {
+      "byte_identical": true
+     }
+    },
+    "n_files": 50,
+    "n_byte_identical": 50,
+    "not_byte_identical": [],
+    "drifting_rows": [],
+    "not_compared_not_written_by_run": [],
+    "committed_outputs_not_regenerated": []
+   },
+   "app_default_demo": {
+    "code_root": "/Users/devansh/Downloads/conradwater",
+    "run_at": "2026-10-06 20:18",
+    "matches_changelog": true,
+    "violations": 41,
+    "junctions": 92,
+    "found": 36,
+    "unsampled_violations": 36,
+    "false_alarms": 1,
+    "flagged": 42,
+    "flagged_label": "Junctions likely below 0.2 mg/L (daily minimum)",
+    "sample_mean_mgL": 0.53,
+    "reveal_text": "True daily-minimum violations: **41 of 92** junctions. On the unsampled junctions the map found **36 of 36** (recall 100%) with 1 false alarms. Mean of your samples: 0.53 mg/L \u2014 which flags nothing."
+   }
+  }
+ },
+ "drifting_rows_pre_recorded": [],
+ "not_byte_identical_pre_recorded": []
+}

@@ -1,0 +1,346 @@
+{
+ "generated_by": "python -m residualmap.checks",
+ "about": "Run-invariant results only; the date, timings and free disk of each run are in outputs/chem/checks_run.json (git-ignored).",
+ "environment": {
+  "python": "3.13.9",
+  "numpy": "2.5.3",
+  "pandas": "3.0.6",
+  "scipy": "1.18.1",
+  "sklearn": "1.9.1",
+  "wntr": "1.5.0"
+ },
+ "all_pass": true,
+ "n_pass": 23,
+ "n_fail": 0,
+ "n_skipped": 0,
+ "checks": [
+  {
+   "name": "arrhenius_values",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "f10_E8000": 0.38144353165370065,
+    "f25_E8000": 1.5803588000543138,
+    "ratio_20_over_10": {
+     "5000.0": 1.826442863685029,
+     "8000.0": 2.621620022404431,
+     "12000.0": 4.244774443711373
+    }
+   }
+  },
+  {
+   "name": "water_property_ratios",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "nu10": 1.2989160133094786,
+    "nu25": 0.8909726376383114,
+    "D10": 0.7436106421575758,
+    "D25": 1.1415121763031766
+   }
+  },
+  {
+   "name": "seasonal_schedules",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "temp_C": [
+     10.5,
+     10.0,
+     10.5,
+     12.5,
+     15.0,
+     17.5,
+     19.5,
+     20.0,
+     19.5,
+     17.5,
+     15.0,
+     12.5
+    ],
+    "toc_mgL": [
+     2.5,
+     2.5,
+     2.5,
+     2.0,
+     1.5,
+     1.5,
+     1.5,
+     1.5,
+     1.5,
+     1.5,
+     3.0,
+     2.5
+    ],
+    "label": "ASSUMPTIONS, not measured schedules"
+   }
+  },
+  {
+   "name": "chemistry_thresholds_and_species",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "free": "0.2 mg/L free chlorine: a common operating minimum, not a California rule (California requires a detectable residual)",
+    "chloramine": "0.5 mg/L total chlorine: a common utility operating target, not a California rule (California requires a detectable residual)"
+   }
+  },
+  {
+   "name": "cache_tags_and_names",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "tag_T12.5_E8000": "72f9c19f47",
+    "names": {
+     "none": "grid24_full_Net3.pkl",
+     "neutral": "grid24_full_Net3.pkl",
+     "T12.5": "grid24_full_Net3_free_T12.5_E8000_72f9c19f47.pkl"
+    }
+   }
+  },
+  {
+   "name": "disk_preflight_floor",
+   "group": "units",
+   "pass": true,
+   "detail": {
+    "floor_gb": 1.5
+   }
+  },
+  {
+   "name": "chain_kinetics_match_closed_forms",
+   "group": "epanet_analytic",
+   "pass": true,
+   "detail": {
+    "order1": {
+     "max_abs_err_mgL": 0.0001487540154797573,
+     "C_last": 0.6837584376335144,
+     "exact_last": 0.6839071916489942,
+     "t_last_days": 0.9817477042468106
+    },
+    "order2": {
+     "max_abs_err_mgL": 0.00013055595984490243,
+     "C_last": 0.8400207161903381,
+     "exact_last": 0.8401487302673359,
+     "t_last_days": 0.9817477042468106
+    },
+    "order0": {
+     "max_abs_err_mgL": 6.526698728137603e-07,
+     "C_last": 0.32190340757369995,
+     "exact_last": 0.32190275490382714,
+     "t_last_days": 0.9817477042468106
+    },
+    "order1_limit": {
+     "max_abs_err_mgL": 8.909743721141616e-05,
+     "C_last": 1.010255217552185,
+     "exact_last": 1.0103443149893965,
+     "t_last_days": 0.9817477042468106
+    },
+    "clark": {
+     "max_abs_err_mgL": 0.00012619785975376274,
+     "C_last": 0.9508815407752991,
+     "exact_last": 0.9510063877215852,
+     "t_last_days": 0.9817477042468106
+    },
+    "clark_negative_CL": {
+     "max_abs_err_mgL": 0.0002292048169728611,
+     "C_last": 0.6327113509178162,
+     "exact_last": 0.6329246378278196,
+     "t_last_days": 0.9817477042468106
+    }
+   }
+  },
+  {
+   "name": "chain_legacy_units_break_order2",
+   "group": "epanet_analytic",
+   "pass": true,
+   "detail": {
+    "legacy_C_last": 0.0018949517980217934,
+    "exact_last": 0.8401487302673359,
+    "abs_err": 0.8382537784693141
+   }
+  },
+  {
+   "name": "grid_member_leaves_no_files",
+   "group": "epanet_analytic",
+   "pass": true,
+   "detail": {
+    "files_left": []
+   }
+  },
+  {
+   "name": "anchor_net3_seed0",
+   "group": "default_path",
+   "pass": true,
+   "detail": {
+    "below_threshold_at_sampling_hour": 11,
+    "below_threshold_daily_min": 41
+   }
+  },
+  {
+   "name": "nominal_defaults_write_identical_inp",
+   "group": "default_path",
+   "pass": true,
+   "detail": {
+    "T10_viscosity": 1.2989160133,
+    "T10_diffusivity": 0.74361064216,
+    "T10_mean_shift_mgL": 0.029898028820753098
+   }
+  },
+  {
+   "name": "ky4_diffusivity_is_multiplied",
+   "group": "default_path",
+   "pass": true,
+   "detail": {
+    "file_diffusivity": 0.05,
+    "at_10C": 0.03718053210787879
+   }
+  },
+  {
+   "name": "neutral_chemistry_is_bit_identical",
+   "group": "chemistry_truth",
+   "pass": true,
+   "detail": {
+    "Net3_seed0_default_T20_TOCref": true,
+    "Net3_seed0_default_unset": true,
+    "Net2_seed0_default_T20_TOCref": true,
+    "Net2_seed0_default_unset": true,
+    "Net3_seed1_structural_noise_T20_TOCref": true,
+    "Net3_seed1_structural_noise_unset": true,
+    "Net3_seed2_month_seed_T20_TOCref": true,
+    "Net3_seed2_month_seed_unset": true
+   }
+  },
+  {
+   "name": "corrected_units_match_legacy_first_order",
+   "group": "chemistry_truth",
+   "pass": true,
+   "detail": {
+    "max_abs_diff_mgL": {
+     "Net3": 1.1920928955078125e-07,
+     "Net2": 0.00013455748558044434
+    }
+   }
+  },
+  {
+   "name": "warm_water_truth_decays_faster_and_draws_are_isolated",
+   "group": "chemistry_truth",
+   "pass": true,
+   "detail": {
+    "mean_mgL_10C": 0.7124736905097961,
+    "mean_mgL_25C": 0.39491018652915955,
+    "E_true_K_seed0": 8581.4204944456,
+    "theta_w_seed0": 1.0631398983291211,
+    "truth_vs_nominal_age_corr": 0.9551174294012275
+   }
+  },
+  {
+   "name": "chloramine_refused_until_built",
+   "group": "chemistry_truth",
+   "pass": true,
+   "detail": {
+    "refused": {
+     "truth": true,
+     "truth_neutral": true,
+     "sim_kwargs": true,
+     "grid": true
+    },
+    "chloramine_rng_seed": 40003,
+    "free_chlorine_rng_seed": 20003
+   }
+  },
+  {
+   "name": "threshold_and_monte_carlo_p_below",
+   "group": "model",
+   "pass": true,
+   "detail": {
+    "n_flagged_0.2": 42,
+    "n_flagged_0.5_mc": 72,
+    "n_flagged_0.5_normal_approx": 72,
+    "max_abs_diff_mc_vs_normal_0.5": 0.03359724069215608
+   }
+  },
+  {
+   "name": "edge_mass_helper",
+   "group": "model",
+   "pass": true,
+   "detail": {
+    "uniform": {
+     "kb_low": 0.2,
+     "kb_high": 0.2,
+     "kb": 0.4,
+     "kw_low": 0.2,
+     "kw_high": 0.2,
+     "kw": 0.4,
+     "gamma_low": 0.33333333333333337,
+     "gamma_high": 0.33333333333333337,
+     "gamma": 0.6666666666666667,
+     "demand_low": 0.33333333333333337,
+     "demand_high": 0.33333333333333337,
+     "demand": 0.6666666666666667,
+     "rough_low": 0.33333333333333337,
+     "rough_high": 0.33333333333333337,
+     "rough": 0.6666666666666667,
+     "dose_low": 0.19999999999999907,
+     "dose_high": 0.19999999999999907,
+     "dose": 0.39999999999999813
+    }
+   }
+  },
+  {
+   "name": "fresh_grid_equals_cached_grid",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "sha256_matches_recorded": true,
+    "members": 675,
+    "cached_file_predates_run": true,
+    "max_abs_diff_vs_cached_file": 0.0,
+    "cached_file_mtime": "2026-09-21 16:36"
+   }
+  },
+  {
+   "name": "tagged_grid_for_a_cold_month",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "tagged_file": "grid24_decay_Net3_free_T10_E8000_e85b7a4fbe.pkl",
+    "mean_ln_shift": 0.5353056192398071
+   }
+  },
+  {
+   "name": "synthetic_pilot_net3",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "rmse": 0.07737841187902948,
+    "coverage90": 0.9230769230769231
+   }
+  },
+  {
+   "name": "app_default_demo",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "violations": 41,
+    "junctions": 92,
+    "found": 36,
+    "unsampled_violations": 36,
+    "false_alarms": 1,
+    "flagged": 42,
+    "sample_mean_mgL": 0.53
+   }
+  },
+  {
+   "name": "repo_untouched",
+   "group": "hygiene",
+   "pass": true,
+   "detail": {
+    "git_status_unchanged": true,
+    "msx_or_en_files_in_root": [],
+    "unexpected_files_in_scratch_cwd": [],
+    "cache_files_changed_or_removed": [],
+    "cache_files_added": [],
+    "cache_files_added_not_allowed": []
+   }
+  }
+ ]
+}

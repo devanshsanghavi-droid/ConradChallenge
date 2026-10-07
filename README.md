@@ -122,6 +122,7 @@ Real EPANET files have closed valves that are open, missing pipes, wrong tank da
 - **Synthetic truth.** No real grab-sample data yet. `docs/pilot_protocol.md` is the path to it: what a utility gives us, how taps become junctions, the monthly deliverable, and the hold-out validation (`python -m residualmap.pilot`) with success criteria fixed in advance — including rotating off-route sites, because a fixed route can never validate the map.
 - **Grid posterior is coarse** (5×5×3 decay × 3×3 hydraulic × 5 dose). Fine for six parameters with a 20-second cache; MCMC or an emulator if more are added.
 - **The discrepancy GP does not scale to 959 junctions at 15 samples.** On ky4 it raises the snapshot RMSE from 0.08 to 0.11 and the straddle rule's to 0.21; the calibrated simulator with its band is the better map there. A rule for when to switch the GP on (n ≥ J/25, or by marginal likelihood) is the next iteration's job. The 675-run grid takes 15 minutes and 62 MB on ky4.
+- **Water chemistry is reduced to calibrated bulk and wall decay rates per three-month window, for free chlorine only (iteration 4, tasks 8 to 14, is changing this).** Water age is handled exactly, through EPANET's transport in every simulation. Water temperature and organics (TOC) are not inputs: their effect is absorbed into the bulk and wall decay rates, which are refitted from the last three months of samples, so a model fitted in winter has no way to know that summer water decays faster. Chloraminated systems are not supported. Iteration 4 is adding temperature, TOC and a separate chloramine mode as explicit inputs, each to be tested in simulation against chemistry the model does not assume. So far only task 8 is done: the plumbing (`residualmap/chemistry.py`) and the saved checks (`python -m residualmap.checks`, 23 of 23 passing in `outputs/chem/checks_report.json`). It leaves the Net3, Net2, persistent stress-test and synthetic-pilot outputs unchanged, 50 of 50 files byte-identical (`outputs/chem/baseline_reproduction.json`); ky4 and the initial-level structural variant were not rerun.
 - **The route optimiser's edge is Net3-specific so far.** On Net2 and ky4 the K highest-demand sites do as well or better on recall, and the straddle-chosen sites hurt calibration at K=12. A mixed objective (half the sites for the violation call, half to calibrate) is proposed in `CHANGELOG.md`.
 
 ## The app (`app.py`)
@@ -141,6 +142,7 @@ python -m residualmap.experiment Net2 8      # small tank-fed network; ~2 min
 python -m residualmap.experiment ky4 2       # 959 junctions, fewer seeds; ~25 min including a 15-min grid on 11 cores
 python -m residualmap.experiment Net3 8 --structural=persistent   # stress test: truth with a closed pipe / wrong tank volume -> outputs/structural_persistent/
 python -m residualmap.pilot --synthetic Net3                       # the pilot validation on a synthetic six-month grab log -> outputs/pilot/
+python -m residualmap.checks                                       # the saved checks, ~20 s (--quick: a few seconds) -> outputs/chem/checks_report.json
 ```
 
 ## Layout
@@ -155,6 +157,8 @@ residualmap/route.py       monthly route of K sites chosen at once (straddle on 
 residualmap/pinn.py        graph-PINN baseline (numpy, L-BFGS, deep ensemble)
 residualmap/experiment.py  sequential-sampling loops (snapshot and time-aware), metrics, all figures
 residualmap/pilot.py       the real-data path: grab log + tap map -> rolling hold-out validation (RMSE, coverage, recall vs persistence)
+residualmap/chemistry.py   iteration 4: temperature physics (Arrhenius factor, water viscosity and diffusivity), the assumed seasonal schedules, Chemistry conditions and their cache tags, the unit recipe for EPANET's nonlinear kinetics
+residualmap/checks.py      the saved checks (python -m residualmap.checks) and the rerun-and-compare against the committed outputs (--reproduce)
 docs/pilot_protocol.md     what a pilot utility gives us, tap-to-junction mapping, monthly deliverable, the validation and its criteria
 docs/iteration3_journal.md the iteration-3 work journal: what was asked, built and found per task, every figure, bug-risk scores per code feature
 docs/feature_dictionary.md what every feature means physically
