@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 23,
+ "n_pass": 30,
  "n_fail": 0,
  "n_skipped": 0,
  "checks": [
@@ -286,6 +286,92 @@
    }
   },
   {
+   "name": "age_band_members_and_nominal_identity",
+   "group": "water_age",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "members": 9,
+     "max_range_width_h": 159.76385927200317,
+     "median_range_width_h": 33.25929844379425,
+     "initial_share_max_abs_diff_vs_no_decay_run": 1.4199256838764995e-05,
+     "n_lower_bound_daily_mean": 19,
+     "n_lower_bound_daily_max": 87
+    },
+    "Net2": {
+     "members": 9,
+     "max_range_width_h": 103.37548446655273,
+     "median_range_width_h": 83.90429496765137,
+     "initial_share_max_abs_diff_vs_no_decay_run": 1.0877847671508789e-05,
+     "n_lower_bound_daily_mean": 28,
+     "n_lower_bound_daily_max": 29
+    }
+   }
+  },
+  {
+   "name": "posterior_age_is_the_weighted_member_age",
+   "group": "water_age",
+   "pass": true,
+   "detail": {
+    "posterior_weights": [
+     0.3479,
+     0.3604,
+     0.1988,
+     0.0007,
+     0.0048,
+     0.086,
+     0.0,
+     0.0004,
+     0.001
+    ]
+   }
+  },
+  {
+   "name": "loss_split_exact_on_plug_flow_chain",
+   "group": "water_age",
+   "pass": true,
+   "detail": {
+    "kb_recovered_per_day": 0.8002214814793467,
+    "kw_effective_per_day": 3.5468699514367064,
+    "wall_share": 0.8160013556480408,
+    "max_abs_nonadditivity_minus_1": 0.00045353174209594727
+   }
+  },
+  {
+   "name": "truth_loss_split_leaves_the_truth_unchanged",
+   "group": "water_age",
+   "pass": true,
+   "detail": {
+    "wall_share_median": 0.8430284261703491,
+    "nonadditivity_range": [
+     0.9883565902709961,
+     1.0198291540145874
+    ],
+    "corrected_units_max_abs_diff_wall_share": 1.1920928955078125e-07,
+    "no_decay_min_mgL": 0.4961366057395935,
+    "junctions_with_unflushed_initial_water": 3
+   }
+  },
+  {
+   "name": "route_reason_default_unchanged_age_opt_in",
+   "group": "water_age",
+   "pass": true,
+   "detail": {
+    "first_reason_with_age": "P(daily min < 0.2) = 0.53: most uncertain violation call; sample at 17:00, when the band is widest by day; water about 6 h old then in your model; first site.",
+    "n_at_least": 0,
+    "p_below_at_0.5": [
+     0.6,
+     0.71,
+     0.62,
+     0.75,
+     0.66,
+     0.92,
+     0.91,
+     0.44
+    ]
+   }
+  },
+  {
    "name": "fresh_grid_equals_cached_grid",
    "group": "anchors",
    "pass": true,
@@ -327,6 +413,77 @@
     "false_alarms": 1,
     "flagged": 42,
     "sample_mean_mgL": 0.53
+   }
+  },
+  {
+   "name": "water_age_outputs_reproduce",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "summaries": {
+     "Net3": {
+      "rmse_h": 5.821096881888016,
+      "band_coverage": 0.766304347826087,
+      "n_excluded": 0,
+      "band_label": "range across demand and roughness errors",
+      "converged_only_rmse_h": 3.104092177779922
+     },
+     "Net2": {
+      "rmse_h": 5.615887654005252,
+      "band_coverage": 0.5785714285714285,
+      "n_excluded": 0,
+      "band_label": "range across demand and roughness errors",
+      "converged_only_rmse_h": 1.0181823650135464
+     },
+     "ky4": {
+      "rmse_h": 8.1092609838577,
+      "band_coverage": 0.8682087143625605,
+      "n_excluded": 59,
+      "band_label": "range across demand and roughness errors",
+      "converged_only_rmse_h": 6.715808373779591
+     }
+    },
+    "net3_seed0_row_identical": true
+   }
+  },
+  {
+   "name": "app_water_age_panels",
+   "group": "anchors",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "water_age_panel": true,
+     "loss_panel": true,
+     "oldest_water": true,
+     "tested_coverage_in_caption": true,
+     "loss_caption": true,
+     "lower_bound_note": true,
+     "needs_sample_note": false,
+     "route_age_column": true,
+     "pdf_button": true
+    },
+    "Net2": {
+     "water_age_panel": true,
+     "loss_panel": true,
+     "oldest_water": true,
+     "tested_coverage_in_caption": true,
+     "loss_caption": true,
+     "lower_bound_note": true,
+     "needs_sample_note": false,
+     "route_age_column": true,
+     "pdf_button": true
+    },
+    "demo_off": {
+     "water_age_panel": true,
+     "loss_panel": true,
+     "oldest_water": true,
+     "tested_coverage_in_caption": true,
+     "loss_caption": false,
+     "lower_bound_note": true,
+     "needs_sample_note": true,
+     "route_age_column": true,
+     "pdf_button": true
+    }
    }
   },
   {

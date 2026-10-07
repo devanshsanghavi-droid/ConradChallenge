@@ -18,7 +18,8 @@ import math
 import numpy as np
 import pandas as pd
 
-from .simgp import DAY_HOURS
+from .age import INITIAL_SHARE_MAX
+from .simgp import DAY_HOURS, SimGP24
 
 
 def spread_hours(K: int, hours: list[int] = DAY_HOURS) -> list[int]:
@@ -29,13 +30,25 @@ def spread_hours(K: int, hours: list[int] = DAY_HOURS) -> list[int]:
 
 def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0.2,
                repulsion: float = 1.0, length_scale_m: float | None = None,
-               exclude: list[str] | None = None) -> pd.DataFrame:
+               exclude: list[str] | None = None, with_age: bool = False,
+               age_initial_share: pd.DataFrame | None = None) -> pd.DataFrame:
     """K (junction, hour) pairs from a fitted (or prior) SimGP24.  Returns junction, hour, p_below,
-    score and a one-sentence reason per site."""
+    score and a one-sentence reason per site.
+
+    p_below is P(daily min < threshold) from the model's own draws at this threshold (SimGP24.p_below with the
+    model), so a model built for another threshold still gives the right number.
+
+    with_age=True (the app) adds a water_age_h column and puts the water age of the operator's model at that
+    junction and hour into the reason; it also adds a 'why' column, the reason without its P(...) part, for the PDF.
+    age_initial_share (hour x junction, age.AgeBand.initial_share): where more than 5% of the water at that hour is
+    still the 7-day run's starting water, the age is a lower bound and the reason says 'at least'.  The default
+    keeps the committed reason text, which experiment.main writes into summary_<net>.json, so the committed
+    outputs reproduce byte for byte.  Only the text changes: the sites, hours and scores are the same either way."""
     sc = model.sc
     z_mu, z_sd = model.predict_hours()
     sd_acq = pd.DataFrame(model.z_sd_acq_, columns=sc.junctions).loc[hours]
     dmin = model.predict_daily_min()
+    p_below = SimGP24.p_below(dmin, threshold, model=model)
     D = sc.hyd_dist
     if length_scale_m is None:
         finite = D.values[np.isfinite(D.values) & (D.values > 0)]
@@ -56,12 +69,20 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
         free = [h for h in hours if used[h] < cap]
         h = int(sd_acq.loc[free, j].idxmax())                       # the daytime hour that constrains it most
         used[h] += 1
-        p = float(dmin.loc[j, "p_below"])
+        p = float(p_below.loc[j])
         near = f"{D.loc[j, chosen].min() / 1000:.1f} km from the nearest other route site" if chosen else "first site"
         why = ("most uncertain violation call" if abs(p - 0.5) < 0.25 else
                "likely violation, confirm it" if p >= 0.75 else "likely fine, widest band")
-        rows.append({"junction": j, "hour": h, "p_below": round(p, 2), "score": round(float(base[j]), 3),
-                     "reason": f"P(daily min < {threshold}) = {p:.2f} — {why}; sample at {h:02d}:00 where the band is widest by day; {near}."})
+        row = {"junction": j, "hour": h, "p_below": round(p, 2), "score": round(float(base[j]), 3),
+               "reason": f"P(daily min < {threshold}) = {p:.2f} — {why}; sample at {h:02d}:00 where the band is widest by day; {near}."}
+        if with_age:
+            age = float(sc.age_by_hour_h.loc[h, j])
+            lower = age_initial_share is not None and float(age_initial_share.loc[h, j]) > INITIAL_SHARE_MAX
+            row["water_age_h"] = round(age, 1)
+            row["why"] = (f"{why}; sample at {h:02d}:00, when the band is widest by day; water {'at least' if lower else 'about'} "
+                          f"{age:.0f} h old then in your model; {near}.")
+            row["reason"] = f"P(daily min < {threshold}) = {p:.2f}: {row['why']}"
+        rows.append(row)
         chosen.append(j); candidates.remove(j)
     return pd.DataFrame(rows)
 

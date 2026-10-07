@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
+import textwrap
 import warnings
 
 import matplotlib
@@ -28,6 +30,7 @@ import streamlit as st
 import wntr
 from scipy.stats import norm
 
+from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, loss_split, oldest_water
 from residualmap.features import build_features
 from residualmap.route import plan_route
 from residualmap.simgp import DAY_HOURS, GRIDS, SimGP24, simulator_grid_24h
@@ -35,9 +38,11 @@ from residualmap.simulate import LIB, build_scenario, nominal_scenario, source_n
 
 warnings.filterwarnings("ignore")
 UPLOAD_DIR = "outputs/app_uploads"
+AGE_RESULTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs", "chem", "water_age_{}.json")
 CACHE_DIR = "outputs/cache"
-EXAMPLES = {"Net3 (North Marin, CA — 92 junctions)": "Net3", "Net2 (tank-fed — 35 junctions)": "Net2",
-            "ky4 (Kentucky — 959 junctions; first run takes ~15 min)": "ky4"}
+PDF_WHY_CHARS = 84     # characters per line of the PDF route table's 'why' column
+EXAMPLES = {"Net3 (EPANET example, 92 junctions)": "Net3", "Net2 (EPANET example, tank-fed, 35 junctions)": "Net2",
+            "ky4 (KYPIPE dataset, 959 junctions; first run takes about 15 min)": "ky4"}
 
 st.set_page_config(page_title="ResidualMap", layout="wide")
 st.title("ResidualMap")
@@ -89,6 +94,36 @@ def prepare(path: str, dose: float):
 
 
 @st.cache_resource(show_spinner=False)
+def water_age(path: str, _sc):
+    """Water age of the operator's model at the grid's 9 demand x roughness settings, and the nominal model's share
+    of the simulation's starting water (10 EPANET AGE runs, once per network)."""
+    return hydraulic_age_band(_sc)
+
+
+@st.cache_resource(show_spinner=False)
+def chlorine_loss(path: str, dose: float, member: tuple, dose_mult: float, _model):
+    """Where the calibrated member loses its chlorine: four EPANET runs (as calibrated, wall decay off, bulk decay
+    off, no decay), cached per network, dose and member."""
+    return loss_split(_model)
+
+
+def age_test(path: str) -> dict | None:
+    """The simulated test of an example network under the default truth (outputs/chem/water_age_<net>.json):
+    the age range's label, its coverage of the true daily-mean and daily-max age, and how far the calibrated
+    loss split was from the truth's.  An uploaded file has no such test: None."""
+    try:
+        with open(AGE_RESULTS.format(os.path.basename(path))) as fh:
+            d = json.load(fh)
+        t = d["by_truth"]["default"]
+        return {"label": d["band_label"], "cov": t["band_coverage"], "cov_max": t["band_coverage_daily_max"],
+                "split_median_diff": t["loss_split"]["median_abs_diff_mean"],
+                "split_median_diff_max": t["loss_split"]["median_abs_diff_max"],
+                "split_mae": t["loss_split"]["wall_share_mae"], "n_seeds": t["n_seeds"]}
+    except (OSError, KeyError, ValueError, TypeError):
+        return None
+
+
+@st.cache_resource(show_spinner=False)
 def demo_truth(path: str, dose: float, seed: int, kb: float, kw: float):
     return build_scenario(path, seed=seed, sample_hour=14, source_dose=dose, kb_per_day=kb, kw_m_per_day=kw)
 
@@ -106,6 +141,8 @@ n_runs = int(np.prod([len(a) for a in GRIDS["full"]]))
 with st.spinner(f"Running {n_runs} EPANET simulations of your model over the decay and hydraulic-mismatch grid "
                 f"(once per network; cached afterwards)…"):
     sc, X = prepare(net_path, float(dose))
+with st.spinner("Running 10 EPANET water-age simulations of your model (demand and roughness settings; once per network)…"):
+    band = water_age(net_path, sc)
 junctions = list(sc.junctions)
 
 # samples table -----------------------------------------------------------------------------
@@ -131,17 +168,18 @@ samples = samples[samples.junction.isin(junctions)]
 S = pd.DataFrame({"junction": samples.junction.astype(str), "hour": samples.hour.astype(int), "y": samples["mg/L"].astype(float)})
 
 # model ------------------------------------------------------------------------------------
-model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR)
+model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold))
 model.fit(S if len(S) else None)
 hourly = model.predict_hours()
 pmin = model.predict_daily_min()
-route = plan_route(model, int(K), threshold=float(threshold), exclude=list(S.junction))
+route = plan_route(model, int(K), threshold=float(threshold), exclude=list(S.junction), with_age=True,
+                   age_initial_share=band.initial_share)
 
 # ----------------------------------------------------------------------------- headline numbers
 view = st.radio("Show", ["Daily minimum (the compliance number)"] + [f"{h:02d}:00" for h in range(24)], horizontal=True, index=0)
 if view.startswith("Daily"):
     med, lo, hi = pmin["median"], pmin["lo90"], pmin["hi90"]
-    p_below = pmin["p_below"] if abs(float(threshold) - 0.2) < 1e-9 else SimGP24.p_below(pmin, float(threshold))
+    p_below = pmin["p_below"]          # the model's own draws, at the threshold it was built with
     label = "daily minimum"
 else:
     h = int(view[:2]); z_mu, z_sd = hourly[0][h], hourly[1][h]
@@ -193,8 +231,76 @@ st.pyplot(four_panels(), width='stretch')
 
 # ----------------------------------------------------------------------------- next samples with reasons
 st.subheader("Sample here next")
-st.dataframe(route.assign(hour=[f"{h:02d}:00" for h in route.hour])[["junction", "hour", "p_below", "reason"]]
-             .rename(columns={"p_below": f"P(daily min < {threshold:g})"}), width='stretch', hide_index=True)
+st.dataframe(route.assign(hour=[f"{h:02d}:00" for h in route.hour])[["junction", "hour", "p_below", "water_age_h", "reason"]]
+             .rename(columns={"p_below": f"P(daily min < {threshold:g})", "water_age_h": "water age (h)"}), width='stretch', hide_index=True)
+
+# ----------------------------------------------------------------------------- water age, and where chlorine is lost
+age_max = band.nominal.max()
+age_lo, age_hi = band.daily_range("max")
+j_old, h_old = oldest_water(band.nominal)
+test = age_test(net_path)
+range_label = test["label"] if test else RANGE_LABEL
+# every age is from a 7-day simulation that starts with the file's water in the pipes and tanks; where more than
+# INITIAL_SHARE_MAX of the water at a junction is still that starting water, its age is a lower bound
+lb_max, lb_mean = band.lower_bound("max"), band.lower_bound("mean")
+share_old = float(band.initial_share[j_old].iloc[int(np.argmax(band.nominal[j_old].values))])
+if lb_max[j_old]:
+    oldest_line = (f"oldest water: at least {h_old:.0f} h at junction {j_old} (your model; at that hour {share_old:.0%} of "
+                   f"the water there is still the 7-day simulation's starting water, so it is older than the simulation can show)")
+else:
+    oldest_line = (f"oldest water: {h_old:.0f} h at junction {j_old} (your model; {age_lo[j_old]:.0f} to {age_hi[j_old]:.0f} h "
+                   f"across demand and roughness errors)")
+lower_note = (f"Every age comes from a 7-day simulation that starts with your file's water in the pipes and tanks. Where "
+              f"more than {INITIAL_SHARE_MAX:.0%} of a junction's water is still that starting water, its age is a lower bound: "
+              f"{int(lb_max.sum())} of {len(junctions)} junctions at their oldest hour, {int(lb_mean.sum())} on the day's average.")
+age_col, loss_col = st.columns([2, 1])
+with age_col:
+    st.subheader("Water age")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.6))
+    network_panel(axes[0], age_max, "Water age at its oldest hour of the day (h)\nyour EPANET model, 7-day simulation", "YlOrBr",
+                  (0, float(age_max.quantile(0.98))))
+    network_panel(axes[1], age_hi - age_lo, f"How much that age moves (h): {range_label}\n9 demand and roughness settings",
+                  "magma", (0, max(float((age_hi - age_lo).quantile(0.98)), 1.0)))
+    fig.tight_layout()
+    st.pyplot(fig, width='stretch')
+    if test and range_label == RANGE_LABEL:
+        tested = (f" In simulation on this network it held the true daily-maximum age at {test['cov_max']:.0%} of junctions "
+                  f"(daily mean: {test['cov']:.0%}), so it is shown as a range, not a 90% band: errors in single junctions' "
+                  f"demands are not among the 9 settings.")
+    elif test:
+        tested = f" In simulation on this network it held the true daily-maximum age at {test['cov_max']:.0%} of junctions."
+    else:
+        tested = " It has not been tested against a simulated truth for this file, so it is shown as a range, not a 90% band."
+    st.caption(f"Hours since the water left the source, from your EPANET file: {oldest_line}. {lower_note} Right: how far "
+               f"each junction's age moves across the 9 settings the model already weighs (demand x0.85, x1, x1.15; pipe "
+               f"roughness x0.9, x1, x1.1).{tested}")
+with loss_col:
+    st.subheader("Where chlorine is lost")
+    if model.map_params_ is None:
+        st.info("Enter at least one grab sample: the split uses the decay rates your samples calibrate.")
+    else:
+        split = chlorine_loss(net_path, float(dose), tuple(model.map_params_), float(model.map_dose_), model)
+        ws = split.wall_share.dropna()
+        if ws.empty:
+            st.info("Chlorine loss is under 2% at every junction for these decay rates: there is nothing to split.")
+        else:
+            fig, ax = plt.subplots(figsize=(7, 5.6))
+            network_panel(ax, ws, "Share of the chlorine loss at pipe walls\n0 = all in the water, 1 = all at the walls", "RdYlBu_r", (0, 1))
+            fig.tight_layout()
+            st.pyplot(fig, width='stretch')
+            na = split.nonadditivity.dropna()
+            n_small = len(junctions) - len(ws)
+            accuracy = (f" In simulation on this network ({test['n_seeds']} scenarios, 8 samples each) the calibrated median was "
+                        f"off from the truth's by {test['split_median_diff']:.2f} on average and by up to {test['split_median_diff_max']:.2f} "
+                        f"in one scenario." if test else " It has not been tested against a simulated truth for this file.")
+            st.caption(f"For the single most likely decay rates your samples calibrate (bulk {model.map_params_[0]:.2f} /day, wall "
+                       f"{model.map_params_[1]:.2f} m/day, old-pipe factor {model.map_params_[2]:.1f}): a median {ws.median():.0%} of the "
+                       f"chlorine lost on the way to a junction is lost at the pipe walls, the rest in the water (organics and other "
+                       f"reactants). It is an estimate: with few samples, bulk and wall decay can trade off against each other."
+                       f"{accuracy} Exact along a single path from the source; approximate where flows mix (here the two parts add "
+                       f"up to {na.min():.2f} to {na.max():.2f} of the total). Not coloured (under 2% loss): {n_small} "
+                       f"junction{'' if n_small == 1 else 's'}. Field studies report wall loss up to 97% of the total in old pipes "
+                       f"(Maleki et al. 2023).")
 
 # ----------------------------------------------------------------------------- worst hour + demo truth
 left, right = st.columns([1, 1])
@@ -232,7 +338,7 @@ def pdf_bytes() -> bytes:
              f"demand ×{model.map_params_[3]:.2f}, roughness ×{model.map_params_[4]:.2f}, dose ×{model.map_dose_:.2f}") if model.map_params_ is not None else "no samples yet: map from the model's physics alone"
     ax.text(0, 0.45, f"{len(S)} grab samples · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
                      f"{int((pmin['p_below'] > 0.5).sum())} of {len(junctions)} junctions likely below the minimum at their daily minimum · "
-                     f"worst hour {worst:02d}:00\n{calib}", fontsize=10.5, va="top")
+                     f"worst hour {worst:02d}:00\n{calib}\n{oldest_line}", fontsize=10.5, va="top")
     axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
     top = max(1.2, float(dose))
     network_panel(axes[0], med, f"Chlorine — {label} (mg/L)", "viridis", (0, top), list(S.junction), [f"{h}h" for h in S.hour])
@@ -241,10 +347,18 @@ def pdf_bytes() -> bytes:
     network_panel(axes[3], p_below, f"Next route: {len(route)} sites", "Reds", (0, 1), list(route.junction), [f"{k + 1}: {h:02d}h" for k, h in enumerate(route.hour)])
     ax = fig.add_subplot(gs[2, :2]); ax.axis("off")
     ax.set_title("Sample here next", loc="left", fontsize=12, fontweight="bold")
-    rows = [[str(j), f"{h:02d}:00", f"{p:.2f}", r[:110]] for j, h, p, r in zip(route.junction, route.hour, route.p_below, route.reason)]
+    # the reason without its P(...) part (its own column), wrapped so none of it is cut off
+    rows = [[str(j), f"{h:02d}:00", f"{p:.2f}", "\n".join(textwrap.wrap(w, PDF_WHY_CHARS))]
+            for j, h, p, w in zip(route.junction, route.hour, route.p_below, route.why)]
     tbl = ax.table(cellText=rows, colLabels=["junction", "hour", f"P(min<{threshold:g})", "why"], loc="upper left", cellLoc="left",
                    colWidths=[0.1, 0.1, 0.12, 0.68])
-    tbl.auto_set_font_size(False); tbl.set_fontsize(7.5); tbl.scale(1, 1.25)
+    n_lines = [1] + [r[3].count("\n") + 1 for r in rows]
+    unit = 0.97 / (sum(n_lines) + 0.6 * len(n_lines))       # the table fills the panel's height
+    for (r, c), cell in tbl.get_celld().items():
+        cell.set_height(unit * (n_lines[r] + 0.6))
+    # each text line gets about unit of the table's height: a long route gets a smaller font, never overlapping rows
+    line_pt = unit * ax.get_position().height * fig.get_figheight() * 72
+    tbl.auto_set_font_size(False); tbl.set_fontsize(min(7.5, 0.95 * line_pt))
     ax = fig.add_subplot(gs[2, 2:])
     ax.bar(frac_by_hour.index, frac_by_hour.values * 100, color=["tab:red" if h >= 18 or h < 6 else "tab:blue" for h in frac_by_hour.index])
     ax.axvspan(6.5, 17.5, color="gold", alpha=0.15, label="sampling window")

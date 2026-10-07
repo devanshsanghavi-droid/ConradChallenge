@@ -1,0 +1,441 @@
+{
+ "generated_by": "python -m residualmap.experiment_chem age Net2 8",
+ "network": "Net2",
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7
+ ],
+ "truths": [
+  "default",
+  "persistent"
+ ],
+ "about": "Simulation only. Water age of the operator's nominal model and of 9 demand x roughness variants of it (EPANET AGE), scored against the hidden truth's own water age; chlorine error by nominal-age group for SimGP24 at 8 random daytime samples; the chlorine loss split between the water and the pipe walls for the calibrated member and for the truth. Top-level numbers are for the first truth listed, pooled over seeds; by_truth has both.",
+ "definitions": {
+  "age": "daily-mean water age (h) over the last day of the 7-day run, per junction",
+  "rmse_h, mae_h, bias_h": "nominal (operator's file) minus true daily-mean age, over junctions not excluded",
+  "band_coverage": "share of junctions whose true daily-mean age lies within [min, max] of the 9 members' daily-mean ages",
+  "band_coverage_daily_max": "the same for the daily-maximum age (what the app's map shows)",
+  "posterior": "ages weighted by the SimGP24 posterior over the 9 hydraulic members after 8 samples; band = its central 90%",
+  "n_excluded": "junction-seeds whose TRUE daily-max age exceeds 160 h (the plan's rule; it misses most junctions whose age is a lower bound, see lower_bounds)",
+  "lower bound": "every age is a 7-day-run age; where more than 0.05 of a junction's water is still the run's starting water (simulate.initial_water_share: daily mean, or any hour for the daily max) the age is a lower bound. lower_bounds counts them in the operator's model and the truth; converged_only repeats the age metrics on the junctions where neither is one",
+  "chlorine_daily_min_n8": "SimGP24 at 8 random daytime samples, unsampled junctions, daily minimum; recall NaN when nothing to find",
+  "wall_share": "1 - L_bulk / L_tot per junction (mean over hours of ln C_ref / C); undefined below a loss of 0.02",
+  "nonadditivity": "(L_bulk + L_wall) / L_tot; 1 on a single plug-flow path",
+  "start_up_transient": "share of a junction's water on the scored day that is still the file's initial contents (1 - no-decay chlorine / dose) for the calibrated member: median over junctions averaged over seeds, and the largest; n_unflushed_truth counts truth junctions whose no-decay chlorine is under 95% of the lowest possible source dose"
+ },
+ "settings": {
+  "n_samples": 8,
+  "noise_sd_mgL": 0.03,
+  "threshold_mgL": 0.2,
+  "sampling": "as the app's demo: default_rng(seed), 8 distinct junctions, hours in 07:00-17:00, readings rounded to 0.01 mg/L",
+  "truth_settings": {
+   "source_dose": 1.2,
+   "kb_per_day": 0.1,
+   "kw_m_per_day": 0.2,
+   "hidden_draws": "per scenario: bulk rate x U(0.8, 1.2); per pipe: wall rate x roughness factor (gamma = 1) x lognormal(0, 0.4) and Hazen-Williams C x lognormal(0, 0.10); demand x U(0.85, 1.15) globally and x lognormal(0, 0.15) per junction; dose x U(0.9, 1.1) per source (simulate.build_scenario)"
+  },
+  "band_members": [
+   [
+    0.85,
+    0.9
+   ],
+   [
+    0.85,
+    1.0
+   ],
+   [
+    0.85,
+    1.1
+   ],
+   [
+    1.0,
+    0.9
+   ],
+   [
+    1.0,
+    1.0
+   ],
+   [
+    1.0,
+    1.1
+   ],
+   [
+    1.15,
+    0.9
+   ],
+   [
+    1.15,
+    1.0
+   ],
+   [
+    1.15,
+    1.1
+   ]
+  ],
+  "unconverged_age_h": 160.0,
+  "initial_share_max": 0.05,
+  "band_coverage_bar": 0.85
+ },
+ "rmse_h": 5.615887654005252,
+ "mae_h": 3.8360244929790497,
+ "bias_h": 0.30278153344988823,
+ "band_coverage": 0.5785714285714285,
+ "band_coverage_daily_max": 0.7785714285714285,
+ "n_excluded": 0,
+ "n_junction_seeds": 280,
+ "band_label": "range across demand and roughness errors",
+ "band_label_rule": "'90% band' only if every band_coverage and band_coverage_daily_max here is at least 0.85; otherwise 'range across demand and roughness errors'. Stricter than the plan, which asks only band_coverage (daily mean, default truth) >= 0.85: the app's map shows the daily-max range",
+ "nominal_age": {
+  "oldest_junction": "34",
+  "oldest_daily_max_h": 120.96712493896484,
+  "oldest_range_h": [
+   111.41411590576172,
+   128.0099639892578
+  ],
+  "oldest_initial_share_max": 0.36976999044418335,
+  "oldest_initial_share_at_oldest_hour": 0.3376510739326477,
+  "oldest_is_lower_bound": true,
+  "n_lower_bound_daily_mean": 28,
+  "n_lower_bound_daily_max": 29,
+  "initial_share_daily_mean_median": 0.14735060930252075,
+  "daily_mean_median_h": 49.29393092791239,
+  "daily_mean_max_h": 97.0401193300883,
+  "n_nominal_daily_max_above_unconverged": 0
+ },
+ "by_truth": {
+  "default": {
+   "n_seeds": 8,
+   "n_junction_seeds": 280,
+   "n_excluded": 0,
+   "rmse_h": 5.615887654005252,
+   "mae_h": 3.8360244929790497,
+   "bias_h": 0.30278153344988823,
+   "band_coverage": 0.5785714285714285,
+   "band_coverage_daily_max": 0.7785714285714285,
+   "band_width_mean_h": 8.576973311106363,
+   "band_coverage_by_seed": [
+    0.8,
+    0.343,
+    0.514,
+    0.2,
+    0.743,
+    0.714,
+    0.543,
+    0.771
+   ],
+   "posterior": {
+    "rmse_h": 5.407220494885325,
+    "mae_h": 3.5704033116605145,
+    "bias_h": -0.6108253154903535,
+    "band_coverage": 0.5392857142857143,
+    "band_width_mean_h": 8.026215362664136
+   },
+   "rmse_h_by_seed": [
+    3.783,
+    6.987,
+    5.209,
+    7.762,
+    4.22,
+    3.403,
+    7.539,
+    3.945
+   ],
+   "post_rmse_h_by_seed": [
+    2.988,
+    8.935,
+    3.158,
+    6.334,
+    4.018,
+    2.971,
+    7.328,
+    4.049
+   ],
+   "n_seeds_posterior_worse": 2,
+   "lower_bounds": {
+    "n_lower_bound_nominal": 28,
+    "n_lower_bound_nominal_daily_max": 29,
+    "n_lower_bound_truth_mean": 27.25,
+    "n_lower_bound_truth_daily_max_mean": 29.0,
+    "initial_share_nominal_median": 0.14735060930252075,
+    "initial_share_truth_median_mean": 0.15038091223686934
+   },
+   "converged_only": {
+    "n_junction_seeds": 54,
+    "n_junction_seeds_daily_max": 48,
+    "rmse_h": 1.0181823650135464,
+    "mae_h": 0.39186239380527427,
+    "bias_h": 0.19464533564772596,
+    "band_coverage": 0.42592592592592593,
+    "band_coverage_daily_max": 0.5,
+    "posterior": {
+     "rmse_h": 0.9408674025921869,
+     "band_coverage": 0.4074074074074074
+    }
+   },
+   "chlorine_daily_min_n8": {
+    "n": 216,
+    "rmse": 0.06148969991853287,
+    "mae": 0.04782563745080975,
+    "bias": -0.02977119345022648,
+    "coverage90": 0.9120370370370371,
+    "n_true_viol": 90,
+    "n_found": 84,
+    "recall": 0.9333333333333333,
+    "false_alarms": 32,
+    "n_flagged": 116
+   },
+   "loss_split": {
+    "wall_share_model_median": 0.7684446796774864,
+    "wall_share_truth_median": 0.8180486857891083,
+    "wall_share_mae": 0.06100102805066854,
+    "wall_share_bias": -0.04603716288693249,
+    "median_abs_diff_mean": 0.06636961549520493,
+    "median_abs_diff_max": 0.2651849389076233,
+    "wall_share_corr_mean": 0.9846745773147485,
+    "frac_wall_dominated_model": 0.9742647058823529,
+    "frac_wall_dominated_truth": 1.0,
+    "nonadditivity_model_range": [
+     0.9992570877075195,
+     1.013231635093689
+    ],
+    "nonadditivity_truth_range": [
+     0.999635636806488,
+     1.008309006690979
+    ]
+   },
+   "start_up_transient": {
+    "initial_water_share_median": 0.13714860379695892,
+    "initial_water_share_max": 0.2742600440979004,
+    "n_initial_water_over_5pct_mean": 27.0,
+    "n_unflushed_truth_mean": 14.125
+   }
+  },
+  "persistent": {
+   "n_seeds": 8,
+   "n_junction_seeds": 280,
+   "n_excluded": 0,
+   "rmse_h": 15.768933231566715,
+   "mae_h": 12.693817675113678,
+   "bias_h": 12.387539803981781,
+   "band_coverage": 0.18214285714285713,
+   "band_coverage_daily_max": 0.1,
+   "band_width_mean_h": 8.576973311106363,
+   "band_coverage_by_seed": [
+    0.2,
+    0.286,
+    0.057,
+    0.086,
+    0.143,
+    0.171,
+    0.314,
+    0.2
+   ],
+   "posterior": {
+    "rmse_h": 14.812844162499934,
+    "mae_h": 11.896791262104152,
+    "bias_h": 11.527442246141367,
+    "band_coverage": 0.1607142857142857,
+    "band_width_mean_h": 8.0261893907828
+   },
+   "rmse_h_by_seed": [
+    15.681,
+    7.945,
+    18.105,
+    20.042,
+    17.323,
+    18.279,
+    11.113,
+    13.897
+   ],
+   "post_rmse_h_by_seed": [
+    13.568,
+    6.544,
+    16.911,
+    18.305,
+    17.206,
+    17.2,
+    10.493,
+    14.331
+   ],
+   "n_seeds_posterior_worse": 1,
+   "lower_bounds": {
+    "n_lower_bound_nominal": 28,
+    "n_lower_bound_nominal_daily_max": 29,
+    "n_lower_bound_truth_mean": 13.5,
+    "n_lower_bound_truth_daily_max_mean": 28.875,
+    "initial_share_nominal_median": 0.14735060930252075,
+    "initial_share_truth_median_mean": 0.04862760636024177
+   },
+   "converged_only": {
+    "n_junction_seeds": 56,
+    "n_junction_seeds_daily_max": 48,
+    "rmse_h": 1.9617374358571205,
+    "mae_h": 0.7293096105568111,
+    "bias_h": 0.6565949567593634,
+    "band_coverage": 0.4642857142857143,
+    "band_coverage_daily_max": 0.5,
+    "posterior": {
+     "rmse_h": 1.871958230503187,
+     "band_coverage": 0.42857142857142855
+    }
+   },
+   "chlorine_daily_min_n8": {
+    "n": 216,
+    "rmse": 0.07096660676123408,
+    "mae": 0.054563522539785164,
+    "bias": -0.027741825378676935,
+    "coverage90": 0.9212962962962963,
+    "n_true_viol": 47,
+    "n_found": 42,
+    "recall": 0.8936170212765957,
+    "false_alarms": 27,
+    "n_flagged": 69
+   },
+   "loss_split": {
+    "wall_share_model_median": 0.7532485798001289,
+    "wall_share_truth_median": 0.8527499437332153,
+    "wall_share_mae": 0.08584182197228074,
+    "wall_share_bias": -0.08512637624517083,
+    "median_abs_diff_mean": 0.0995013639330864,
+    "median_abs_diff_max": 0.21410822868347168,
+    "wall_share_corr_mean": 0.9255976389436892,
+    "frac_wall_dominated_model": 1.0,
+    "frac_wall_dominated_truth": 1.0,
+    "nonadditivity_model_range": [
+     0.9996708631515503,
+     1.0088763236999512
+    ],
+    "nonadditivity_truth_range": [
+     0.999635636806488,
+     1.011915683746338
+    ]
+   },
+   "start_up_transient": {
+    "initial_water_share_median": 0.13714323192834854,
+    "initial_water_share_max": 0.2742500305175781,
+    "n_initial_water_over_5pct_mean": 27.0,
+    "n_unflushed_truth_mean": 1.0
+   }
+  }
+ },
+ "chlorine_by_age_tercile": {
+  "default": {
+   "1": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 1.4583333333333333,
+    "nominal_age_hi_h": 36.24466609954834,
+    "frac_lower_bound": 0.4166666666666667,
+    "nominal_age_mean_h": 14.435341835021973,
+    "true_age_mean_h": 14.398983001708984,
+    "n": 75,
+    "rmse": 0.07646095772564748,
+    "mae": 0.06086517919504945,
+    "bias": -0.02856534452365608,
+    "coverage90": 0.9333333333333333,
+    "n_true_viol": 13,
+    "n_found": 13,
+    "recall": 1.0,
+    "false_alarms": 13,
+    "n_flagged": 26
+   },
+   "2": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 37.79784742991129,
+    "nominal_age_hi_h": 61.51706341902415,
+    "frac_lower_bound": 1.0,
+    "nominal_age_mean_h": 49.05849075317383,
+    "true_age_mean_h": 47.44615936279297,
+    "n": 70,
+    "rmse": 0.051809764152220245,
+    "mae": 0.03891492282380929,
+    "bias": -0.020466321060420876,
+    "coverage90": 0.9571428571428572,
+    "n_true_viol": 22,
+    "n_found": 16,
+    "recall": 0.7272727272727273,
+    "false_alarms": 8,
+    "n_flagged": 24
+   },
+   "3": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 62.96059435606003,
+    "nominal_age_hi_h": 97.0401193300883,
+    "frac_lower_bound": 1.0,
+    "nominal_age_mean_h": 76.1928482055664,
+    "true_age_mean_h": 76.60197448730469,
+    "n": 71,
+    "rmse": 0.051774687901961505,
+    "mae": 0.042836685240557,
+    "bias": -0.04021879537669372,
+    "coverage90": 0.8450704225352113,
+    "n_true_viol": 55,
+    "n_found": 55,
+    "recall": 1.0,
+    "false_alarms": 11,
+    "n_flagged": 66
+   }
+  },
+  "persistent": {
+   "1": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 1.4583333333333333,
+    "nominal_age_hi_h": 36.24466609954834,
+    "frac_lower_bound": 0.4166666666666667,
+    "nominal_age_mean_h": 14.435341835021973,
+    "true_age_mean_h": 11.058300971984863,
+    "n": 75,
+    "rmse": 0.09118588144867701,
+    "mae": 0.07603912211961104,
+    "bias": -0.03603805628169281,
+    "coverage90": 0.8933333333333333,
+    "n_true_viol": 4,
+    "n_found": 3,
+    "recall": 0.75,
+    "false_alarms": 9,
+    "n_flagged": 12
+   },
+   "2": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 37.79784742991129,
+    "nominal_age_hi_h": 61.51706341902415,
+    "frac_lower_bound": 1.0,
+    "nominal_age_mean_h": 49.05849075317383,
+    "true_age_mean_h": 32.40974807739258,
+    "n": 70,
+    "rmse": 0.06114081001295688,
+    "mae": 0.045627413611041785,
+    "bias": -0.015814085479535073,
+    "coverage90": 0.9428571428571428,
+    "n_true_viol": 6,
+    "n_found": 4,
+    "recall": 0.6666666666666666,
+    "false_alarms": 4,
+    "n_flagged": 8
+   },
+   "3": {
+    "n_bins": 3,
+    "nominal_age_lo_h": 62.96059435606003,
+    "nominal_age_hi_h": 97.0401193300883,
+    "frac_lower_bound": 1.0,
+    "nominal_age_mean_h": 76.1928482055664,
+    "true_age_mean_h": 58.16025161743164,
+    "n": 71,
+    "rmse": 0.05341087414249382,
+    "mae": 0.04068827826549072,
+    "bias": -0.03073794474788453,
+    "coverage90": 0.9295774647887324,
+    "n_true_viol": 37,
+    "n_found": 35,
+    "recall": 0.9459459459459459,
+    "false_alarms": 14,
+    "n_flagged": 49
+   }
+  }
+ }
+}

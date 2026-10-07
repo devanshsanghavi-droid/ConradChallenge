@@ -572,6 +572,186 @@ def edge_mass_helper():
     return {"uniform": e}
 
 
+# ----------------------------------------------------------------------------- water age and the loss split (task 9)
+@check("water_age")
+def age_band_members_and_nominal_identity():
+    """hydraulic_age_band runs the grid's 9 hydraulic members in the grid's own order; its (1, 1) member is the nominal
+    model's age bit for bit (Net3, Net2); min <= median <= max at every junction and hour; no age beyond the run.
+    Its initial-water share (the AGE run with the starting ages raised) agrees with an independent measure, one minus
+    a no-decay chlorine run with every source at 1 and the starting water at 0, within 0.001 (Net3, Net2)."""
+    import itertools
+    from .age import hydraulic_age_band, hydraulic_members
+    import wntr
+    from .simgp import GRIDS, HOURS
+    from .simulate import DURATION_DAYS, _last_day, load, nominal_scenario, source_nodes
+    want = [tuple(map(float, p[3:])) for p in itertools.product(*GRIDS["full"])][:9]
+    assert hydraulic_members() == want, (hydraulic_members(), want)
+    out = {}
+    for net in ("Net3", "Net2"):
+        sc = nominal_scenario(net)
+        band = hydraulic_age_band(sc)
+        assert band.ages.shape == (9, len(HOURS), len(sc.junctions))
+        assert np.array_equal(band.nominal.values, sc.age_by_hour_h.loc[HOURS, sc.junctions].values), net
+        lo, med, hi = band.lo().values, band.med().values, band.hi().values
+        assert (lo <= med).all() and (med <= hi).all()
+        assert band.ages.min() >= 0.0 and band.ages.max() <= DURATION_DAYS * 24 + 24, band.ages.max()
+        w = (band.hi() - band.lo()).max()
+        sh = band.initial_share
+        assert sh.shape == (len(HOURS), len(sc.junctions)) and float(sh.values.min()) >= 0 and float(sh.values.max()) <= 1
+        with tempfile.TemporaryDirectory(prefix="rm_check_") as tmp:
+            wn = load(net)
+            wn.options.quality.parameter = "CHEMICAL"
+            wn.options.reaction.bulk_coeff = wn.options.reaction.wall_coeff = 0.0
+            for _, pipe in wn.pipes():
+                pipe.wall_coeff = 0.0
+            for n, node in wn.nodes():
+                node.initial_quality = 0.0
+            for res in source_nodes(wn):
+                wn.add_source(f"src_{res}", res, "CONCEN", 1.0)
+            prefix = os.path.join(tmp, "nd")
+            c = _last_day(wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=prefix).node["quality"], wn.junction_name_list)
+        dev = float((sh - (1.0 - c.loc[HOURS, sc.junctions])).abs().values.max())
+        assert dev < 1e-3, (net, dev)
+        out[net] = {"members": len(band.members), "max_range_width_h": float(w.max()), "median_range_width_h": float(w.median()),
+                    "initial_share_max_abs_diff_vs_no_decay_run": dev,
+                    "n_lower_bound_daily_mean": int(band.lower_bound("mean").sum()),
+                    "n_lower_bound_daily_max": int(band.lower_bound("max").sum())}
+    return out
+
+
+@check("water_age")
+def posterior_age_is_the_weighted_member_age():
+    """hydraulic_weights sums the joint (member x dose) posterior over the dose and decay axes; posterior_age is that
+    weighted sum of the 9 members' ages; one-hot weights return the member itself with a zero-width band; uniform
+    weights return the members' mean; weighted_quantile is the smallest value reaching the cumulative weight."""
+    from types import SimpleNamespace
+    from .age import hydraulic_age_band, hydraulic_weights, posterior_age, weighted_quantile
+    sc, X, S, m = _fitted_net3()
+    band = hydraulic_age_band(sc)
+    w = hydraulic_weights(m)
+    assert w.shape == (9,) and abs(w.sum() - 1.0) < 1e-12
+    assert np.allclose(w, m.W_.sum(axis=1).reshape(-1, 9).sum(axis=0), rtol=0, atol=1e-15)
+    pa = posterior_age(m, band)
+    assert np.allclose(pa.by_hour.values, np.tensordot(w, band.ages, axes=1), rtol=0, atol=1e-12)
+    assert (pa.lo90 <= pa.daily_mean + 1e-9).all() and (pa.daily_mean <= pa.hi90 + 1e-9).all()
+    for k in (0, 4, 8):
+        W = np.zeros_like(m.W_); W[np.arange(k, len(m.params), 9), 2] = 1.0 / (len(m.params) // 9)
+        one = posterior_age(SimpleNamespace(params=m.params, W_=W, sc=sc), band)
+        assert np.allclose(one.by_hour.values, band.ages[k], rtol=0, atol=1e-12)
+        assert np.allclose(one.lo90.values, band.ages[k].mean(axis=0)) and np.allclose(one.hi90.values, band.ages[k].mean(axis=0))
+    uni = posterior_age(SimpleNamespace(params=m.params, W_=np.full_like(m.W_, 1.0 / m.W_.size), sc=sc), band)
+    assert np.allclose(uni.by_hour.values, band.ages.mean(axis=0), rtol=0, atol=1e-12)
+    v = np.array([[3.0], [1.0], [2.0]])
+    assert weighted_quantile(v, np.array([0.2, 0.5, 0.3]), 0.05)[0] == 1.0
+    assert weighted_quantile(v, np.array([0.2, 0.5, 0.3]), 0.6)[0] == 2.0
+    assert weighted_quantile(v, np.array([0.2, 0.5, 0.3]), 0.95)[0] == 3.0
+    try:
+        hydraulic_weights(SimpleNamespace(params=m.params[:75], W_=m.W_[:75]))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("hydraulic_weights accepted a grid without the full hydraulic block in order")
+    return {"posterior_weights": [round(float(x), 4) for x in w]}
+
+
+@check("water_age")
+def loss_split_exact_on_plug_flow_chain():
+    """On the 12-pipe plug-flow chain with first-order bulk (0.8 /day) and wall (0.5 m/day) decay, the four-run split
+    is exact: L_bulk / travel time = kb, L_wall / travel time is the same at every junction (one pipe size, one flow),
+    and (L_bulk + L_wall) / L_tot = 1, each within 0.1%."""
+    from .age import split_from_runs
+    from .chemistry import DAY, set_bulk_kinetics, use_mg_per_litre
+    from .simulate import _run_quality
+    kb, kw, runs = 0.8, 0.5, {}
+    for tag, b_on, w_on in (("full", 1, 1), ("bulk_only", 1, 0), ("wall_only", 0, 1), ("no_decay", 0, 0)):
+        wn, t = _chain()
+        scale = use_mg_per_litre(wn, {"R": 1.5})
+        set_bulk_kinetics(wn, 1, -kb * b_on)
+        for _, p in wn.pipes():
+            p.wall_coeff = -kw * w_on / DAY
+        runs[tag] = _run_quality(wn).iloc[[-1]][wn.junction_name_list] * scale
+    s = split_from_runs(runs)
+    kb_hat, kw_eff = s.L_bulk.values / t, s.L_wall.values / t
+    assert np.abs(kb_hat / kb - 1).max() < 1e-3, kb_hat
+    assert np.abs(kw_eff / kw_eff.mean() - 1).max() < 1e-3, kw_eff
+    assert np.abs(s.nonadditivity.values - 1).max() < 1e-3, s.nonadditivity.values
+    assert np.allclose(s.wall_share.values, kw_eff.mean() / (kb + kw_eff.mean()), atol=1e-3)
+    return {"kb_recovered_per_day": float(kb_hat.mean()), "kw_effective_per_day": float(kw_eff.mean()),
+            "wall_share": float(s.wall_share.mean()), "max_abs_nonadditivity_minus_1": float(np.abs(s.nonadditivity - 1).max())}
+
+
+@check("water_age")
+def truth_loss_split_leaves_the_truth_unchanged():
+    """build_scenario(truth_loss_split=True) adds three runs after all draws: the chlorine truth and the truth's age are
+    bit-identical to the runs without it (every coefficient is restored), on the default and the chemistry path; the
+    corrected-unit truth (results x1000) gives the same split as the legacy one; the no-decay run never exceeds the
+    highest source dose; the split adds up to within 5% on Net3 seed 0.  The no-decay run falls well below the doses
+    where water from the file's initial tank contents (quality 0) is still arriving after 6 days; that is why the
+    split's reference is this run and not the source dose (the dose would count that dilution as chlorine loss), and
+    the number of such junctions is recorded."""
+    from .age import truth_loss_split
+    from .chemistry import Chemistry
+    from .simulate import build_scenario
+    ref = build_scenario("Net3", 0, truth_age=True)
+    sc = build_scenario("Net3", 0, truth_age=True, truth_loss_split=True)
+    assert np.array_equal(ref.truth_by_hour.values, sc.truth_by_hour.values)
+    assert np.array_equal(ref.truth_age_by_hour_h.values, sc.truth_age_by_hour_h.values)
+    assert ref.truth_loss_runs is None
+    ts = truth_loss_split(sc)
+    nd = sc.truth_loss_runs["no_decay"]
+    assert 0.0 <= float(nd.values.min()) and float(nd.values.max()) <= 1.2 * 1.1 + 1e-6, (nd.values.min(), nd.values.max())
+    n_unflushed = int((nd.mean() < 0.95 * 1.2 * 0.9).sum())
+    na = ts.nonadditivity.dropna()
+    assert na.between(0.95, 1.05).all(), (na.min(), na.max())
+    assert np.allclose(sc.truth_loss_runs["full"].clip(lower=0).values, sc.truth_by_hour.values, rtol=0, atol=0)
+    chem = Chemistry(temp_C=12.5)
+    c0, c1 = build_scenario("Net3", 0, chem=chem), build_scenario("Net3", 0, chem=chem, truth_loss_split=True)
+    assert np.array_equal(c0.truth_by_hour.values, c1.truth_by_hour.values) and c1.chem["quality_scale"] == 1.0
+    si = build_scenario("Net3", 0, chem=Chemistry(kinetics="first_si"), truth_loss_split=True)
+    assert si.chem["quality_scale"] == 1000.0
+    d = float((truth_loss_split(si).wall_share - ts.wall_share).abs().max())
+    assert d < 1e-3, d
+    return {"wall_share_median": float(ts.wall_share.median()), "nonadditivity_range": [float(na.min()), float(na.max())],
+            "corrected_units_max_abs_diff_wall_share": d, "no_decay_min_mgL": float(nd.values.min()),
+            "junctions_with_unflushed_initial_water": n_unflushed}
+
+
+@check("water_age")
+def route_reason_default_unchanged_age_opt_in():
+    """plan_route's default reasons are the committed text (Net3 scenario 0, K = 8, from the prior, equals
+    route_scenario0_K8 in outputs/summary_Net3.json), so the committed experiments reproduce; with_age=True picks the
+    same sites, hours and scores, adds the nominal water age at that junction and hour ('at least' where the
+    starting water's share is over 5%), and writes no em dash.  At another threshold (0.5) the route's P is the
+    model's own P(daily min < 0.5), whether the model was built for 0.5 or for 0.2."""
+    from .features import build_features
+    from .route import plan_route
+    from .simgp import SimGP24
+    from .simulate import nominal_scenario
+    sc = nominal_scenario("Net3")
+    prior = SimGP24(sc, build_features(sc), seed=0, cache_dir=CACHE).fit_prior()
+    base = plan_route(prior, 8)
+    committed = json.load(open(os.path.join(REPO, "outputs", "summary_Net3.json")))["route_scenario0_K8"]
+    assert base.to_dict("records") == committed
+    from .age import INITIAL_SHARE_MAX, hydraulic_age_band
+    share = hydraulic_age_band(sc).initial_share
+    aged = plan_route(prior, 8, with_age=True, age_initial_share=share)
+    for c in ("junction", "hour", "p_below", "score"):
+        assert aged[c].tolist() == base[c].tolist(), c
+    n_at_least = 0
+    for j, h, a, r, w in zip(aged.junction, aged.hour, aged.water_age_h, aged.reason, aged.why):
+        age = float(sc.age_by_hour_h.loc[h, j])
+        word = "at least" if share.loc[h, j] > INITIAL_SHARE_MAX else "about"
+        n_at_least += word == "at least"
+        assert a == round(age, 1) and f"sample at {h:02d}:00" in r and f"water {word} {age:.0f} h old then" in r, r
+        assert r.endswith(w) and "\u2014" not in r and "\u2013" not in r, r   # no em or en dash
+    m5 = SimGP24(sc, build_features(sc), seed=0, cache_dir=CACHE, threshold=0.5).fit_prior()
+    r5, r5b = plan_route(m5, 8, threshold=0.5), plan_route(prior, 8, threshold=0.5)
+    d5 = m5.predict_daily_min()
+    assert r5.p_below.tolist() == r5b.p_below.tolist() == [round(float(d5.loc[j, "p_below"]), 2) for j in r5.junction]
+    return {"first_reason_with_age": aged.reason.iloc[0], "n_at_least": n_at_least,
+            "p_below_at_0.5": r5.p_below.tolist()}
+
+
 # ----------------------------------------------------------------------------- full-run anchors
 @check("anchors", quick=False)
 def fresh_grid_equals_cached_grid():
@@ -694,6 +874,90 @@ def app_default_demo():
     assert num == APP_DEMO, num
     assert got["flagged_label"] == "Junctions likely below 0.2 mg/L (daily minimum)", got["flagged_label"]
     return num
+
+
+AGE_NETS = ("Net3", "Net2", "ky4")
+
+
+@check("anchors", quick=False)
+def water_age_outputs_reproduce():
+    """Task 9's committed outputs: water_age_<net>.json for Net3, Net2 and ky4 carry rmse_h, mae_h, band_coverage and
+    n_excluded, and call the range a 90% band only if every coverage in the file is at least 0.85; error_by_age_<net>.csv
+    exists for Net3 and Net2.  Rerunning Net3 seed 0 under the default truth gives the committed CSV row exactly, and
+    that row is the app's default demo: 36 of 36 unsampled violations found, 1 false alarm."""
+    from .age import BAND_COVERAGE_BAR, RANGE_LABEL
+    from .experiment_chem import run_age_seed
+    out = {}
+    for net in AGE_NETS:
+        d = json.load(open(os.path.join(OUT_DIR, f"water_age_{net}.json")))
+        assert all(k in d for k in ("rmse_h", "mae_h", "band_coverage", "n_excluded")), net
+        assert all(k in d["by_truth"]["default"] for k in ("converged_only", "lower_bounds")), net
+        jf = pd.read_csv(os.path.join(OUT_DIR, f"water_age_junctions_{net}.csv"))
+        assert int(jf.lower_bound_daily_max.sum()) == d["nominal_age"]["n_lower_bound_daily_max"], net
+        covs = [v[k] for v in d["by_truth"].values() for k in ("band_coverage", "band_coverage_daily_max")]
+        assert d["band_label"] == ("90% band" if min(covs) >= BAND_COVERAGE_BAR else RANGE_LABEL), (net, d["band_label"], covs)
+        out[net] = {**{k: d[k] for k in ("rmse_h", "band_coverage", "n_excluded", "band_label")},
+                    "converged_only_rmse_h": d["by_truth"]["default"]["converged_only"]["rmse_h"]}
+    for net in ("Net3", "Net2"):
+        assert os.path.exists(os.path.join(OUT_DIR, f"error_by_age_{net}.csv")), net
+    committed = pd.read_csv(os.path.join(OUT_DIR, "water_age_Net3.csv"), float_precision="round_trip")
+    want = committed[(committed.truth == "default") & (committed.seed == 0)].iloc[0]
+    row, _, _ = run_age_seed("Net3", 0, "default", None, CACHE)
+    diff = {k: (row[k], want[k]) for k in row if k in want.index and isinstance(row[k], (int, float))
+            and not (pd.isna(want[k]) and pd.isna(row[k])) and row[k] != want[k]}
+    assert not diff, diff
+    assert (row["n_true_viol_min"], row["recall_min"], row["false_alarms_min"]) == (36, 1.0, 1), row
+    return {"summaries": out, "net3_seed0_row_identical": True}
+
+
+APP_AGE_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+app = sys.argv[1]
+res = {}
+for tag in ("Net3", "Net2", "demo_off"):
+    at = AppTest.from_file(app, default_timeout=600).run()
+    if tag == "Net2":
+        at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith("Net2")][0]).run()
+    if tag == "demo_off":
+        [t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False).run()
+    assert not at.exception, (tag, [e.value for e in at.exception])
+    subs = [s.value for s in at.subheader]
+    caps = [c.value for c in at.caption]
+    route_cols = [list(d.value.columns) for d in at.dataframe if "reason" in d.value.columns][0]
+    res[tag] = {"water_age_panel": "Water age" in subs, "loss_panel": "Where chlorine is lost" in subs,
+                "oldest_water": any("oldest water:" in c for c in caps),
+                "tested_coverage_in_caption": any("In simulation on this network it held" in c for c in caps),
+                "loss_caption": any(c.startswith("For the single most likely decay rates") for c in caps),
+                "lower_bound_note": any("its age is a lower bound" in c for c in caps),
+                "needs_sample_note": any("Enter at least one grab sample" in i.value for i in at.info),
+                "route_age_column": "water age (h)" in route_cols,
+                "pdf_button": len(at.get("download_button")) == 1}
+print("APP_AGE_JSON " + json.dumps(res))
+'''
+
+
+@check("anchors", quick=False)
+def app_water_age_panels():
+    """Headless AppTest of task 9's app changes: on Net3 and Net2 (demo on) and with the demo off (no samples) the app
+    runs without exceptions and shows the 'Water age' and 'Where chlorine is lost' panels, the oldest-water line, the
+    route table's water-age column and the PDF button; the loss split needs a sample, so with none the panel says so;
+    on the example networks the caption quotes the simulated coverage from outputs/chem."""
+    r = subprocess.run([PY, "-c", APP_AGE_SCRIPT, os.path.join(REPO, "app.py")], cwd=os.getcwd(), capture_output=True,
+                       text=True, env={**os.environ, "PYTHONPATH": REPO})
+    line = [x for x in r.stdout.splitlines() if x.startswith("APP_AGE_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    res = json.loads(line[-1][len("APP_AGE_JSON "):])
+    for tag in ("Net3", "Net2", "demo_off"):
+        g = res[tag]
+        assert g["water_age_panel"] and g["loss_panel"] and g["oldest_water"] and g["route_age_column"] and g["pdf_button"], (tag, g)
+        assert g["lower_bound_note"], (tag, g)
+        assert g["tested_coverage_in_caption"], (tag, g)
+    assert res["Net3"]["loss_caption"] and res["Net2"]["loss_caption"] and not res["Net3"]["needs_sample_note"]
+    assert res["demo_off"]["needs_sample_note"] and not res["demo_off"]["loss_caption"]
+    return res
 
 
 # ----------------------------------------------------------------------------- runner

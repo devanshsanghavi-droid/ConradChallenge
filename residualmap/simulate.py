@@ -98,6 +98,9 @@ class Scenario:
     structural: dict | None = None      # what structural_noise did to the truth (None if off)
     truth_age_by_hour_h: pd.DataFrame | None = None   # hour x junction, water age on the TRUTH (truth_age=True)
     chem: dict | None = None            # the chemistry of the truth and its hidden draws (chem=... only)
+    truth_loss_runs: dict | None = None  # the truth rerun with kw = 0, kb = 0 and no decay (truth_loss_split=True)
+    truth_initial_share: pd.DataFrame | None = None  # hour x junction, share of the truth's water still the run's
+                                                      # starting contents on the last day (truth_age=True)
 
     @property
     def age_snapshot_h(self):
@@ -205,7 +208,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    source_dose: float = 1.2, kb_per_day: float = 0.40,
                    kw_m_per_day: float = 0.70, structural_noise: bool | str = False,
                    month_seed: int | None = None, chem: Chemistry | None = None,
-                   truth_age: bool = False) -> Scenario:
+                   truth_age: bool = False, truth_loss_split: bool = False) -> Scenario:
     """structural_noise: False, True (= "spec") or "persistent"; see apply_structural_noise.
     month_seed: if given, the pipe-level truth (per-pipe wall decay, roughness) comes from `seed` and the
     operating truth (bulk decay, demand, dose) from `month_seed`: the same network in a different month.
@@ -213,7 +216,11 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     (see _chem_truth); it consumes the same rng / rng_m draws in the same order, and every new draw comes from
     its own generator, default_rng(20_000 + seed) for free chlorine or default_rng(40_000 + seed) for chloramine
     (a chloramine truth is refused until task 12 builds its decay physics).
-    truth_age: also run EPANET AGE on the truth's perturbed network after all draws (no new draws)."""
+    truth_age: also run EPANET AGE on the truth's perturbed network after all draws (no new draws), and once more
+    with every junction's and tank's initial age raised, for truth_initial_share (see initial_water_share).
+    truth_loss_split: also rerun the truth's own network with wall decay off, with bulk decay off and with no decay
+    (three runs after all draws, no new draws), so age.truth_loss_split can split its chlorine loss between the
+    water and the pipe walls.  Neither option changes the chlorine truth."""
     rng = np.random.default_rng(seed)
     rng_m = np.random.default_rng(month_seed) if month_seed is not None else rng
 
@@ -244,12 +251,17 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
         q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day)
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
-    truth_age_h = _truth_age(wn, *age_state) if truth_age else None
+    loss_runs = None
+    if truth_loss_split:
+        scale = 1.0 if chem_info is None else chem_info["quality_scale"]
+        loss_runs = _truth_loss_runs(wn, _last_day(q, junctions), scale)
+    truth_age_h, truth_share = _truth_age(wn, *age_state) if truth_age else (None, None)
 
     sc = nominal_scenario(name, sample_hour, source_dose)
     sc.seed, sc.structural = seed, structural
     sc.truth_snapshot, sc.truth_daily_min, sc.truth_by_hour = truth_by_hour.loc[sample_hour], truth_by_hour.min(), truth_by_hour
-    sc.truth_age_by_hour_h, sc.chem = truth_age_h, chem_info
+    sc.truth_age_by_hour_h, sc.chem, sc.truth_loss_runs = truth_age_h, chem_info, loss_runs
+    sc.truth_initial_share = truth_share
     return sc
 
 
@@ -320,18 +332,68 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
             "bulk_temp_factor": fb, "bulk_toc_factor": tr, "wall_temp_factor": fw,
             "viscosity_ratio": v_ratio, "diffusivity_ratio": d_ratio,
             "kb_per_day_effective": kb_per_day * u * fb * tr,
-            "source_doses_mgL": {k: float(v) for k, v in doses.items()}}
+            "source_doses_mgL": {k: float(v) for k, v in doses.items()}, "quality_scale": scale}
     return q, info
 
 
-def _truth_age(wn, tolerance, initial_quality) -> pd.DataFrame:
-    """Water age (hours, hour x junction, last day) on the truth's own perturbed network.  The file's
-    tolerance and initial qualities (initial ages) are restored first, as the nominal AGE run uses them."""
+def _truth_loss_runs(wn, full: pd.DataFrame, scale: float) -> dict:
+    """The truth's own network (after all draws) rerun three times, each in a temporary directory: with every wall
+    coefficient 0 ('bulk_only'), with the bulk coefficient 0 ('wall_only') and with both 0 ('no_decay', the
+    reference that carries each source's own dose).  `full` is the truth run itself (last day, unclipped).  Every
+    coefficient is restored afterwards, so a truth_age run that follows sees the network as it was.  Returns
+    hour x junction frames in the same units as the truth (multiplied by `scale`)."""
+    rx = wn.options.reaction
+    bulk0, wall0 = rx.bulk_coeff, rx.wall_coeff
+    pipe_wall = {n: p.wall_coeff for n, p in wn.pipes()}
+    runs = {"full": full}
+    try:
+        for tag, bulk_on, wall_on in (("bulk_only", True, False), ("wall_only", False, True), ("no_decay", False, False)):
+            rx.bulk_coeff = bulk0 if bulk_on else 0.0
+            rx.wall_coeff = wall0 if wall_on else 0.0
+            for n, p in wn.pipes():
+                p.wall_coeff = pipe_wall[n] if wall_on else 0.0
+            runs[tag] = _last_day(_run_quality(wn), wn.junction_name_list) * scale
+    finally:
+        rx.bulk_coeff, rx.wall_coeff = bulk0, wall0
+        for n, p in wn.pipes():
+            p.wall_coeff = pipe_wall[n]
+    return runs
+
+
+def _truth_age(wn, tolerance, initial_quality) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Water age (hours, hour x junction, last day) on the truth's own perturbed network, and its initial-water
+    share (initial_water_share).  The file's tolerance and initial qualities (initial ages) are restored first,
+    as the nominal AGE run uses them."""
     wn.options.quality.parameter = "AGE"
     wn.options.quality.tolerance = tolerance
     for n, q0 in initial_quality.items():
         wn.get_node(n).initial_quality = q0
-    return _last_day(_run_quality(wn), wn.junction_name_list) / 3600.0
+    age = _last_day(_run_quality(wn), wn.junction_name_list) / 3600.0
+    return age, initial_water_share(wn, age)
+
+
+INITIAL_AGE_OFFSET_H = 1000.0      # added to every junction's and tank's initial age by initial_water_share
+
+
+def initial_water_share(wn, age_h: pd.DataFrame) -> pd.DataFrame:
+    """Share of each junction's water on the last day (hour x junction, 0 to 1) that is still the water the
+    7-day run started with in its pipes, junctions and tanks, not water that entered from a source during the
+    run.  Where it is above zero the run's water age is a lower bound: that water is older than the run.
+
+    Water age mixes linearly, so rerunning AGE with every junction's and tank's initial age raised by
+    INITIAL_AGE_OFFSET_H raises each junction's age by exactly that offset times this share (sources keep
+    their own age).  wn must be the network, set up for AGE, that gave age_h; its initial ages are restored
+    afterwards.  One extra EPANET run, in a temporary directory."""
+    nodes = [n for n, _ in wn.junctions()] + [n for n, _ in wn.tanks()]
+    q0 = {n: wn.get_node(n).initial_quality for n in nodes}
+    try:
+        for n in nodes:
+            wn.get_node(n).initial_quality = q0[n] + INITIAL_AGE_OFFSET_H * 3600.0
+        raised = _last_day(_run_quality(wn), wn.junction_name_list) / 3600.0
+    finally:
+        for n in nodes:
+            wn.get_node(n).initial_quality = q0[n]
+    return ((raised - age_h) / INITIAL_AGE_OFFSET_H).clip(0.0, 1.0)
 
 
 def nominal_scenario(name: str, sample_hour: int = 14, source_dose: float = 1.2) -> Scenario:
