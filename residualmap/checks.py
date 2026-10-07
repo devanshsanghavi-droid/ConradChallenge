@@ -752,6 +752,253 @@ def route_reason_default_unchanged_age_opt_in():
             "p_below_at_0.5": r5.p_below.tolist()}
 
 
+# ----------------------------------------------------------------------------- temperature (task 10)
+@check("seasonal")
+def seasonal_bank_block_order():
+    """The temperature bank keeps every hypothesis block in the grid's own member order.  Full-grid layout (no EPANET
+    runs): the stacked parameters pass check_grid_order, a stack shifted by one member fails it, the hypothesis index
+    is block by block, and local_hydraulic_var of a stack equals the sum of its blocks' (it is linear in the weights).
+    On the 75-member decay grid, built in memory (cache 'off', so no file is added): H0 is the committed grid; at 20 C
+    every E/R block IS that grid; a 10 C block equals a direct build_grid_24h of the same condition bit for bit; and at
+    10 C every block has at least the 20 C chlorine, more for a larger E/R (smaller rate below 20 C)."""
+    import itertools
+    from .chemistry import ER_HYPOTHESES_K, Chemistry
+    from .seasonal import Bank, covariate_bank
+    from .simgp import GRIDS, build_grid_24h, check_grid_order, local_hydraulic_var, n_hydraulic, simulator_grid_24h
+    from .simulate import nominal_scenario
+    params = list(itertools.product(*GRIDS["full"]))
+    n_hyd, nb = n_hydraulic("full"), len(params)
+    layout = Bank(params, np.zeros((nb, 1, 1), np.float32), {}, tuple(ER_HYPOTHESES_K), "arrhenius", "full")
+    st = layout.stacked_params
+    check_grid_order(st, n_hyd)
+    assert len(st) == 4 * nb and np.array_equal(layout.hyp_index, np.repeat(np.arange(4), nb))
+    try:
+        check_grid_order(st[1:] + st[:1], n_hyd)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("check_grid_order accepted a stack shifted by one member")
+    rng = np.random.default_rng(0)
+    Zs, w = rng.normal(size=(4 * nb, 2, 3)), rng.random(4 * nb)
+    w /= w.sum()
+    whole = local_hydraulic_var(w, Zs, n_hyd)
+    parts = sum(local_hydraulic_var(w[b * nb:(b + 1) * nb], Zs[b * nb:(b + 1) * nb], n_hyd) for b in range(4))
+    assert np.allclose(whole, parts, rtol=0, atol=1e-12)
+    sc = nominal_scenario("Net3")
+    bank = covariate_bank(sc, [10.0, 20.0], grid="decay", cache_dir=CACHE, cache="off")
+    p0, Z0 = simulator_grid_24h(sc, CACHE, "decay")
+    assert bank.params == list(p0) and np.array_equal(bank.h0, Z0) and bank.temps == [10.0, 20.0]
+    assert all(np.array_equal(bank.blocks[(20.0, e)], Z0) for e in bank.ers)
+    direct = build_grid_24h(sc, "decay", cond=Chemistry(temp_C=10.0, er_K=8000.0))[1]
+    assert np.array_equal(bank.blocks[(10.0, 8000.0)], direct)
+    S = bank.stack(10.0)
+    assert S.shape == (4 * len(p0),) + Z0.shape[1:]
+    assert all(np.array_equal(S[b * len(p0):(b + 1) * len(p0)], blk) for b, blk in enumerate(bank.blocks_at(10.0)))
+    z5, z8, z12 = (bank.blocks[(10.0, e)] for e in bank.ers)
+    gaps = {"E5000_vs_20C": float((z5 - Z0).min()), "E8000_vs_E5000": float((z8 - z5).min()),
+            "E12000_vs_E8000": float((z12 - z8).min())}
+    assert all(v >= -1e-6 for v in gaps.values()), gaps
+    try:
+        bank.stack(15.0)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("a bank served a temperature it does not hold")
+    return {"stacked_members_full": len(st), "min_ln_gap_at_10C": gaps,
+            "mean_ln_gain_10C_E8000_vs_20C": float((z8 - Z0).mean())}
+
+
+@check("seasonal")
+def seasonal_model_nests_simgp24():
+    """At 20 C every hypothesis block is the committed grid, so the temperature-aware model must be today's model:
+    on Net3 scenario 0 with 8 samples, its posterior is SimGP24's split evenly over the 4 blocks, its MAP member and
+    hourly predictions are SimGP24's (to 1e-10), and kb20 is SimGP24's posterior-mean kb.  The daily minimum agrees to
+    Monte-Carlo noise only (the draws are taken over 4 times as many entries).  With identical blocks the samples cannot
+    tell the hypotheses apart, so under the 'cejas' and 'h0_0.1' priors the posterior over hypotheses equals the prior.
+    The plant dose enters as an exact ln-offset: readings doubled with a dose ratio of 2 give the same posterior and
+    predictions shifted by exactly ln 2 (readings above the 0.02 mg/L floor)."""
+    from .seasonal import SeasonalSimGP24, covariate_bank, hypothesis_prior
+    sc, X, S, m = _fitted_net3()
+    bank = covariate_bank(sc, [20.0], cache_dir=CACHE, cache="off")
+    S20 = S.assign(temp_C=20.0)
+    ms = SeasonalSimGP24(sc, X, bank, seed=0, cache_dir=CACHE).fit(S20, target_temp_C=20.0)
+    dW = max(float(np.abs(ms.W_.reshape(4, len(m.params), -1)[b] - m.W_ / 4).max()) for b in range(4))
+    assert dW < 1e-15, dW
+    assert ms.map_params_ == m.map_params_ and ms.map_dose_ == m.map_dose_
+    a, b = m.predict_hours(), ms.predict_hours()
+    d_mu, d_sd = float(np.abs(a[0] - b[0]).max()), float(np.abs(a[1] - b[1]).max())
+    assert d_mu < 1e-10 and d_sd < 1e-10, (d_mu, d_sd)
+    P = np.asarray(m.params, dtype=float)
+    assert abs(ms.kb20() - float(m.w_ @ P[:, 0])) < 1e-12
+    pa, pb = m.predict_daily_min(), ms.predict_daily_min()
+    dp = (pa.p_below - pb.p_below).abs()
+    assert float(dp.mean()) < 0.01 and int((pa.p_below > 0.5).sum()) == int((pb.p_below > 0.5).sum())
+    for pr in ("cejas", "h0_0.1"):
+        mp = SeasonalSimGP24(sc, X, bank, prior=pr, seed=0, cache_dir=CACHE).fit(S20, target_temp_C=20.0)
+        assert np.allclose(list(mp.hypothesis_posterior().values()), hypothesis_prior(pr), rtol=0, atol=1e-12), pr
+        assert float(np.abs(mp.predict_hours()[0] - b[0]).max()) < 1e-10, pr
+    Sa = S20[S20.y >= 0.02]
+    m1 = SeasonalSimGP24(sc, X, bank, seed=0, cache_dir=CACHE).fit(Sa, target_temp_C=20.0)
+    m2 = SeasonalSimGP24(sc, X, bank, seed=0, cache_dir=CACHE).fit(Sa.assign(y=Sa.y * 2, dose_ratio=2.0),
+                                                                    target_temp_C=20.0, target_dose_ratio=2.0)
+    h1, h2 = m1.predict_hours(), m2.predict_hours()
+    d_dose = float(np.abs(h2[0] - h1[0] - np.log(2.0)).max())
+    assert float(np.abs(m2.W_ - m1.W_).max()) < 1e-15 and d_dose < 1e-8 and float(np.abs(h2[1] - h1[1]).max()) < 1e-8, d_dose
+    return {"max_abs_diff_W_block_vs_W0_over_4": dW, "max_abs_diff_hourly_z_mu": d_mu, "max_abs_diff_hourly_z_sd": d_sd,
+            "daily_min_p_below_mean_abs_diff_mc": float(dp.mean()), "n_flagged": int((pb.p_below > 0.5).sum()),
+            "kb20": ms.kb20(), "dose_offset_max_abs_err": d_dose}
+
+
+@check("seasonal")
+def seasonal_truth_warming_and_log():
+    """The truth side of task 10.  In-network warming with the soil at the plant temperature is the truth without it,
+    bit for bit (Net3 and Net2; so warming makes no draw); with warmer soil every junction has at most the chlorine of
+    that truth, pipe temperatures lie between the plant's and the soil's, and the hidden E/R and theta_w are the seed's
+    own.  Warming without a plant temperature is refused.  The seasonal synthetic log uses month_seed = 1000 + 100 seed
+    + m (distinct for seeds 0 to 15 and months 0 to 11, where the committed 100 + 10 seed + m repeats), logs each month's
+    plant temperature with every reading, and returns the plant log."""
+    from .chemistry import Chemistry, Warming
+    from .pilot import synthetic_log
+    from .seasonal import plant_schedule
+    from .simulate import build_scenario, hidden_chem_draws
+    out = {}
+    for net in ("Net3", "Net2"):
+        kw = TRUTHS[net]
+        a = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=12.5), **kw)
+        b = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=12.5), warming=Warming(soil_temp_C=12.5), **kw)
+        c = build_scenario(net, 0, month_seed=1000, chem=Chemistry(temp_C=12.5), warming=Warming(soil_temp_C=19.0), **kw)
+        assert np.array_equal(a.truth_by_hour.values, b.truth_by_hour.values), net
+        assert (c.truth_by_hour.values <= a.truth_by_hour.values + 1e-9).all(), net
+        w = c.chem["warming"]
+        assert 12.5 <= w["pipe_temp_C_min"] <= w["pipe_temp_C_max"] <= 19.0 and 12.5 <= w["mixed_temp_C"] <= 19.0
+        hd = hidden_chem_draws("free_chlorine", 0)
+        assert c.chem["E_true_K"] == hd["E_true_K"] and c.chem["theta_w"] == hd["theta_w"]
+        out[net] = {"mean_shift_mgL_soil_19C": float((c.truth_by_hour - a.truth_by_hour).values.mean()),
+                    "mixed_temp_C": w["mixed_temp_C"], "pipe_temp_C_median": w["pipe_temp_C_median"]}
+    try:
+        build_scenario("Net3", 0, warming=Warming(soil_temp_C=15.0))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("warming without a plant temperature was accepted")
+    new = {1000 + 100 * s + m for s in range(16) for m in range(12)}
+    old = [100 + 10 * s + m for s in range(16) for m in range(12)]
+    assert len(new) == 16 * 12 and len(set(old)) < len(old) and 100 + 10 * 0 + 10 == 100 + 10 * 1 + 0
+    sched = plant_schedule("V3")
+    log, net, plant, truths = synthetic_log("Net3", months=3, seed=2, schedule=sched, return_truth=True)
+    assert [t["month_seed"] for t in truths] == [1200, 1201, 1202]
+    assert list(plant.columns) == ["month", "temp_C", "toc_mgL", "dose_mgL"] and plant.temp_C.tolist() == [10.5, 10.0, 10.5]
+    assert (log.temp_C == log.month.map(dict(zip(plant.month, plant.temp_C)))).all() and len(log) == 3 * 13
+    assert all(t["chem"]["warming"]["soil_temp_C"] == sched[i]["soil_temp_C"] for i, t in enumerate(truths))
+    return {**out, "n_old_formula_collisions_16_seeds_12_months": len(old) - len(set(old))}
+
+
+@check("seasonal", quick=False)
+def seasonal_direction():
+    """Raising the temperature lowers the predicted chlorine: a SeasonalSimGP24 fitted on Net3 scenario 0's 8 samples
+    (logged at 10.5 C) and predicted at 19.5 C instead of 10.5 C has a lower hourly median at every junction and hour
+    (equal only where every member sits at the 0.02 mg/L floor), for the bank (M) and for bulk-only Arrhenius (M1b),
+    and a lower daily-minimum median at every junction.  The bank blocks are read from outputs/cache when the experiment
+    has cached them and otherwise built in memory (never written), so the result is the same either way."""
+    from .seasonal import SeasonalSimGP24, covariate_bank
+    sc, X, S, _ = _fitted_net3()
+    out = {}
+    for tag, mode in (("M", "arrhenius"), ("M1b", "mass_transfer_only")):
+        bank = covariate_bank(sc, [10.5, 19.5], wall_mode=mode, cache_dir=CACHE, cache="read")
+        mod = SeasonalSimGP24(sc, X, bank, seed=0, cache_dir=CACHE).fit(S.assign(temp_C=10.5), target_temp_C=10.5)
+        cold_h, cold_d = mod.predict_hours()[0], mod.predict_daily_min()["median"]
+        mod.set_target(19.5)
+        warm_h, warm_d = mod.predict_hours()[0], mod.predict_daily_min()["median"]
+        assert (warm_h <= cold_h + 1e-12).all(), tag
+        strictly = (warm_h.mean(axis=0) < cold_h.mean(axis=0))
+        assert strictly.all(), (tag, int((~strictly).sum()))
+        lower_d = warm_d < cold_d
+        assert lower_d.all(), (tag, int((~lower_d).sum()))
+        out[tag] = {"mean_ln_drop_hourly": float((cold_h - warm_h).mean()),
+                    "median_daily_min_ratio_warm_over_cold": float((warm_d / cold_d).median()),
+                    "n_junctions_lower_daily_min": int(lower_d.sum()), "n_junctions": len(lower_d)}
+    return out
+
+
+@check("seasonal", quick=False)
+def pilot_plant_log_path():
+    """pilot.validate with a plant log: on the example grab log (Net3, January to June) and docs/example_plant_log.csv
+    it runs the temperature-aware model and adds the month's temperature, kb20 and the hypothesis posterior to the
+    summary; with a plant log at 20 C every month it reproduces the committed temperature-blind path's predictions
+    (to 1e-6 mg/L: the two paths sum the same numbers in a different order, and the GP's hyperparameter search turns
+    that last-bit difference into about 1e-8 mg/L; the first full run measured 1.3e-8 against a 1e-9 bar set before any
+    measurement).  The bank is read from outputs/cache or built in memory, never written."""
+    from .pilot import load_log, load_plant, validate
+    log = load_log(os.path.join(REPO, "docs", "example_grab_log.csv"), os.path.join(REPO, "docs", "example_tap_map.csv"))
+    plant = load_plant(os.path.join(REPO, "docs", "example_plant_log.csv"))
+    preds0, summ0 = validate("Net3", log, cache_dir=CACHE)
+    p20 = plant.assign(temp_C=20.0)
+    preds20, summ20 = validate("Net3", log, cache_dir=CACHE, plant=p20, bank_cache="read")
+    d20 = float(np.abs(preds20.pred.values - preds0.pred.values).max())
+    assert d20 < 1e-6, d20
+    preds, summ = validate("Net3", log, cache_dir=CACHE, plant=plant, bank_cache="read")
+    assert {"temp_C", "kb20", "P_H0", "map_hypothesis"} <= set(summ.columns)
+    assert summ.groupby("held_out_month").temp_C.first().tolist() == [12.5, 15.0, 17.5]
+    a = summ[summ.taps == "all"]
+    return {"max_abs_diff_pred_plant_20C_vs_blind_mgL": d20,
+            "rmse_by_month_blind": [round(float(x), 6) for x in summ0[summ0.taps == "all"].rmse],
+            "rmse_by_month_plant": [round(float(x), 6) for x in a.rmse], "kb20_by_month": [round(float(x), 6) for x in a.kb20]}
+
+
+SEASON_NETS = ("Net3", "Net2")
+SINGLE_THREAD_ENV = {k: "1" for k in ("VECLIB_MAXIMUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}
+# numpy here uses Apple's Accelerate, whose thread count only these variables set before numpy loads can fix
+# (threadpoolctl does not see it); the experiment's workers run single-threaded, so the recompute runs in a
+# subprocess started the same way, or its sums would differ in the last bit.
+SEASON_ROWS_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap.seasonal import covariate_bank, run_task
+from residualmap.simulate import nominal_scenario
+cache = sys.argv[1]
+sc = nominal_scenario("Net3")
+bank = covariate_bank(sc, [10.0, 10.5, 12.5], cache_dir=cache, cache="read")
+res = run_task("Net3", 0, "V1", bank, None, None, cache, months=4, targets=(4,), models={"B0", "M"}, extrapolate=False)
+def conv(v):
+    return v if isinstance(v, (str, bool)) else float(v)
+print("SEASON_ROWS_JSON " + json.dumps([{k: conv(v) for k, v in r.items()} for r in res["rows"]]))
+'''
+
+
+@check("seasonal", quick=False)
+def season_outputs_reproduce():
+    """Task 10's committed outputs: summary_season_<net>.json for Net3 and Net2 carries the acceptance key A1 to A7 and
+    season_<net>.csv exists; recomputing Net3 seed 0, V1, the April rolling fits of B0 and M, in a subprocess with
+    single-threaded BLAS as in the experiment's workers, gives the committed CSV rows exactly."""
+    out = {}
+    for net in SEASON_NETS:
+        d = json.load(open(os.path.join(OUT_DIR, f"summary_season_{net}.json")))
+        assert all(f"A{i}" in d["acceptance"] for i in range(1, 8)), net
+        assert os.path.exists(os.path.join(OUT_DIR, f"season_{net}.csv")), net
+        out[net] = {(f"{k}_pass" if "pass" in v else f"{k}_stop"): v.get("pass", v.get("stop")) for k, v in d["acceptance"].items()}
+    r = subprocess.run([PY, "-c", SEASON_ROWS_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV})
+    line = [x for x in r.stdout.splitlines() if x.startswith("SEASON_ROWS_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"recompute failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    rows = json.loads(line[-1][len("SEASON_ROWS_JSON "):])
+    committed = pd.read_csv(os.path.join(OUT_DIR, "season_Net3.csv"), float_precision="round_trip")
+    diffs, n_compared = {}, 0
+    for row in rows:
+        want = committed[(committed.variant == "V1") & (committed.test == "rolling") & (committed.seed == 0)
+                         & (committed.month == 4) & (committed.model == row["model"])].iloc[0]
+        bad = {}
+        for k, v in row.items():
+            if k not in want.index or isinstance(v, (str, bool)):
+                continue
+            n_compared += 1
+            if not (pd.isna(v) and pd.isna(want[k])) and v != want[k]:
+                bad[k] = (v, want[k])
+        diffs[row["model"]] = bad
+    assert not any(diffs.values()), diffs
+    return {"acceptance": out, "net3_seed0_april_rows_identical": sorted(diffs), "n_values_compared": n_compared}
+
+
 # ----------------------------------------------------------------------------- full-run anchors
 @check("anchors", quick=False)
 def fresh_grid_equals_cached_grid():

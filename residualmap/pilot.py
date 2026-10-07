@@ -8,9 +8,15 @@ operator could run by hand (last reading at the same tap; mean of all recent sam
 
     python -m residualmap.pilot --inp their_model.inp --samples grab_log.csv --taps tap_map.csv --dose 1.2
     python -m residualmap.pilot --synthetic Net3          # six synthetic months, to see the report format
+    python -m residualmap.pilot --inp ... --plant plant_log.csv   # with the plant's monthly water temperature (task 10)
 
-grab_log.csv : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
-tap_map.csv  : tap_id, junction_id                                          [optional: flush_min, notes]
+grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
+tap_map.csv   : tap_id, junction_id                                          [optional: flush_min, notes]
+plant_log.csv : month (YYYY-MM), temp_C                                      [optional: toc_mgL, dose_mgL]
+                With a plant log the model is seasonal.SeasonalSimGP24: every grab sample is explained at its own
+                month's water temperature and the held-out month is predicted at its own.  dose_mgL, when given, is
+                the month's plant dose; first-order decay makes it an exact offset against --dose.  toc_mgL is carried
+                for task 11 and not used yet.
 """
 from __future__ import annotations
 
@@ -22,9 +28,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
+from .chemistry import Chemistry, Warming
 from .features import build_features
 from .simgp import DAY_HOURS, SimGP24
-from .simulate import build_scenario, nominal_scenario
+from .simulate import build_scenario, load, nominal_scenario
 
 LEVELS = (50, 80, 90, 95)
 
@@ -46,30 +53,81 @@ def load_log(samples_csv: str, taps_csv: str) -> pd.DataFrame:
 
 
 def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, rotating: int = 3, seed: int = 0,
-                  **truth_kw) -> tuple[pd.DataFrame, str]:
+                  schedule: list[dict] | None = None, return_truth: bool = False, **truth_kw):
     """Six 'months' of daytime grab samples: a fixed route of `per_month` taps plus `rotating` validation
     taps at different junctions each month.  The network's pipe-level truth is fixed; each month re-draws
-    the operating truth (bulk decay ±20%, demand ±15% global and ±15% per node, dose ±10%)."""
+    the operating truth (bulk decay ±20%, demand ±15% global and ±15% per node, dose ±10%).
+
+    schedule=None is the committed log, draw for draw: month_seed = 100 + 10 seed + m (that formula repeats across
+    seeds after ten months: seed 0's month 10 is seed 1's month 0).  A schedule (seasonal.plant_schedule: one dict per
+    month, {'temp_C': the plant water temperature, 'soil_temp_C': None or the soil temperature for in-network warming})
+    gives the seasonal path (task 10): month_seed = 1000 + 100 seed + m, distinct for any seed and up to 100 months;
+    month m's truth is build_scenario(chem=Chemistry(temp_C=...), warming=Warming(soil_temp_C=...) when a soil
+    temperature is given); every reading carries its month's logged plant temperature (temp_C); and the plant log
+    (month, temp_C, toc_mgL, dose_mgL; TOC not logged here, the dose is the set point) comes back as a third item.
+    return_truth=True appends a list with each month's truth: month (1-based), month_seed, truth_by_hour,
+    truth_daily_min and chem (the truth's chemistry and hidden draws; None on the committed path)."""
     rng = np.random.default_rng(seed)
-    sc0 = build_scenario(network, seed=seed, **truth_kw)
-    taps = list(rng.choice(sc0.junctions, per_month, replace=False))           # the utility's fixed route
-    rows = []
+    if schedule is None:
+        sc0 = build_scenario(network, seed=seed, **truth_kw)
+        junctions = sc0.junctions
+    else:
+        if len(schedule) < months:
+            raise ValueError(f"the schedule has {len(schedule)} months, {months} asked for")
+        junctions = load(network).junction_name_list          # the same list build_scenario returns
+    taps = list(rng.choice(junctions, per_month, replace=False))           # the utility's fixed route
+    rows, truths, plant = [], [], []
     for m in range(months):
-        sc = build_scenario(network, seed=seed, month_seed=100 + seed * 10 + m, **truth_kw)
+        label = f"{2026 + m // 12}-{m % 12 + 1:02d}"
+        if schedule is None:
+            ms = 100 + seed * 10 + m
+            sc = build_scenario(network, seed=seed, month_seed=ms, **truth_kw)
+        else:
+            cond = schedule[m]
+            ms = 1000 + 100 * seed + m
+            warm = Warming(soil_temp_C=cond["soil_temp_C"]) if cond.get("soil_temp_C") is not None else None
+            sc = build_scenario(network, seed=seed, month_seed=ms, chem=Chemistry(temp_C=cond["temp_C"]),
+                                warming=warm, **truth_kw)
+            plant.append({"month": label, "temp_C": float(cond["temp_C"]), "toc_mgL": float("nan"),
+                          "dose_mgL": float(truth_kw.get("source_dose", 1.2))})
         others = [j for j in sc.junctions if j not in taps]
         rot = list(rng.choice(others, rotating, replace=False)) if rotating else []
         for k, j in enumerate(taps + rot):
             h = int(rng.choice(DAY_HOURS)); day = int(rng.integers(1, 28))
             y = float(np.clip(sc.truth_by_hour.loc[h, j] + rng.normal(0, 0.03), 0.01, None))
-            rows.append({"junction": j, "hour": h, "y": round(y, 2), "month": f"2026-{m + 1:02d}", "date": f"2026-{m + 1:02d}-{day:02d}",
-                         "tap_id": f"T{k + 1}" if k < per_month else f"V{m + 1}-{k - per_month + 1}"})
-    return pd.DataFrame(rows), network
+            row = {"junction": j, "hour": h, "y": round(y, 2), "month": label, "date": f"{label}-{day:02d}",
+                   "tap_id": f"T{k + 1}" if k < per_month else f"V{m + 1}-{k - per_month + 1}"}
+            if schedule is not None:
+                row["temp_C"] = float(schedule[m]["temp_C"])
+            rows.append(row)
+        if return_truth:
+            truths.append({"month": m + 1, "month_seed": ms, "truth_by_hour": sc.truth_by_hour,
+                           "truth_daily_min": sc.truth_daily_min, "chem": sc.chem})
+    out = (pd.DataFrame(rows), network) + ((pd.DataFrame(plant),) if schedule is not None else ())
+    return out + ((truths,) if return_truth else ())
+
+
+def load_plant(path: str) -> pd.DataFrame:
+    """The plant log: month (YYYY-MM), temp_C (required), toc_mgL and dose_mgL (optional), one row per month."""
+    p = pd.read_csv(path, dtype={"month": str})
+    if not {"month", "temp_C"} <= set(p.columns):
+        raise ValueError("the plant log needs the columns month (YYYY-MM) and temp_C")
+    if p.month.duplicated().any():
+        raise ValueError(f"months listed twice in the plant log: {sorted(p.month[p.month.duplicated()])}")
+    return p
 
 
 def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 0.2, window_months: int = 3,
-             holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
+             holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0,
+             plant: pd.DataFrame | None = None, bank_cache: str = "readwrite") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Rolling hold-out: for each held-out month, fit on the `window_months` before it and predict its
-    samples.  Returns (per-sample predictions, per-month summary)."""
+    samples.  Returns (per-sample predictions, per-month summary).
+    plant: the plant log (load_plant).  None is the committed temperature-blind SimGP24, unchanged.  With a plant log,
+    seasonal.SeasonalSimGP24 explains each sample at its month's water temperature (and dose, when dose_mgL is given
+    for every month of the plant log; otherwise the dose is taken as --dose throughout) and predicts the held-out month
+    at its own; the summary gains the month's temperature, kb20 and the posterior over
+    the temperature hypotheses.  The bank of grids at the log's temperatures is built once and cached (bank_cache, as
+    seasonal.covariate_bank's cache: 'read' never writes a cache file)."""
     sc = nominal_scenario(inp, sample_hour=14, source_dose=dose)
     X = build_features(sc)
     unknown = sorted(set(log.junction) - set(sc.junctions))
@@ -77,11 +135,26 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
         raise ValueError(f"junction IDs not in the .inp: {unknown[:10]}")
     months = sorted(log.month.unique())
     held = months[-holdout_months:] if holdout_months else months[window_months:]
+    bank = None
+    if plant is not None:
+        from .seasonal import SeasonalSimGP24, covariate_bank
+        pl = plant.set_index(plant.month.astype(str))
+        missing = sorted(set(months) - set(pl.index))
+        if missing:
+            raise ValueError(f"months in the grab log with no plant-log row: {missing}")
+        ratio = (pl.dose_mgL.astype(float) / dose) if "dose_mgL" in pl and pl.dose_mgL.notna().all() else pd.Series(1.0, index=pl.index)
+        log = log.assign(temp_C=log.month.map(pl.temp_C.astype(float)), dose_ratio=log.month.map(ratio))
+        bank = covariate_bank(sc, sorted(set(log.temp_C)), cache_dir=cache_dir, cache=bank_cache)
     preds, rows = [], []
     for m in held:
         train_months = [t for t in months if t < m][-window_months:]
         train, test = log[log.month.isin(train_months)], log[log.month == m]
-        model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(train[["junction", "hour", "y"]])
+        if bank is None:
+            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(train[["junction", "hour", "y"]])
+        else:
+            model = SeasonalSimGP24(sc, X, bank, seed=seed, cache_dir=cache_dir).fit(
+                train[["junction", "hour", "y", "temp_C", "dose_ratio"]], target_temp_C=float(pl.temp_C[m]),
+                target_dose_ratio=float(ratio[m]))
         z_mu, z_sd = model.predict_hours()
         jidx = np.array([sc.junctions.index(j) for j in test.junction]); h = test.hour.values
         mu, sd = z_mu[h, jidx], z_sd[h, jidx]
@@ -112,6 +185,9 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
                          "n_true_below": int(viol.sum()), "recall_below": float((viol & flagged).sum() / viol.sum()) if viol.sum() else float("nan"),
                          "false_alarms": int((~viol & flagged).sum()),
                          "map_kb": model.map_params_[0], "map_kw": model.map_params_[1], "map_gamma": model.map_params_[2], "map_dose": model.map_dose_})
+            if bank is not None:
+                rows[-1].update({"temp_C": float(pl.temp_C[m]), "kb20": model.kb20(), "map_hypothesis": model.map_hypothesis_,
+                                 **{f"P_{k}": v for k, v in model.hypothesis_posterior().items()}})
     return pd.concat(preds, ignore_index=True), pd.DataFrame(rows)
 
 
@@ -124,6 +200,7 @@ def main():
     ap.add_argument("--threshold", type=float, default=0.2)
     ap.add_argument("--window", type=int, default=3, help="months of history to fit on")
     ap.add_argument("--synthetic", metavar="NETWORK", help="demonstrate on a synthetic six-month log from this bundled network")
+    ap.add_argument("--plant", help="plant log CSV: month,temp_C[,toc_mgL,dose_mgL]; makes the model temperature-aware")
     ap.add_argument("--out", default="outputs/pilot")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -136,14 +213,16 @@ def main():
         if not (a.inp and a.samples and a.taps):
             ap.error("--inp, --samples and --taps are required (or --synthetic NETWORK)")
         log, inp, dose = load_log(a.samples, a.taps), a.inp, a.dose
-    preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window)
-    tag = a.synthetic or os.path.splitext(os.path.basename(inp))[0]
+    plant = load_plant(a.plant) if a.plant else None
+    preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant)
+    tag = (a.synthetic or os.path.splitext(os.path.basename(inp))[0]) + ("_plant" if plant is not None else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
     summary.to_csv(os.path.join(a.out, f"validation_{tag}.csv"), index=False)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 40)
     print(f"\n== hold-out validation, {tag}: fit on the previous {a.window} months, predict the held-out month's samples at their own junction and hour")
     print(summary[["held_out_month", "taps", "n_train", "n_test", "rmse", "rmse_persistence", "rmse_network_mean", "coverage50", "coverage80", "coverage90", "coverage95",
-                   "band90_width_mgL", "n_true_below", "recall_below", "false_alarms", "map_kb", "map_kw"]].round(3).to_string(index=False))
+                   "band90_width_mgL", "n_true_below", "recall_below", "false_alarms", "map_kb", "map_kw"]
+                  + (["temp_C", "kb20", "P_H0"] if plant is not None else [])].round(3).to_string(index=False))
     agg = {}
     for subset, g in summary.groupby("taps"):
         w = g.n_test / g.n_test.sum()

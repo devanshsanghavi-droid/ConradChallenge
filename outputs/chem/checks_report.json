@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 30,
+ "n_pass": 36,
  "n_fail": 0,
  "n_skipped": 0,
  "checks": [
@@ -369,6 +369,126 @@
      0.91,
      0.44
     ]
+   }
+  },
+  {
+   "name": "seasonal_bank_block_order",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "stacked_members_full": 2700,
+    "min_ln_gap_at_10C": {
+     "E5000_vs_20C": 0.0,
+     "E8000_vs_E5000": 0.0,
+     "E12000_vs_E8000": 0.0
+    },
+    "mean_ln_gain_10C_E8000_vs_20C": 0.5353056192398071
+   }
+  },
+  {
+   "name": "seasonal_model_nests_simgp24",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "max_abs_diff_W_block_vs_W0_over_4": 3.0357660829594124e-18,
+    "max_abs_diff_hourly_z_mu": 1.3322676295501878e-14,
+    "max_abs_diff_hourly_z_sd": 8.626432901337466e-14,
+    "daily_min_p_below_mean_abs_diff_mc": 0.0033224354619565215,
+    "n_flagged": 42,
+    "kb20": 0.4590945827676398,
+    "dose_offset_max_abs_err": 3.6213587684130744e-11
+   }
+  },
+  {
+   "name": "seasonal_truth_warming_and_log",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "mean_shift_mgL_soil_19C": -0.0583331473171711,
+     "mixed_temp_C": 15.402326294332376,
+     "pipe_temp_C_median": 16.12822274667076
+    },
+    "Net2": {
+     "mean_shift_mgL_soil_19C": -0.07225418090820312,
+     "mixed_temp_C": 17.079897338147358,
+     "pipe_temp_C_median": 18.894457979574753
+    },
+    "n_old_formula_collisions_16_seeds_12_months": 30
+   }
+  },
+  {
+   "name": "seasonal_direction",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "M": {
+     "mean_ln_drop_hourly": 0.1788028430670224,
+     "median_daily_min_ratio_warm_over_cold": 0.794343130305395,
+     "n_junctions_lower_daily_min": 92,
+     "n_junctions": 92
+    },
+    "M1b": {
+     "mean_ln_drop_hourly": 0.13983663567563512,
+     "median_daily_min_ratio_warm_over_cold": 0.838555691617282,
+     "n_junctions_lower_daily_min": 92,
+     "n_junctions": 92
+    }
+   }
+  },
+  {
+   "name": "pilot_plant_log_path",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "max_abs_diff_pred_plant_20C_vs_blind_mgL": 1.3116100316956647e-08,
+    "rmse_by_month_blind": [
+     0.081149,
+     0.097979,
+     0.053007
+    ],
+    "rmse_by_month_plant": [
+     0.074295,
+     0.082768,
+     0.069726
+    ],
+    "kb20_by_month": [
+     0.594327,
+     0.4844,
+     0.461599
+    ]
+   }
+  },
+  {
+   "name": "season_outputs_reproduce",
+   "group": "seasonal",
+   "pass": true,
+   "detail": {
+    "acceptance": {
+     "Net3": {
+      "A1_pass": null,
+      "A2_pass": true,
+      "A3_pass": true,
+      "A4_pass": false,
+      "A5_pass": true,
+      "A6_pass": true,
+      "A7_stop": true
+     },
+     "Net2": {
+      "A1_pass": null,
+      "A2_pass": false,
+      "A3_pass": false,
+      "A4_pass": false,
+      "A5_pass": false,
+      "A6_pass": true,
+      "A7_stop": true
+     }
+    },
+    "net3_seed0_april_rows_identical": [
+     "B0",
+     "M"
+    ],
+    "n_values_compared": 102
    }
   },
   {

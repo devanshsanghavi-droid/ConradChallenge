@@ -18,6 +18,8 @@ Everything runs on WNTR (EPA/Sandia), which bundles the EPANET 2.2 engine.
 """
 from __future__ import annotations
 
+import functools
+import math
 import os
 import tempfile
 from dataclasses import dataclass
@@ -28,10 +30,11 @@ import pandas as pd
 import wntr
 
 from .chemistry import (ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TREF_C, TRUTH_SEED_OFFSET,
-                        Chemistry, apply_water_temperature, arrhenius, remove_epanet_files, toc_ratio,
+                        Chemistry, Warming, apply_water_temperature, arrhenius, remove_epanet_files, toc_ratio,
                         use_mg_per_litre)
 
 DAY = 86400
+TRUTH_WALL_LAWS = ("theta_w", "arrhenius", "none")
 DURATION_DAYS = 7                  # every run is 7 days; the last day is scored
 QUALITY_STEP_S = 300
 LIB = os.path.join(os.path.dirname(wntr.__file__), "library", "networks")
@@ -208,7 +211,8 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    source_dose: float = 1.2, kb_per_day: float = 0.40,
                    kw_m_per_day: float = 0.70, structural_noise: bool | str = False,
                    month_seed: int | None = None, chem: Chemistry | None = None,
-                   truth_age: bool = False, truth_loss_split: bool = False) -> Scenario:
+                   truth_age: bool = False, truth_loss_split: bool = False,
+                   warming: Warming | None = None, truth_wall_law: str = "theta_w") -> Scenario:
     """structural_noise: False, True (= "spec") or "persistent"; see apply_structural_noise.
     month_seed: if given, the pipe-level truth (per-pipe wall decay, roughness) comes from `seed` and the
     operating truth (bulk decay, demand, dose) from `month_seed`: the same network in a different month.
@@ -220,7 +224,21 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     with every junction's and tank's initial age raised, for truth_initial_share (see initial_water_share).
     truth_loss_split: also rerun the truth's own network with wall decay off, with bulk decay off and with no decay
     (three runs after all draws, no new draws), so age.truth_loss_split can split its chlorine loss between the
-    water and the pipe walls.  Neither option changes the chlorine truth."""
+    water and the pipe walls.  Neither option changes the chlorine truth.
+    warming: a chemistry.Warming (needs chem with a temp_C, the plant temperature): every pipe and tank of the truth
+    decays at its own temperature between the plant's and the soil's (see warming_temperatures).  It makes no draw,
+    so the truth with warming is paired draw for draw with the truth without it, and with the soil at the plant
+    temperature it is that truth bit for bit (a saved check).  Truth only: the model is told the plant temperature.
+    truth_wall_law: how the truth's wall rate moves with temperature (needs chem).  'theta_w' (the default, the
+    pre-registered task-10 truth) is theta_w^(T - 20); 'arrhenius' is f(T; E_true), the bulk factor (the structure
+    the temperature bank M assumes); 'none' is 1 (the structure the bulk-only ablation M1b assumes).  The last two
+    exist only for the task-10 mechanism checks run after the stop (seasonal.mechanism_checks); no draw changes."""
+    if warming is not None and (chem is None or chem.temp_C is None):
+        raise ValueError("warming needs chem=Chemistry(temp_C=<plant temperature>)")
+    if truth_wall_law not in TRUTH_WALL_LAWS:
+        raise ValueError(f"truth_wall_law must be one of {TRUTH_WALL_LAWS}")
+    if truth_wall_law != "theta_w" and chem is None:
+        raise ValueError("truth_wall_law needs chem=Chemistry(...)")
     rng = np.random.default_rng(seed)
     rng_m = np.random.default_rng(month_seed) if month_seed is not None else rng
 
@@ -248,7 +266,8 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
             wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng_m.uniform(0.9, 1.1))
         q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
     else:
-        q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day)
+        q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day, warming, name,
+                                   truth_wall_law)
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
     loss_runs = None
@@ -289,14 +308,61 @@ def hidden_chem_draws(disinfectant: str, seed: int) -> dict:
     return {"rng_seed": rng_seed, "E_true_K": er_true, "theta_w": theta_w}
 
 
-def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, kw_m_per_day):
+@functools.lru_cache(maxsize=16)
+def _nominal_age_and_flow(name: str, duration_days: int = DURATION_DAYS) -> tuple[dict, dict]:
+    """Daily-mean water age (h) at every node (junctions, tanks, reservoirs) and daily-mean flow (m3/s) of every
+    pipe on the operator's NOMINAL file, last day of the run.  One EPANET AGE run in a temporary directory, cached
+    per process (the file does not change).  Returned as plain dicts; callers must not modify them."""
+    wn = load(name, duration_days)
+    wn.options.quality.parameter = "AGE"
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as tmp:
+        prefix = os.path.join(tmp, "run")
+        try:
+            res = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=prefix)
+        finally:
+            remove_epanet_files(prefix)
+    age = (_last_day(res.node["quality"], wn.node_name_list) / 3600.0).mean()
+    flow = _last_day(res.link["flowrate"], wn.pipe_name_list).mean()
+    return {k: float(v) for k, v in age.items()}, {k: float(v) for k, v in flow.items()}
+
+
+def warming_temperatures(name: str, plant_C: float, warming: Warming, wn=None) -> dict:
+    """Water temperature in every pipe and tank of the truth under in-network warming (task 10, variant V3):
+      pipe p : T_p = T_soil + (T_plant - T_soil) exp(-a_p / tau_pipe), a_p the nominal daily-mean age at the pipe's
+               downstream node (by the nominal daily-mean flow; the file's end node when the flow is zero)
+      tank t : the same with the tank's own nominal daily-mean age and tau_tank
+      mixed  : T_soil + (T_plant - T_soil) x (the |flow|-weighted mean over pipes of exp(-a_p / tau_pipe)), the single
+               temperature used for EPANET's global VISCOSITY and DIFFUSIVITY options.
+    Written so every temperature is exactly T_plant when T_soil == T_plant.  Ages are the operator's nominal ones (the
+    truth's own perturbed network is not used), from _nominal_age_and_flow."""
+    age, flow = _nominal_age_and_flow(name)
+    wn = wn if wn is not None else load(name)
+    pipes, weights, e_pipe = {}, [], []
+    for pn, p in wn.pipes():
+        down = p.start_node_name if flow.get(pn, 0.0) < 0 else p.end_node_name
+        e = math.exp(-max(age.get(down, 0.0), 0.0) / warming.tau_pipe_h)
+        pipes[pn] = warming.soil_temp_C + (float(plant_C) - warming.soil_temp_C) * e
+        weights.append(abs(flow.get(pn, 0.0)))
+        e_pipe.append(e)
+    tanks = {tn: warming.temperature(plant_C, age.get(tn, 0.0), warming.tau_tank_h) for tn, _ in wn.tanks()}
+    wsum = float(np.sum(weights))
+    e_mix = float(np.dot(weights, e_pipe) / wsum) if wsum > 0 else 1.0
+    mixed = warming.soil_temp_C + (float(plant_C) - warming.soil_temp_C) * e_mix
+    return {"pipes": pipes, "tanks": tanks, "mixed": mixed}
+
+
+def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, kw_m_per_day,
+                warming: Warming | None = None, name: str | None = None, wall_law: str = "theta_w"):
     """The hidden truth under a chemistry condition.  The committed draws are consumed exactly as in the
     default branch of build_scenario (bulk factor, per-pipe wall and roughness, global and per-node demand,
     dose per source); the new ones come from hidden_chem_draws (their own generator).
     At T = 20 C (or None), TOC = TOC_ref (or None) and first order, every factor is exactly 1 and the truth
     equals build_scenario(chem=None) bit for bit (a saved check).  kinetics 'first_si' runs the same first
     order with the corrected unit recipe (chemistry.use_mg_per_litre); 'order2' and 'clark' arrive with the
-    tasks that use them, and a chloramine truth is refused until task 12 builds its decay physics."""
+    tasks that use them, and a chloramine truth is refused until task 12 builds its decay physics.
+    warming (task 10, V3): every pipe gets its own bulk coefficient and wall factor at its own temperature, every
+    tank its own bulk coefficient, and the viscosity and diffusivity options are set at the flow-weighted mixed
+    temperature (warming_temperatures); no extra draw is made."""
     chem.require_built()
     if chem.kinetics not in ("first", "first_si"):
         raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built yet (tasks 11 and 12)")
@@ -304,21 +370,37 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
     er_true, theta_w = hd["E_true_K"], hd["theta_w"]
     T = chem.temp_C
     fb = 1.0 if T is None else arrhenius(T, er_true)
-    fw = 1.0 if T is None else theta_w ** (T - TREF_C)
+    def wall_factor(t):            # build_scenario's truth_wall_law; 'theta_w' is the pre-registered truth
+        if wall_law == "theta_w":
+            return theta_w ** (t - TREF_C)
+        return arrhenius(t, er_true) if wall_law == "arrhenius" else 1.0
+
+    fw = 1.0 if T is None else wall_factor(T)
     tr = toc_ratio(chem.toc_mgL)
+    wt = None
+    if warming is not None:
+        if T is None or name is None:
+            raise ValueError("warming needs the plant temperature (chem.temp_C) and the network name")
+        wt = warming_temperatures(name, T, warming, wn)
 
     u = rng_m.uniform(0.8, 1.2)
     wn.options.reaction.bulk_coeff = -kb_per_day * u * fb * tr / DAY
     wn.options.reaction.wall_coeff = -kw_m_per_day * fw / DAY
-    for _, pipe in wn.pipes():
-        pipe.wall_coeff = -kw_m_per_day * fw * roughness_factor(pipe.roughness, 1.0) * np.exp(rng.normal(0, 0.4)) / DAY
+    for pn, pipe in wn.pipes():
+        fw_p = fw if wt is None else wall_factor(wt["pipes"][pn])
+        pipe.wall_coeff = -kw_m_per_day * fw_p * roughness_factor(pipe.roughness, 1.0) * np.exp(rng.normal(0, 0.4)) / DAY
         pipe.roughness = pipe.roughness * np.exp(rng.normal(0, 0.10))
+        if wt is not None:
+            pipe.bulk_coeff = -kb_per_day * u * arrhenius(wt["pipes"][pn], er_true) * tr / DAY
+    if wt is not None:
+        for tn, tank in wn.tanks():
+            tank.bulk_coeff = -kb_per_day * u * arrhenius(wt["tanks"][tn], er_true) * tr / DAY
     global_mult = rng_m.uniform(0.85, 1.15)
     for _, j in wn.junctions():
         for ts in j.demand_timeseries_list:
             ts.base_value = ts.base_value * global_mult * np.exp(rng_m.normal(0.0, 0.15))
     doses = {res: source_dose * rng_m.uniform(0.9, 1.1) for res in source_nodes(wn)}
-    v_ratio, d_ratio = apply_water_temperature(wn, T)
+    v_ratio, d_ratio = apply_water_temperature(wn, T if wt is None else wt["mixed"])
     if chem.kinetics == "first":
         for res, dose in doses.items():
             wn.add_source(f"src_{res}", res, "CONCEN", dose)
@@ -333,6 +415,14 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
             "viscosity_ratio": v_ratio, "diffusivity_ratio": d_ratio,
             "kb_per_day_effective": kb_per_day * u * fb * tr,
             "source_doses_mgL": {k: float(v) for k, v in doses.items()}, "quality_scale": scale}
+    if wall_law != "theta_w":
+        info["truth_wall_law"] = wall_law
+    if wt is not None:
+        tp = np.array(list(wt["pipes"].values()))
+        info["warming"] = {"soil_temp_C": warming.soil_temp_C, "tau_pipe_h": warming.tau_pipe_h,
+                           "tau_tank_h": warming.tau_tank_h, "mixed_temp_C": wt["mixed"],
+                           "pipe_temp_C_min": float(tp.min()), "pipe_temp_C_median": float(np.median(tp)),
+                           "pipe_temp_C_max": float(tp.max()), "tank_temp_C": dict(wt["tanks"])}
     return q, info
 
 
@@ -345,6 +435,8 @@ def _truth_loss_runs(wn, full: pd.DataFrame, scale: float) -> dict:
     rx = wn.options.reaction
     bulk0, wall0 = rx.bulk_coeff, rx.wall_coeff
     pipe_wall = {n: p.wall_coeff for n, p in wn.pipes()}
+    pipe_bulk = {n: p.bulk_coeff for n, p in wn.pipes()}      # None unless set per pipe (in-network warming)
+    tank_bulk = {n: t.bulk_coeff for n, t in wn.tanks()}
     runs = {"full": full}
     try:
         for tag, bulk_on, wall_on in (("bulk_only", True, False), ("wall_only", False, True), ("no_decay", False, False)):
@@ -352,11 +444,19 @@ def _truth_loss_runs(wn, full: pd.DataFrame, scale: float) -> dict:
             rx.wall_coeff = wall0 if wall_on else 0.0
             for n, p in wn.pipes():
                 p.wall_coeff = pipe_wall[n] if wall_on else 0.0
+                if pipe_bulk[n] is not None:
+                    p.bulk_coeff = pipe_bulk[n] if bulk_on else 0.0
+            for n, t in wn.tanks():
+                if tank_bulk[n] is not None:
+                    t.bulk_coeff = tank_bulk[n] if bulk_on else 0.0
             runs[tag] = _last_day(_run_quality(wn), wn.junction_name_list) * scale
     finally:
         rx.bulk_coeff, rx.wall_coeff = bulk0, wall0
         for n, p in wn.pipes():
             p.wall_coeff = pipe_wall[n]
+            p.bulk_coeff = pipe_bulk[n]
+        for n, t in wn.tanks():
+            t.bulk_coeff = tank_bulk[n]
     return runs
 
 

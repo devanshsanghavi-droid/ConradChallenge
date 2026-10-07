@@ -1,0 +1,1297 @@
+{
+ "generated_by": "python -m residualmap.seasonal Net3 8 --mechanism",
+ "about": "Simulation only. Checks run after the task-10 A7 stop, not pre-registered and never used to choose a model: the counts and paired bootstrap interval of every A7 trigger, and direct tests of the explanation for the stop (the truth's pipe wall responds to temperature more weakly than M assumes).",
+ "a7_triggers": {
+  "Net3": [
+   {
+    "variant": "V1",
+    "season": "warming",
+    "kind": "daily_min_map",
+    "metric": "rmse",
+    "M": 0.09311534739856969,
+    "B0": 0.0757857529848097,
+    "n_scored": 5867,
+    "bootstrap": {
+     "ratio": 1.2286655965169797,
+     "lo90": 1.1122645103312199,
+     "hi90": 1.351908206333255,
+     "n_seeds": 16,
+     "n_resamples": 2000
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": true
+   },
+   {
+    "variant": "V1",
+    "season": "cooling",
+    "kind": "readings",
+    "metric": "recall",
+    "M": 0.6464646464646465,
+    "B0": 0.7575757575757576,
+    "n_low": 99,
+    "flagged_M": 64,
+    "flagged_B0": 75,
+    "bootstrap": {
+     "ratio": 0.8533333333333334,
+     "lo90": 0.7799830508474577,
+     "hi90": 0.9254007739082367,
+     "n_seeds": 16,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 0
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V3",
+    "season": "warming",
+    "kind": "daily_min_map",
+    "metric": "rmse",
+    "M": 0.09153227445668746,
+    "B0": 0.07577111483738062,
+    "n_scored": 5867,
+    "bootstrap": {
+     "ratio": 1.2080101322665413,
+     "lo90": 1.0792950882396355,
+     "hi90": 1.3479257431353273,
+     "n_seeds": 16,
+     "n_resamples": 2000
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V3",
+    "season": "cooling",
+    "kind": "readings",
+    "metric": "recall",
+    "M": 0.6822429906542056,
+    "B0": 0.8037383177570093,
+    "n_low": 107,
+    "flagged_M": 73,
+    "flagged_B0": 86,
+    "bootstrap": {
+     "ratio": 0.8488372093023255,
+     "lo90": 0.774174347158218,
+     "hi90": 0.9344262295081968,
+     "n_seeds": 16,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 0
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": false
+   }
+  ],
+  "Net2": [
+   {
+    "variant": "V1",
+    "season": "warming",
+    "kind": "daily_min_map",
+    "metric": "rmse",
+    "M": 0.0830216374304023,
+    "B0": 0.07322256185917779,
+    "n_scored": 672,
+    "bootstrap": {
+     "ratio": 1.1338259045083696,
+     "lo90": 0.9709849041051524,
+     "hi90": 1.3354703573739888,
+     "n_seeds": 8,
+     "n_resamples": 2000
+    },
+    "interval_excludes_1": false,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V1",
+    "season": "cooling",
+    "kind": "readings",
+    "metric": "recall",
+    "M": 0.2857142857142857,
+    "B0": 0.35714285714285715,
+    "n_low": 14,
+    "flagged_M": 4,
+    "flagged_B0": 5,
+    "bootstrap": {
+     "ratio": 0.7999999999999999,
+     "lo90": 0.6666666666666666,
+     "hi90": 1.0,
+     "n_seeds": 8,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 40
+    },
+    "interval_excludes_1": false,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V1",
+    "season": "cooling",
+    "kind": "daily_min_map",
+    "metric": "recall",
+    "M": 0.7142857142857143,
+    "B0": 0.8785714285714286,
+    "n_low": 140,
+    "flagged_M": 100,
+    "flagged_B0": 123,
+    "bootstrap": {
+     "ratio": 0.8130081300813008,
+     "lo90": 0.7599629629629628,
+     "hi90": 0.8661011904761905,
+     "n_seeds": 8,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 0
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": true
+   },
+   {
+    "variant": "V2",
+    "season": "warming",
+    "kind": "readings",
+    "metric": "recall",
+    "M": 0.16129032258064516,
+    "B0": 0.22580645161290322,
+    "n_low": 31,
+    "flagged_M": 5,
+    "flagged_B0": 7,
+    "bootstrap": {
+     "ratio": 0.7142857142857143,
+     "lo90": 0.0,
+     "hi90": 1.0,
+     "n_seeds": 8,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 8
+    },
+    "interval_excludes_1": false,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V3",
+    "season": "cooling",
+    "kind": "readings",
+    "metric": "recall",
+    "M": 0.35294117647058826,
+    "B0": 0.5294117647058824,
+    "n_low": 17,
+    "flagged_M": 6,
+    "flagged_B0": 9,
+    "bootstrap": {
+     "ratio": 0.6666666666666667,
+     "lo90": 0.5714285714285714,
+     "hi90": 1.0,
+     "n_seeds": 8,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 7
+    },
+    "interval_excludes_1": false,
+    "interval_past_bar": false
+   },
+   {
+    "variant": "V3",
+    "season": "cooling",
+    "kind": "daily_min_map",
+    "metric": "recall",
+    "M": 0.7707006369426752,
+    "B0": 0.9363057324840764,
+    "n_low": 157,
+    "flagged_M": 121,
+    "flagged_B0": 147,
+    "bootstrap": {
+     "ratio": 0.8231292517006803,
+     "lo90": 0.753324894514768,
+     "hi90": 0.8841567114650738,
+     "n_seeds": 8,
+     "n_resamples": 2000,
+     "n_resamples_dropped": 0
+    },
+    "interval_excludes_1": true,
+    "interval_past_bar": true
+   }
+  ]
+ },
+ "wall_worlds": {
+  "network": "Net3",
+  "variant": "V1",
+  "seeds": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7
+  ],
+  "models": [
+   "B0",
+   "M",
+   "M1b"
+  ],
+  "same_code": "seasonal.run_task with temp_errors=() and simulate.build_scenario's truth_wall_law; every draw, log and model is the same in the three worlds, only the truth's wall temperature law differs",
+  "pre_registered_world_equals_committed_rows": {
+   "rows_matched": 312,
+   "rows_unmatched": 0,
+   "max_abs_diff": 0.0,
+   "columns": [
+    "r_all_sse",
+    "r_all_tp",
+    "r_all_fp",
+    "r_all_in90",
+    "d_sse",
+    "d_tp",
+    "d_fp",
+    "d_in90",
+    "post_kb",
+    "P_H0",
+    "P_E12000"
+   ]
+  },
+  "worlds": {
+   "theta_w": {
+    "truth_wall": "the pre-registered V1 truth: wall factor theta_w^(T - 20), theta_w ~ U(1.00, 1.07) per seed",
+    "jan_mar_to_jul_sep": {
+     "B0": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.15861418775871547,
+       "n_low": 56,
+       "flagged_low": 10,
+       "false_alarms": 0
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.09572527267841596,
+       "coverage90": 0.7676940639269406,
+       "n_low": 620,
+       "flagged_low": 483,
+       "false_alarms": 9
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.1487829335973504,
+       "n_low": 56,
+       "flagged_low": 45,
+       "false_alarms": 45
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.1447544194459085,
+       "coverage90": 0.75,
+       "n_low": 620,
+       "flagged_low": 617,
+       "false_alarms": 318
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.12127702674525213,
+       "n_low": 56,
+       "flagged_low": 27,
+       "false_alarms": 4
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.07530896662457044,
+       "coverage90": 0.8995433789954338,
+       "n_low": 620,
+       "flagged_low": 548,
+       "false_alarms": 38
+      }
+     }
+    },
+    "jul_sep_to_dec": {
+     "B0": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.15179596166957382,
+       "n_low": 6,
+       "flagged_low": 6,
+       "false_alarms": 10
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.140201550542155,
+       "coverage90": 0.4190800681431005,
+       "n_low": 142,
+       "flagged_low": 142,
+       "false_alarms": 67
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.14339690085289122,
+       "n_low": 6,
+       "flagged_low": 3,
+       "false_alarms": 1
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.10862677315421307,
+       "coverage90": 0.9676320272572402,
+       "n_low": 142,
+       "flagged_low": 105,
+       "false_alarms": 21
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.13285676677441646,
+       "n_low": 6,
+       "flagged_low": 6,
+       "false_alarms": 4
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.1145898558958546,
+       "coverage90": 0.6729131175468483,
+       "n_low": 142,
+       "flagged_low": 141,
+       "false_alarms": 47
+      }
+     }
+    },
+    "rolling_all_months": {
+     "B0": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.10683338095583761,
+       "n_low": 113,
+       "flagged_low": 71,
+       "false_alarms": 33
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.09082470816227699,
+       "coverage90": 0.8199052132701422,
+       "n_low": 1625,
+       "flagged_low": 1524,
+       "false_alarms": 275
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.10730585871328623,
+       "n_low": 113,
+       "flagged_low": 79,
+       "false_alarms": 40
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.09469313862482004,
+       "coverage90": 0.8384834123222749,
+       "n_low": 1625,
+       "flagged_low": 1543,
+       "false_alarms": 303
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.1009297840110973,
+       "n_low": 113,
+       "flagged_low": 77,
+       "false_alarms": 30
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.08468121173904286,
+       "coverage90": 0.8602843601895734,
+       "n_low": 1625,
+       "flagged_low": 1547,
+       "false_alarms": 272
+      }
+     }
+    },
+    "rolling_warming": {
+     "B0": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.10255530875489714,
+       "n_low": 68,
+       "flagged_low": 37,
+       "false_alarms": 9
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.07428746158275294,
+       "coverage90": 0.8997271487039563,
+       "n_low": 930,
+       "flagged_low": 845,
+       "false_alarms": 101
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.10399559544714322,
+       "n_low": 68,
+       "flagged_low": 50,
+       "false_alarms": 28
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.09142825403532803,
+       "coverage90": 0.8185538881309686,
+       "n_low": 930,
+       "flagged_low": 905,
+       "false_alarms": 200
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.09612418646694648,
+       "n_low": 68,
+       "flagged_low": 43,
+       "false_alarms": 13
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.07274806099803176,
+       "coverage90": 0.9014324693042292,
+       "n_low": 930,
+       "flagged_low": 874,
+       "false_alarms": 131
+      }
+     }
+    },
+    "rolling_cooling": {
+     "B0": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.11195131174871817,
+       "n_low": 45,
+       "flagged_low": 34,
+       "false_alarms": 24
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.10800944842680014,
+       "coverage90": 0.7200170721297482,
+       "n_low": 695,
+       "flagged_low": 679,
+       "false_alarms": 174
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.11130533058408781,
+       "n_low": 45,
+       "flagged_low": 29,
+       "false_alarms": 12
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.09862664185858,
+       "coverage90": 0.8634229620145113,
+       "n_low": 695,
+       "flagged_low": 638,
+       "false_alarms": 103
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.10663265867580074,
+       "n_low": 45,
+       "flagged_low": 34,
+       "false_alarms": 17
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.09757969839325947,
+       "coverage90": 0.8087921468203159,
+       "n_low": 695,
+       "flagged_low": 673,
+       "false_alarms": 141
+      }
+     }
+    }
+   },
+   "arrhenius": {
+    "truth_wall": "the truth's wall factor is f(T; E_true), its own bulk factor: the structure M assumes",
+    "jan_mar_to_jul_sep": {
+     "B0": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.2921182909174041,
+       "n_low": 56,
+       "flagged_low": 1,
+       "false_alarms": 0
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.18484911908793414,
+       "coverage90": 0.4069634703196347,
+       "n_low": 611,
+       "flagged_low": 318,
+       "false_alarms": 0
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.11052126849207256,
+       "n_low": 56,
+       "flagged_low": 38,
+       "false_alarms": 9
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.09244698155911005,
+       "coverage90": 0.978310502283105,
+       "n_low": 611,
+       "flagged_low": 601,
+       "false_alarms": 127
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.24761234930724016,
+       "n_low": 56,
+       "flagged_low": 9,
+       "false_alarms": 0
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.14528195076742612,
+       "coverage90": 0.6244292237442922,
+       "n_low": 611,
+       "flagged_low": 401,
+       "false_alarms": 6
+      }
+     }
+    },
+    "jul_sep_to_dec": {
+     "B0": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.24227524460342867,
+       "n_low": 1,
+       "flagged_low": 1,
+       "false_alarms": 12
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.22174095028029778,
+       "coverage90": 0.13458262350936967,
+       "n_low": 81,
+       "flagged_low": 81,
+       "false_alarms": 126
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.13140163703226124,
+       "n_low": 1,
+       "flagged_low": 1,
+       "false_alarms": 3
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.11365938793484698,
+       "coverage90": 0.9233390119250426,
+       "n_low": 81,
+       "flagged_low": 75,
+       "false_alarms": 44
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.21318524674939243,
+       "n_low": 1,
+       "flagged_low": 1,
+       "false_alarms": 9
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.18884535010424958,
+       "coverage90": 0.2776831345826235,
+       "n_low": 81,
+       "flagged_low": 81,
+       "false_alarms": 106
+      }
+     }
+    },
+    "rolling_all_months": {
+     "B0": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.14259177028900225,
+       "n_low": 91,
+       "flagged_low": 38,
+       "false_alarms": 28
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.11351995584343069,
+       "coverage90": 0.722085308056872,
+       "n_low": 1367,
+       "flagged_low": 1196,
+       "false_alarms": 353
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.10819287894477408,
+       "n_low": 91,
+       "flagged_low": 61,
+       "false_alarms": 23
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.09153113126770282,
+       "coverage90": 0.8767772511848341,
+       "n_low": 1367,
+       "flagged_low": 1292,
+       "false_alarms": 323
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.1319300109501954,
+       "n_low": 91,
+       "flagged_low": 48,
+       "false_alarms": 23
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.10413709000075459,
+       "coverage90": 0.7867298578199052,
+       "n_low": 1367,
+       "flagged_low": 1243,
+       "false_alarms": 322
+      }
+     }
+    },
+    "rolling_warming": {
+     "B0": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.1422823680351994,
+       "n_low": 59,
+       "flagged_low": 16,
+       "false_alarms": 1
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.09230239301775654,
+       "coverage90": 0.8465211459754434,
+       "n_low": 802,
+       "flagged_low": 640,
+       "false_alarms": 85
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.10295121399885546,
+       "n_low": 59,
+       "flagged_low": 38,
+       "false_alarms": 11
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.08127993132382043,
+       "coverage90": 0.8864256480218281,
+       "n_low": 802,
+       "flagged_low": 760,
+       "false_alarms": 184
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.1285546524547859,
+       "n_low": 59,
+       "flagged_low": 24,
+       "false_alarms": 2
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.0821506820080052,
+       "coverage90": 0.8888130968622101,
+       "n_low": 802,
+       "flagged_low": 686,
+       "false_alarms": 97
+      }
+     }
+    },
+    "rolling_cooling": {
+     "B0": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.14297758156337362,
+       "n_low": 32,
+       "flagged_low": 22,
+       "false_alarms": 27
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.13546825726432193,
+       "coverage90": 0.5663679043960734,
+       "n_low": 565,
+       "flagged_low": 556,
+       "false_alarms": 268
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.11440774577146885,
+       "n_low": 32,
+       "flagged_low": 23,
+       "false_alarms": 12
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.10293107514344704,
+       "coverage90": 0.8647033717456253,
+       "n_low": 565,
+       "flagged_low": 532,
+       "false_alarms": 139
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.13603148235336388,
+       "n_low": 32,
+       "flagged_low": 24,
+       "false_alarms": 21
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.12637232109542848,
+       "coverage90": 0.6589842082799829,
+       "n_low": 565,
+       "flagged_low": 557,
+       "false_alarms": 225
+      }
+     }
+    }
+   },
+   "none": {
+    "truth_wall": "the truth's wall has no temperature factor (1 at every T): the structure M1b assumes",
+    "jan_mar_to_jul_sep": {
+     "B0": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.1127249995177582,
+       "n_low": 59,
+       "flagged_low": 19,
+       "false_alarms": 1
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.06729235410696352,
+       "coverage90": 0.9098173515981736,
+       "n_low": 620,
+       "flagged_low": 544,
+       "false_alarms": 17
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.16499054122927337,
+       "n_low": 59,
+       "flagged_low": 49,
+       "false_alarms": 53
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.16080838967695302,
+       "coverage90": 0.6301369863013698,
+       "n_low": 620,
+       "flagged_low": 618,
+       "false_alarms": 372
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 312,
+       "rmse": 0.08833950572816401,
+       "n_low": 59,
+       "flagged_low": 34,
+       "false_alarms": 4
+      },
+      "daily_min_map": {
+       "n": 1752,
+       "rmse": 0.07566434010300575,
+       "coverage90": 0.8807077625570776,
+       "n_low": 620,
+       "flagged_low": 602,
+       "false_alarms": 81
+      }
+     }
+    },
+    "jul_sep_to_dec": {
+     "B0": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.12140275586094834,
+       "n_low": 9,
+       "flagged_low": 7,
+       "false_alarms": 9
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.1132671051332035,
+       "coverage90": 0.5792163543441227,
+       "n_low": 157,
+       "flagged_low": 156,
+       "false_alarms": 55
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.16274308619140498,
+       "n_low": 9,
+       "flagged_low": 3,
+       "false_alarms": 2
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.12355535460738444,
+       "coverage90": 0.938671209540034,
+       "n_low": 157,
+       "flagged_low": 109,
+       "false_alarms": 18
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 104,
+       "rmse": 0.11069493685400475,
+       "n_low": 9,
+       "flagged_low": 7,
+       "false_alarms": 3
+      },
+      "daily_min_map": {
+       "n": 587,
+       "rmse": 0.09298823785955006,
+       "coverage90": 0.7938671209540034,
+       "n_low": 157,
+       "flagged_low": 154,
+       "false_alarms": 37
+      }
+     }
+    },
+    "rolling_all_months": {
+     "B0": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.09735789860539461,
+       "n_low": 127,
+       "flagged_low": 86,
+       "false_alarms": 30
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.08478183942629508,
+       "coverage90": 0.8436018957345972,
+       "n_low": 1700,
+       "flagged_low": 1622,
+       "false_alarms": 264
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.10713264676876279,
+       "n_low": 127,
+       "flagged_low": 92,
+       "false_alarms": 42
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.09427056049116524,
+       "coverage90": 0.8310900473933649,
+       "n_low": 1700,
+       "flagged_low": 1620,
+       "false_alarms": 326
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 936,
+       "rmse": 0.09257553356441513,
+       "n_low": 127,
+       "flagged_low": 91,
+       "false_alarms": 32
+      },
+      "daily_min_map": {
+       "n": 5275,
+       "rmse": 0.07904104727733444,
+       "coverage90": 0.8600947867298578,
+       "n_low": 1700,
+       "flagged_low": 1632,
+       "false_alarms": 260
+      }
+     }
+    },
+    "rolling_warming": {
+     "B0": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.09397015180430543,
+       "n_low": 73,
+       "flagged_low": 43,
+       "false_alarms": 11
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.07260715410088522,
+       "coverage90": 0.900068212824011,
+       "n_low": 968,
+       "flagged_low": 915,
+       "false_alarms": 110
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.10289445293376148,
+       "n_low": 73,
+       "flagged_low": 55,
+       "false_alarms": 32
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.09158920308170104,
+       "coverage90": 0.8052523874488404,
+       "n_low": 968,
+       "flagged_low": 948,
+       "false_alarms": 218
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 520,
+       "rmse": 0.09218493099236769,
+       "n_low": 73,
+       "flagged_low": 50,
+       "false_alarms": 20
+      },
+      "daily_min_map": {
+       "n": 2932,
+       "rmse": 0.07522664648673623,
+       "coverage90": 0.8727830832196453,
+       "n_low": 968,
+       "flagged_low": 932,
+       "false_alarms": 142
+      }
+     }
+    },
+    "rolling_cooling": {
+     "B0": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.10143359482575734,
+       "n_low": 54,
+       "flagged_low": 43,
+       "false_alarms": 19
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.09790720127562981,
+       "coverage90": 0.7729406743491251,
+       "n_low": 732,
+       "flagged_low": 707,
+       "false_alarms": 154
+      }
+     },
+     "M": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.11220549653474449,
+       "n_low": 54,
+       "flagged_low": 37,
+       "false_alarms": 10
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.097522179110864,
+       "coverage90": 0.8634229620145113,
+       "n_low": 732,
+       "flagged_low": 672,
+       "false_alarms": 108
+      }
+     },
+     "M1b": {
+      "readings": {
+       "n": 416,
+       "rmse": 0.09306148132053269,
+       "n_low": 54,
+       "flagged_low": 41,
+       "false_alarms": 12
+      },
+      "daily_min_map": {
+       "n": 2343,
+       "rmse": 0.08356944358257118,
+       "coverage90": 0.844216816047802,
+       "n_low": 732,
+       "flagged_low": 700,
+       "false_alarms": 118
+      }
+     }
+    }
+   }
+  }
+ },
+ "oracle_wall_seed0": {
+  "network": "Net3",
+  "variant": "V1",
+  "bank": "M's bank with every H_E block's wall rate times the truth's own theta_w^(T - 20) instead of f(T; E); bulk f(T; E) and mass transfer at T as in M; built in memory",
+  "committed_M_sse_this_seed_and_month": 1.7324258979982583,
+  "theta_w_true": 1.0631398983291211,
+  "fit_months": [
+   1,
+   2,
+   3
+  ],
+  "target_month": 7,
+  "target_temp_C": 19.5,
+  "fit_temps_C": [
+   10.5,
+   10.0,
+   10.5
+  ],
+  "models": {
+   "B0": {
+    "n": 73,
+    "sse": 0.48860761373798645,
+    "rmse": 0.0818123155931437,
+    "bias_mean_pred_minus_truth": 0.05811323653252667,
+    "n_low": 21,
+    "flagged_low": 14,
+    "false_alarms": 0
+   },
+   "M": {
+    "n": 73,
+    "sse": 1.7324258979982583,
+    "rmse": 0.154051490146686,
+    "bias_mean_pred_minus_truth": -0.1371540295560909,
+    "n_low": 21,
+    "flagged_low": 21,
+    "false_alarms": 16,
+    "kb20": 0.29042561702846836,
+    "kw20": 1.1814080012598929,
+    "blocks": {
+     "H0": {
+      "posterior_mass": 0.05721523789690263,
+      "bias_block_mean": 0.12379466836970258,
+      "mass_share_at_top_kw": 8.614861577164696e-25,
+      "kw_top_m_per_day": 1.5
+     },
+     "E5000": {
+      "posterior_mass": 0.25666201323494464,
+      "bias_block_mean": -0.035575067177874835,
+      "mass_share_at_top_kw": 0.006386183876857152,
+      "kw_top_m_per_day": 1.5
+     },
+     "E8000": {
+      "posterior_mass": 0.41506297734361214,
+      "bias_block_mean": -0.1022748112580358,
+      "mass_share_at_top_kw": 0.4294969764955214,
+      "kw_top_m_per_day": 1.5
+     },
+     "E12000": {
+      "posterior_mass": 0.271059771524543,
+      "bias_block_mean": -0.16858476201088457,
+      "mass_share_at_top_kw": 0.9750480907299074,
+      "kw_top_m_per_day": 1.5
+     }
+    }
+   },
+   "M1b": {
+    "n": 73,
+    "sse": 0.17283810289020426,
+    "rmse": 0.04865845502141731,
+    "bias_mean_pred_minus_truth": 0.011243093770169283,
+    "n_low": 21,
+    "flagged_low": 20,
+    "false_alarms": 0,
+    "kb20": 0.2883306630953256,
+    "kw20": 0.513060094631209,
+    "blocks": {
+     "H0": {
+      "posterior_mass": 0.07122039100939234,
+      "bias_block_mean": 0.12379466836970261,
+      "mass_share_at_top_kw": 8.614861577164695e-25,
+      "kw_top_m_per_day": 1.5
+     },
+     "E5000": {
+      "posterior_mass": 0.22469703184842502,
+      "bias_block_mean": 0.0671617938843476,
+      "mass_share_at_top_kw": 1.2987948746691598e-14,
+      "kw_top_m_per_day": 1.5
+     },
+     "E8000": {
+      "posterior_mass": 0.30038240546206335,
+      "bias_block_mean": 0.055646347716125096,
+      "mass_share_at_top_kw": 3.112246207434237e-14,
+      "kw_top_m_per_day": 1.5
+     },
+     "E12000": {
+      "posterior_mass": 0.4037001716801206,
+      "bias_block_mean": 0.044706285835158184,
+      "mass_share_at_top_kw": 6.617187135181599e-14,
+      "kw_top_m_per_day": 1.5
+     }
+    }
+   },
+   "M_oracle_wall": {
+    "n": 73,
+    "sse": 0.6996938088429989,
+    "rmse": 0.0979022302936937,
+    "bias_mean_pred_minus_truth": -0.08274081942146687,
+    "n_low": 21,
+    "flagged_low": 21,
+    "false_alarms": 8,
+    "kb20": 0.29001364630694,
+    "kw20": 0.8620563571432716,
+    "blocks": {
+     "H0": {
+      "posterior_mass": 0.049064157223095366,
+      "bias_block_mean": 0.12379466836970261,
+      "mass_share_at_top_kw": 8.614861577164695e-25,
+      "kw_top_m_per_day": 1.5
+     },
+     "E5000": {
+      "posterior_mass": 0.2204029070975405,
+      "bias_block_mean": -0.03706455638138971,
+      "mass_share_at_top_kw": 0.008160529193737555,
+      "kw_top_m_per_day": 1.5
+     },
+     "E8000": {
+      "posterior_mass": 0.3065292975331965,
+      "bias_block_mean": -0.04718417260775269,
+      "mass_share_at_top_kw": 0.01009751935920594,
+      "kw_top_m_per_day": 1.5
+     },
+     "E12000": {
+      "posterior_mass": 0.42400363814616737,
+      "bias_block_mean": -0.05792150474450345,
+      "mass_share_at_top_kw": 0.013222059674806922,
+      "kw_top_m_per_day": 1.5
+     }
+    }
+   }
+  }
+ },
+ "from_committed_rows": {
+  "theta_w_vs_jan_mar_to_jul_sep_map_rmse_gap": {
+   "n_seeds": 16,
+   "corr_theta_w_vs_rmse_M_minus_rmse_B0": -0.5843261760706856,
+   "seeds_where_M_beats_B0": [
+    1,
+    8,
+    10,
+    15
+   ],
+   "per_seed": {
+    "0": {
+     "theta_w": 1.0631398983291211,
+     "rmse_M": 0.14970822699645242,
+     "rmse_B0": 0.08838117368856144
+    },
+    "1": {
+     "theta_w": 1.0556271452111825,
+     "rmse_M": 0.10784579116323716,
+     "rmse_B0": 0.12375593170641873
+    },
+    "2": {
+     "theta_w": 1.0015259428479542,
+     "rmse_M": 0.16914818448658459,
+     "rmse_B0": 0.05746113216903489
+    },
+    "3": {
+     "theta_w": 1.0289177443739526,
+     "rmse_M": 0.1412975371999852,
+     "rmse_B0": 0.07881945512468835
+    },
+    "4": {
+     "theta_w": 1.0448698536600307,
+     "rmse_M": 0.13389199653806513,
+     "rmse_B0": 0.1326993872399163
+    },
+    "5": {
+     "theta_w": 1.0203966070108066,
+     "rmse_M": 0.15547825200252188,
+     "rmse_B0": 0.124127118044317
+    },
+    "6": {
+     "theta_w": 1.0049511297045175,
+     "rmse_M": 0.11685771756834738,
+     "rmse_B0": 0.05494495585877392
+    },
+    "7": {
+     "theta_w": 1.014817398960303,
+     "rmse_M": 0.17104118106189736,
+     "rmse_B0": 0.06804377224482426
+    },
+    "8": {
+     "theta_w": 1.0466843901750285,
+     "rmse_M": 0.10058660659839244,
+     "rmse_B0": 0.14422011761723372
+    },
+    "9": {
+     "theta_w": 1.027062469832295,
+     "rmse_M": 0.18769876084780898,
+     "rmse_B0": 0.07496294528834531
+    },
+    "10": {
+     "theta_w": 1.0061135180184388,
+     "rmse_M": 0.07459722234831115,
+     "rmse_B0": 0.08263662111514224
+    },
+    "11": {
+     "theta_w": 1.0195517201347293,
+     "rmse_M": 0.15665037098011772,
+     "rmse_B0": 0.06621275277589558
+    },
+    "12": {
+     "theta_w": 1.0240662756432504,
+     "rmse_M": 0.13621338108896963,
+     "rmse_B0": 0.055624429822863496
+    },
+    "13": {
+     "theta_w": 1.055761655689056,
+     "rmse_M": 0.12913823842429864,
+     "rmse_B0": 0.12141177344201655
+    },
+    "14": {
+     "theta_w": 1.0278994167557345,
+     "rmse_M": 0.12989410264548126,
+     "rmse_B0": 0.08524526358459486
+    },
+    "15": {
+     "theta_w": 1.0579919920087408,
+     "rmse_M": 0.0751773560484294,
+     "rmse_B0": 0.1605667337421352
+    }
+   }
+  },
+  "P_H0_after_jan_mar_fit": {
+   "mean": 0.10411929006911413,
+   "min": 0.011510968505768044,
+   "max": 0.21002630186259022,
+   "prior": 0.25,
+   "n_seeds": 16
+  }
+ }
+}

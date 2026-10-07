@@ -108,6 +108,36 @@ def soil_temperature(month: int) -> float:
     return 16.0 + 6.0 * math.sin(2.0 * math.pi * (month - 5) / 12.0)
 
 
+WARMING_TAU_PIPE_H = 12.0          # ASSUMPTION: e-folding time of a pipe's water toward soil temperature (Blokker &
+                                   # Pieterse-Quirijns 2013, JAWWA 105(1):E19, say only that heating is faster than
+                                   # residence)
+WARMING_TAU_TANK_H = 72.0          # ASSUMPTION: the same for a tank (much less wall contact per volume)
+
+
+@dataclass(frozen=True)
+class Warming:
+    """In-network warming, for hidden truths only (task 10, variant V3): water leaves the plant at the plant temperature
+    T_m and moves toward the soil temperature T_soil as it ages.  Per pipe, T_p = T_soil + (T_m - T_soil)
+    exp(-a_p / tau_pipe), with a_p the nominal daily-mean water age at the pipe's downstream node; per tank the same
+    with the tank's own age and tau_tank.  The model never sees this: it is told only the plant temperature.  Context:
+    Blokker et al. 2014 found that water entering at 10 C and warming toward 25 C soil moved the share of customers
+    below 0.2 mg/L from 0.4% to 33%."""
+    soil_temp_C: float
+    tau_pipe_h: float = WARMING_TAU_PIPE_H
+    tau_tank_h: float = WARMING_TAU_TANK_H
+
+    def __post_init__(self):
+        object.__setattr__(self, "soil_temp_C", float(self.soil_temp_C))
+        if not (0.0 <= self.soil_temp_C <= 35.0):
+            raise ValueError(f"soil_temp_C {self.soil_temp_C} is outside 0 to 35 C")
+        if not (self.tau_pipe_h > 0 and self.tau_tank_h > 0):
+            raise ValueError("warming time constants must be positive")
+
+    def temperature(self, plant_C: float, age_h: float, tau_h: float) -> float:
+        """T_soil + (T_plant - T_soil) exp(-age / tau): exactly T_plant when the soil is at the plant temperature."""
+        return self.soil_temp_C + (float(plant_C) - self.soil_temp_C) * math.exp(-max(float(age_h), 0.0) / tau_h)
+
+
 TOC_SCHEDULE_MGL = {1: 2.5, 2: 2.5, 3: 2.5, 4: 2.0, 5: 1.5, 6: 1.5, 7: 1.5, 8: 1.5, 9: 1.5, 10: 1.5,
                     11: 3.0, 12: 2.5}
 
