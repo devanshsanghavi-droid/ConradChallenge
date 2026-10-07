@@ -1,5 +1,7 @@
 """
-msx.py: a shared EPANET-MSX runner (iteration 4; task 12's chloramine truths, and task 13's audit).
+msx.py: a shared EPANET-MSX runner (iteration 4; task 12's chloramine truths, and task 13's audit), and task 13's
+two-reactant chlorine-organics chemistry (2RA: the batch solution, the scale s, the MSX model and the hidden truth on the
+committed draws; at the end of this file).
 
 EPANET-MSX (multi-species extension) ships inside WNTR 1.5.  On this Mac it runs, but only with the workarounds the
 planning probes found, all of which live here so no caller has to remember them:
@@ -45,6 +47,7 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 
 import pandas as pd
 import wntr
@@ -144,15 +147,27 @@ def add_mass_transfer_terms(msx, wn) -> None:
     (rate units SEC): Sh = 2 (Re < 1); 3.65 + 0.0668 y / (1 + 0.04 y^0.667), y = (D / Len) Re Sc (laminar);
     0.0149 Re^0.88 Sc^0.333 (Re >= 2300); Kf = Sh Dm / D.  Dm and the viscosity are EPANET's reference values times the
     file's own relative DIFFUSIVITY and VISCOSITY.  The wall rate of a species C with wall coefficient kwp (same units
-    as Kf) is then (4 / D) kwp Kf / (kwp + Kf) C, EPANET's first-order wall reaction."""
+    as Kf) is then (4 / D) kwp Kf / (kwp + Kf) C, EPANET's first-order wall reaction.
+    MSX computes its hydraulic variable Re with water's 20 C viscosity whatever the file's VISCOSITY says, while EPANET
+    uses the file's.  Found by task 13's saved check at 10 C (a 1.30 viscosity ratio moved the wall term enough for a
+    0.086 mg/L difference on Net3; the check reruns the uncorrected runner and records it as before_fix_max_abs_diff_mgL
+    in outputs/chem/checks_report.json): for a file whose relative VISCOSITY is not 1, Re is divided by it here (a term
+    ReV), so both engines see the same Reynolds number.  Every MSX run before task 13 used a file at relative viscosity
+    1 (Net3, Net2 and ky4 all are), where the expressions are written exactly as before."""
     unit2 = metres_per_length_unit(wn) ** 2 / FT ** 2          # ft2 -> (length unit)2
     dm = CHLORINE_DIFFUSIVITY_FT2_S * float(wn.options.quality.diffusivity) / unit2
-    nu = WATER_VISCOSITY_FT2_S * float(wn.options.hydraulic.viscosity) / unit2
+    visc_rel = float(wn.options.hydraulic.viscosity)
+    nu = WATER_VISCOSITY_FT2_S * visc_rel / unit2
     msx.add_constant("Dm", dm, note="molecular diffusivity, length unit^2 per s (EPANET reference x file DIFFUSIVITY)")
     msx.add_constant("Sc", nu / dm, note="Schmidt number")
-    msx.add_term("Yg", "D/Len*Re*Sc")
-    msx.add_term("Sh", "step(1-Re)*2 + step(Re-1)*step(2300-Re)*(3.65+0.0668*Yg/(1+0.04*Yg^0.667))"
-                       " + step(Re-2300)*0.0149*Re^0.88*Sc^0.333")
+    re = "Re"
+    if visc_rel != 1.0:
+        msx.add_constant("Vrel", visc_rel, note="the file's relative VISCOSITY (MSX's own Re assumes 1)")
+        msx.add_term("ReV", "Re/Vrel")
+        re = "ReV"
+    msx.add_term("Yg", f"D/Len*{re}*Sc")
+    msx.add_term("Sh", f"step(1-{re})*2 + step({re}-1)*step(2300-{re})*(3.65+0.0668*Yg/(1+0.04*Yg^0.667))"
+                       f" + step({re}-2300)*0.0149*{re}^0.88*Sc^0.333")
     msx.add_term("Kf", "Sh*Dm/D")
 
 
@@ -253,3 +268,148 @@ def run(wn, msx, compiler: str = "GC", fallback: bool = True):
     finally:
         wn.msx = None                              # later EPANET runs of this network must not run MSX again
         wn.options.quality.parameter = quality0
+
+
+# ===================================================================== task 13: two-reactant chlorine-organics (2RA)
+# Fisher, Kastl & Sathasivan 2012 (Water Res 46:3293, doi:10.1016/j.watres.2012.03.017) and Fisher et al. 2011
+# (doi:10.1016/j.watres.2011.06.032): free chlorine C reacts with a fast (F) and a slow (S) pool of organic reactants,
+#     dC/dt = -kF C F - kS C S - wall,   dF/dt = -kF C F,   dS/dt = -kS C S.
+# The rate constants and the initial reactant split are the Greenvale water's (Fisher 2012, quoted through Walski's
+# Bentley blog: a SECONDARY source).  Every number below is at 20 C; task 13 runs the truth at fixed conditions only
+# (the plan's seasonal 2ra_warm variant was dropped with the temperature models, addendum 2).
+KF20_L_PER_MG_H = 0.141          # fast reactant, L/mg/h at 20 C
+KS20_L_PER_MG_H = 0.00366        # slow reactant, L/mg/h at 20 C
+F0_GREENVALE_MGL = 1.13          # the water's initial fast and slow reactant concentrations (mg/L as chlorine demand);
+S0_GREENVALE_MGL = 2.87          # the truth uses s x these, with s matched to the network's committed bulk rate
+TWO_RA_C0_MGL = 1.2              # the dose at which s is matched (the committed nominal dose)
+TWO_RA_MATCH_H = 24.0            # the age at which the apparent first-order rate equals the committed kb (the plan's
+                                 # default; a 96 h match is the plan's Net2 sensitivity)
+TWO_RA_SPECIES = ("CL2", "FAST", "SLOW")
+TWO_RA_SPECIES_TOL = (1e-8, 1e-6)   # MSX absolute (mg/L) and relative tolerances per species
+TWO_RA_SOLVER = "RK5"
+
+
+@dataclass(frozen=True)
+class TwoReactantTruth:
+    """Settings of a 2RA truth beyond the committed draws (simulate.build_scenario(two_reactant=...)).
+    match_h  : the age (hours) at which s matches the network's committed bulk rate (24, the plan's default; 96 is the
+               plan's Net2 sensitivity)
+    compiler : MSX COMPILER, 'GC' with run()'s loud fallback to 'NONE'"""
+    match_h: float = TWO_RA_MATCH_H
+    compiler: str = "GC"
+
+    def __post_init__(self):
+        object.__setattr__(self, "match_h", float(self.match_h))
+        if not (1.0 <= self.match_h <= 168.0):
+            raise ValueError(f"match_h {self.match_h} is outside 1 to 168 h")
+        if self.compiler not in ("GC", "NONE"):
+            raise ValueError("compiler must be 'GC' or 'NONE'")
+
+
+def two_reactant_batch(c0: float, f0: float, s0: float, t_h, kf_per_h: float = KF20_L_PER_MG_H,
+                       ks_per_h: float = KS20_L_PER_MG_H, kbulk_per_h: float = 0.0):
+    """The 2RA batch (plug-flow) solution, scipy LSODA at rtol 1e-10: returns (C, F, S) at the ages t_h (hours), each
+    an array.  kbulk_per_h adds a first-order chlorine loss (0 for the truth; the saved checks use it)."""
+    import numpy as np
+    from scipy.integrate import solve_ivp
+    t = np.atleast_1d(np.asarray(t_h, dtype=float))
+
+    def rhs(_, y):
+        c, f, s = y
+        return [-(kf_per_h * c * f + ks_per_h * c * s + kbulk_per_h * c), -kf_per_h * c * f, -ks_per_h * c * s]
+    tt = np.unique(np.concatenate([[0.0], t]))
+    sol = solve_ivp(rhs, (0.0, float(tt.max())), [float(c0), float(f0), float(s0)], t_eval=tt, rtol=1e-10, atol=1e-13,
+                    method="LSODA")
+    if not sol.success:
+        raise RuntimeError(f"2RA batch solve failed: {sol.message}")
+    idx = np.searchsorted(tt, t)
+    return sol.y[0][idx], sol.y[1][idx], sol.y[2][idx]
+
+
+def two_reactant_apparent_rate(s: float, age_h: float, c0: float = TWO_RA_C0_MGL) -> float:
+    """-ln(C(age) / C0) / age, per day: the first-order rate that would give the same chlorine at that age."""
+    import math
+    c = float(two_reactant_batch(c0, F0_GREENVALE_MGL * s, S0_GREENVALE_MGL * s, [age_h])[0][0])
+    return -math.log(c / c0) / float(age_h) * 24.0
+
+
+def two_reactant_scale(kb_per_day: float, match_h: float = TWO_RA_MATCH_H, c0: float = TWO_RA_C0_MGL) -> float:
+    """s such that the 2RA water's apparent first-order rate at age match_h, dose c0 and 20 C equals kb_per_day
+    (brentq on s in (1e-6, 2): above about 2 the Net3 chlorine is gone before 96 h).  Truth tuning, disclosed: it
+    makes the 2RA truth agree with the committed first-order truth's bulk rate at that one age."""
+    from scipy.optimize import brentq
+    return float(brentq(lambda s: two_reactant_apparent_rate(s, match_h, c0) - float(kb_per_day), 1e-6, 2.0,
+                        xtol=1e-12, rtol=1e-12))
+
+
+def two_reactant_model(wn, kw_pipe_m_day: dict | None, kf_per_h: float = KF20_L_PER_MG_H,
+                       ks_per_h: float = KS20_L_PER_MG_H):
+    """The 2RA reactions as an MSX model for `wn` (sources are added by the caller with add_sources):
+    species CL2, FAST, SLOW in mg/L; rates per second; RK5 at the network's quality step.  kw_pipe_m_day: per-pipe
+    first-order chlorine wall coefficient (m/day) through EPANET's own mass-transfer-limited form
+    (add_mass_transfer_terms), as in the committed truth; None: no wall (the saved chain check).  Tanks react in the
+    bulk only, as in EPANET.  The constants are named kFast and kSlow: 'kF' would collide with the term Kf (MSX names
+    are case-insensitive)."""
+    from wntr.msx import MsxModel
+    m = MsxModel()
+    m.options.rate_units, m.options.area_units, m.options.solver = "SEC", "M2", TWO_RA_SOLVER
+    m.options.coupling = "NONE"
+    m.options.timestep = int(wn.options.time.quality_timestep)
+    for sp in TWO_RA_SPECIES:
+        m.add_species(sp, "bulk", units="MG", atol=TWO_RA_SPECIES_TOL[0], rtol=TWO_RA_SPECIES_TOL[1])
+    m.add_constant("kFast", float(kf_per_h) / 3600.0, note="fast reactant, L/mg/s")
+    m.add_constant("kSlow", float(ks_per_h) / 3600.0, note="slow reactant, L/mg/s")
+    bulk = "-kFast*CL2*FAST - kSlow*CL2*SLOW"
+    pipe = bulk
+    if kw_pipe_m_day is not None:
+        add_mass_transfer_terms(m, wn)
+        m.add_parameter("kwp", 0.0)
+        set_pipe_parameter(m, "kwp", {p: wall_rate_unit(wn, v) for p, v in kw_pipe_m_day.items()})
+        pipe = bulk + " - (4/D)*kwp*Kf/(kwp+Kf)*CL2"
+    for where, expr in (("pipe", pipe), ("tank", bulk)):
+        m.add_reaction("CL2", where, "rate", expr)
+        m.add_reaction("FAST", where, "rate", "-kFast*CL2*FAST")
+        m.add_reaction("SLOW", where, "rate", "-kSlow*CL2*SLOW")
+    return m
+
+
+def two_reactant_truth(wn, seed: int, rng, rng_m, source_dose: float, kb_per_day: float, kw_m_per_day: float,
+                       match_h: float = TWO_RA_MATCH_H, compiler: str = "GC"):
+    """The hidden 2RA truth (task 13; called by simulate._chem_truth for kinetics '2ra').  The committed draws are
+    consumed exactly as in build_scenario's default branch: the monthly bulk factor u ~ U(0.8, 1.2), per pipe the wall
+    factor exp(N(0, 0.4)) (with the file's own roughness) and the roughness error exp(N(0, 0.10)), the global and
+    per-node demand, and one dose U(0.9, 1.1) per source; no new draw is made.
+      * reactant loads at every source: FAST = 1.13 s u, SLOW = 2.87 s u mg/L, with s = two_reactant_scale(kb_per_day,
+        match_h) (the plan's F0 = 1.13 s (TOC/2) u at TOC_ref; proportional to TOC and to u is an ASSUMPTION);
+      * chlorine at every source: its drawn dose; zero initial quality everywhere (the committed truth's file values
+        are 1/1200 of a dose or zero);
+      * wall: the committed per-pipe coefficient kw 2^(-(C - 130)/30) exp(N(0, 0.4)), EPANET's mass-transfer-limited
+        first-order form, the file's viscosity and diffusivity (20 C);
+      * the network's quality step (300 s), RK5, compiled reactions (COMPILER GC) with msx.run's loud fallback.
+    Returns (chlorine, time x node in mg/L; info)."""
+    import numpy as np
+    from .simulate import roughness_factor, source_nodes
+    u = float(rng_m.uniform(0.8, 1.2))
+    kw_pipe = {}
+    for pn, pipe in wn.pipes():
+        kw_pipe[pn] = kw_m_per_day * roughness_factor(pipe.roughness, 1.0) * np.exp(rng.normal(0, 0.4))
+        pipe.roughness = pipe.roughness * np.exp(rng.normal(0, 0.10))
+    global_mult = rng_m.uniform(0.85, 1.15)
+    for _, j in wn.junctions():
+        for ts in j.demand_timeseries_list:
+            ts.base_value = ts.base_value * global_mult * np.exp(rng_m.normal(0.0, 0.15))
+    doses = {s: source_dose * rng_m.uniform(0.9, 1.1) for s in source_nodes(wn)}
+    s = two_reactant_scale(kb_per_day, match_h)
+    f0, s0 = F0_GREENVALE_MGL * s * u, S0_GREENVALE_MGL * s * u
+    m = two_reactant_model(wn, kw_pipe)
+    add_sources(m, wn, {node: {"CL2": d, "FAST": f0, "SLOW": s0} for node, d in doses.items()})
+    res, run_info = run(wn, m, compiler=compiler)
+    q = res.node["CL2"]
+    info = {"disinfectant": "free_chlorine", "species": "free chlorine", "kinetics": "2ra", "temp_C": 20.0,
+            "toc_mgL": None, "kb_per_day_matched": float(kb_per_day), "match_h": float(match_h), "scale_s": s,
+            "bulk_month_factor": u, "fast_mgL": f0, "slow_mgL": s0,
+            "kfast_L_per_mg_h": KF20_L_PER_MG_H, "kslow_L_per_mg_h": KS20_L_PER_MG_H,
+            "source_doses_mgL": {k: float(v) for k, v in doses.items()}, "quality_scale": 1.0,
+            "msx_compiler": run_info["compiler"], "msx_fallback_reason": run_info["fallback_reason"],
+            "_volatile": {"msx_seconds": run_info["seconds"]}}
+    return q, info

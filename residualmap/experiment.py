@@ -10,6 +10,11 @@ Plus the finding that drives iteration 3: the network is worst at hours nobody s
     python -m residualmap.experiment Net3 8                              # free chlorine, the committed experiments
     python -m residualmap.experiment Net3 --disinfectant=chloramine      # task 12: the chloramine mode (chloramine.py),
                                                                          # outputs to outputs/chloramine/
+    python -m residualmap.experiment Net3 8 --chemistry=2ra              # task 13: the same experiments against Fisher's
+    python -m residualmap.experiment Net3 8 --chemistry=first_order      # two-reactant chemistry in EPANET-MSX, and the
+                                                                         # committed first-order truth, on the same fresh
+                                                                         # seeds (400 to 407), outputs to outputs/chem_2ra/
+                                                                         # (CSVs and summary only; see chemexp.py)
 """
 from __future__ import annotations
 
@@ -49,6 +54,14 @@ NET_DESC = {"Net3": "EPANET example based on North Marin Water District, CA; 92 
 # water is 95 h old at midday, 83% below 0.2 mg/L at its daily minimum at ANY dose: a utility with
 # 4-day-old water only stays compliant with low-demand water; ky4 at 1.2 mg/L is 61% below at the minimum)
 NET_TRUTH = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}
+# task 13: the richer-truth audit (chemexp.py).  Each chemistry is a hidden truth on the committed draws; the model and
+# the sampling rules are exactly the committed ones.  'first_order' is the committed truth itself (chem=None) on the
+# audit's fresh seeds, the paired reference; '2ra' is Fisher's two-reactant chlorine-organics chemistry in EPANET-MSX
+# (msx.two_reactant_truth), its reactant scale matched to NET_TRUTH's bulk rate at NET_CHEM_MATCH_H (the plan's
+# default 24 h; 96 h is the plan's Net2 sensitivity, written to a subfolder).
+NET_CHEM = ("first_order", "2ra")
+NET_CHEM_MATCH_H = 24.0
+CHEM_FIRST_SEED = 400            # fresh seeds: no free-chlorine experiment scored 400 to 407 before task 13
 
 
 def _metrics(truth, pred_median, p_viol, lo, hi, mask) -> dict:
@@ -152,11 +165,14 @@ def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outpu
 
 
 # ----------------------------------------------------------------------------- time-aware (task 1)
-def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask, threshold: float = THRESHOLD) -> dict:
+def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask, threshold: float = THRESHOLD,
+                  extra: bool = False) -> dict:
     """Scores against the DAILY MINIMUM (the compliance number) and the night snapshot, on unsampled
     junctions.  pmin needs columns median / lo90 / hi90 / p_below (computed at `threshold`; the default is the
     committed 0.2 mg/L free chlorine; task 12's chloramine mode scores in residualmap/chloramine.py, where a rate with
-    no junction below the threshold is 'not testable' instead of the 1.0 kept here for the committed outputs)."""
+    no junction below the threshold is 'not testable' instead of the 1.0 kept here for the committed outputs).
+    extra=True (task 13's audit runs only; the committed outputs keep extra=False) adds the daily minimum's MAE and
+    bias and the counts behind its rates (tp_min, fp_min), so pooled rates and false alarms can be read exactly."""
     t, m = sc.truth_daily_min.loc[mask], pmin.loc[mask]
     tv, pv = t < threshold, m["p_below"] > 0.5
     tp = int((tv & pv).sum()); fp = int((~tv & pv).sum()); fn = int((tv & ~pv).sum())
@@ -165,6 +181,9 @@ def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask, th
     out = {"rmse_min": float(np.sqrt(np.mean((t - m["median"]) ** 2))), "precision_min": prec, "recall_min": rec,
            "f1_min": (2 * prec * rec / (prec + rec)) if prec + rec else 0.0, "n_true_viol_min": int(tv.sum()),
            "coverage90_min": float(((t >= m["lo90"]) & (t <= m["hi90"])).mean())}
+    if extra:
+        out.update(mae_min=float(np.mean(np.abs(m["median"] - t))), bias_min=float(np.mean(m["median"] - t)),
+                   tp_min=tp, fp_min=fp)
     if "lo50" in pmin:
         out.update(_coverage_levels(sc.truth_daily_min, pmin, mask, "_min"))
     if p_night is not None:
@@ -177,12 +196,19 @@ def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask, th
 
 
 def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outputs/cache",
-                      threshold: float = THRESHOLD):
+                      threshold: float = THRESHOLD, make_model=None, baselines: bool = True, extra: bool = False):
     """Task 1: samples are (junction, hour) with hour in the operator's 07:00-17:00 window; the model
     predicts all 24 h and the daily minimum.  Baselines: the time-blind iteration-2 model (every sample
     treated as a 14:00 sample) and the mean of samples.  threshold (task 12) goes to the models, the acquisition and
-    the scores; the default is the committed 0.2 mg/L."""
+    the scores; the default is the committed 0.2 mg/L.
+    Task 13 (the defaults are the committed run): make_model(sc, X, seed, cache_dir, threshold) builds the main model
+    in place of SimGP24 (an opt-in grid, or the gated two-rate model), baselines=False skips the random-rule baselines
+    (they draw nothing from the sampling generator, so the samples are unchanged) and extra=True adds _metrics_time's
+    extra columns.  The samples of every rule depend only on the seed, the truth and the main model's predictions."""
     rng = np.random.default_rng(2000 + seed)
+    if make_model is None:
+        def make_model(sc_, X_, seed_, cache_dir_, threshold_):
+            return SimGP24(sc_, X_, seed=seed_, cache_dir=cache_dir_, threshold=threshold_)
 
     def observe(js, hs):
         t = np.array([sc.truth_by_hour.loc[h, j] for j, h in zip(js, hs)])
@@ -196,28 +222,28 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
         S = pd.DataFrame({"junction": seed_js, "hour": seed_hs, "y": seed_y})
         for n in range(n_seed, n_max + 1):
             unsampled = [j for j in sc.junctions if j not in set(S.junction)]
-            m = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, threshold=threshold).fit(S)
+            m = make_model(sc, X, seed, cache_dir, threshold).fit(S)
             hourly = m.predict_hours()
             pmin = m.predict_daily_min()
             pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight, threshold)
             r = {"model": "simgp24", "strategy": strat, "n": n, "seed": seed,
-                 **_metrics_time(sc, pmin, pnight, unsampled, threshold)}
+                 **_metrics_time(sc, pmin, pnight, unsampled, threshold, extra)}
             r["map_kb"], r["map_kw"], r["map_gamma"], r["map_demand"], r["map_rough"] = m.map_params_
             r["map_dose"] = m.map_dose_
             rows.append(r)
-            if strat == "random":
+            if strat == "random" and baselines:
                 m0 = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid="decay", lik_sd=0.25, doses=[1.0],
                              smooth_hours=False, threshold=threshold).fit(S)   # the task-1 model, for the before/after comparison
                 rows.append({"model": "simgp24_g75", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, m0.predict_daily_min(), None, unsampled, threshold)})
+                             **_metrics_time(sc, m0.predict_daily_min(), None, unsampled, threshold, extra)})
                 tb = SimGP(sc, seed=seed, cache_dir=cache_dir, lik="t").fit(X.loc[S.junction], S.y.values).predict(X)
                 tb["p_below"] = SimGP.p_below(tb, threshold)   # its 14:00 flags, scored against the daily minimum
                 rows.append({"model": "simgp_timeblind", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, tb, tb, unsampled, threshold)})
+                             **_metrics_time(sc, tb, tb, unsampled, threshold, extra)})
                 mu = float(np.mean(S.y))
                 bm = pd.DataFrame({"median": mu, "lo90": mu, "hi90": mu, "p_below": float(mu < threshold)}, index=sc.junctions)
                 rows.append({"model": "mean_of_samples", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, bm, bm, unsampled, threshold)})
+                             **_metrics_time(sc, bm, bm, unsampled, threshold, extra)})
             if strat == TIME_MAIN and n in (n_seed, 8, n_max):
                 snapshots[n] = {"samples": S.copy(), "pmin": pmin.copy(), "pnight": pnight.copy(),
                                 "hourly": (hourly[0].copy(), hourly[1].copy())}
@@ -503,34 +529,68 @@ def plot_curves(df, out):
     return agg, agg2
 
 
+def chem_outdir(outdir: str, chemistry: str, match_h: float = NET_CHEM_MATCH_H) -> str:
+    """Where a task-13 chemistry run writes: <outdir>/chem_2ra (the 2RA truth at the default match age),
+    <outdir>/chem_2ra/match<h> (another match age) or <outdir>/chem_2ra/first_order (the committed truth, same seeds)."""
+    if chemistry not in NET_CHEM:
+        raise ValueError(f"chemistry must be one of {NET_CHEM}")
+    base = os.path.join(outdir, "chem_2ra")
+    if chemistry == "first_order":
+        return os.path.join(base, "first_order")
+    return base if float(match_h) == NET_CHEM_MATCH_H else os.path.join(base, f"match{float(match_h):g}")
+
+
 def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outputs", sample_hour=14,
-         structural_noise=False, cache=None):
+         structural_noise=False, cache=None, chemistry: str | None = None, match_h: float = NET_CHEM_MATCH_H,
+         figures: bool = True):
     """structural_noise=True is the task-3 stress test: the truth gets a closed pipe / low tank the
-    operator's file does not have; outputs go to <outdir>/structural, the grid cache is shared."""
+    operator's file does not have; outputs go to <outdir>/structural, the grid cache is shared.
+    chemistry (task 13): '2ra' scores the same models and rules against Fisher's two-reactant truth in EPANET-MSX
+    (reactant scale matched at match_h hours), 'first_order' against the committed truth, both on the seeds given (the
+    audit's fresh seeds); outputs go to chem_outdir(...), with _metrics_time's extra columns and a 'chemistry' block in
+    the summary.  figures=False writes the figures and the features table to a temporary folder that is deleted, so
+    only the CSVs and the summary are kept.  The defaults are the committed run, file for file."""
+    import tempfile
     cache = cache or os.path.join(outdir, "cache")
     if structural_noise:
         outdir = os.path.join(outdir, "structural" if structural_noise is True else f"structural_{structural_noise}")
+    chem_kw = {}
+    if chemistry is not None:
+        if structural_noise:
+            raise ValueError("a chemistry truth and the structural stress test are not combined")
+        outdir = chem_outdir(outdir, chemistry, match_h)
+        if chemistry == "2ra":
+            from .chemistry import Chemistry
+            from .msx import TwoReactantTruth
+            chem_kw = dict(chem=Chemistry(kinetics="2ra"), two_reactant=TwoReactantTruth(match_h=match_h))
     os.makedirs(outdir, exist_ok=True)
+    tmp_fig = None if figures else tempfile.TemporaryDirectory(prefix="rm_fig_")
+    figdir = outdir if figures else tmp_fig.name
     frames, frames_t, frames_r, summary = [], [], [], {}
     for s in seeds:
         sc = build_scenario(network, seed=s, sample_hour=sample_hour, structural_noise=structural_noise,
-                            **NET_TRUTH.get(network, {}))
+                            **NET_TRUTH.get(network, {}), **chem_kw)
         if sc.structural:
             summary.setdefault("structural_noise", {})[str(s)] = sc.structural
             print(f"seed {s}: structural noise -> {sc.structural}", flush=True)
+        if chemistry is not None:
+            info = {k: v for k, v in (sc.chem or {"kinetics": "first (the committed truth)"}).items() if k != "_volatile"}
+            summary.setdefault("chemistry", {"truth": chemistry, "match_h": float(match_h) if chemistry == "2ra" else None,
+                                             "seeds": [int(x) for x in seeds], "per_seed": {}})["per_seed"][str(s)] = info
         df, snaps, X = run_scenario(sc, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
         frames.append(df)
-        df_t, snaps_t = run_scenario_time(sc, X, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache)
+        df_t, snaps_t = run_scenario_time(sc, X, n_seed=n_seed, n_max=n_max, seed=s, cache_dir=cache,
+                                          extra=chemistry is not None)
         frames_t.append(df_t)
         df_r, routes = run_routes(sc, X, seed=s, cache_dir=cache)
         frames_r.append(df_r)
         if s == seeds[0]:
             sc0, routes0 = sc, routes
             for n, snap in snaps.items():
-                plot_maps(sc, snap, os.path.join(outdir, f"map_{network}_n{n}.png"), n)
-            plot_day_night(sc, os.path.join(outdir, f"day_vs_night_{network}.png"))
-            plot_day_night_predicted(sc, snaps_t[n_max], os.path.join(outdir, f"day_vs_night_predicted_{network}.png"), n_max)
-            X.to_csv(os.path.join(outdir, f"features_{network}_seed{s}.csv"))
+                plot_maps(sc, snap, os.path.join(figdir, f"map_{network}_n{n}.png"), n)
+            plot_day_night(sc, os.path.join(figdir, f"day_vs_night_{network}.png"))
+            plot_day_night_predicted(sc, snaps_t[n_max], os.path.join(figdir, f"day_vs_night_predicted_{network}.png"), n_max)
+            X.to_csv(os.path.join(figdir, f"features_{network}_seed{s}.csv"))
             summary["scenario0"] = {
                 "junctions": len(sc.junctions),
                 "below_threshold_at_sampling_hour": int((sc.truth_snapshot < THRESHOLD).sum()),
@@ -541,7 +601,7 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
               f"{THRESHOLD} mg/L at {sample_hour}:00", flush=True)
     df = pd.concat(frames, ignore_index=True)
     df.to_csv(os.path.join(outdir, f"results_{network}.csv"), index=False)
-    agg, agg2 = plot_curves(df, os.path.join(outdir, f"curves_{network}.png"))
+    agg, agg2 = plot_curves(df, os.path.join(figdir, f"curves_{network}.png"))
     summary["models_random_sampling"] = {
         str(n): agg[agg.n == n].set_index("model")[["rmse", "recall", "f1", "cov90"]].round(3).to_dict("index")
         for n in (n_seed, 8, n_max)}
@@ -552,8 +612,8 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
     summary["map_params_mean_by_n"] = {str(n): mp.loc[n].round(2).to_dict() for n in (n_seed, 8, n_max)}
     df_t = pd.concat(frames_t, ignore_index=True)
     df_t.to_csv(os.path.join(outdir, f"results_time_{network}.csv"), index=False)
-    agg_t = plot_curves_time(df_t, os.path.join(outdir, f"curves_time_{network}.png"))
-    plot_reliability(df, df_t, os.path.join(outdir, f"reliability_{network}.png"))
+    agg_t = plot_curves_time(df_t, os.path.join(figdir, f"curves_time_{network}.png"))
+    plot_reliability(df, df_t, os.path.join(figdir, f"reliability_{network}.png"))
     if structural_noise:
         base = os.path.dirname(outdir)
         if os.path.exists(os.path.join(base, f"results_{network}.csv")):
@@ -564,13 +624,15 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
         for n in (n_seed, 8, n_max)}
     df_r = pd.concat(frames_r, ignore_index=True)
     df_r.to_csv(os.path.join(outdir, f"results_routes_{network}.csv"), index=False)
-    agg_r = plot_routes(df_r, df_t, sc0, routes0, os.path.join(outdir, f"route_comparison_{network}.png"))
+    agg_r = plot_routes(df_r, df_t, sc0, routes0, os.path.join(figdir, f"route_comparison_{network}.png"))
     summary["routes_daily_min"] = {
         str(K): agg_r[agg_r.K == K].set_index("route")[["recall_min", "precision_min", "f1_min", "rmse_min", "coverage90_min", "recall_min_all", "f1_min_all"]].round(3).to_dict("index")
         for K in ROUTE_KS}
     summary["route_scenario0_K8"] = routes0[("optimised", 8)]["route"].to_dict("records")
     with open(os.path.join(outdir, f"summary_{network}.json"), "w") as f:
         json.dump(summary, f, indent=2)
+    if tmp_fig is not None:
+        tmp_fig.cleanup()
     return df, agg, agg2, summary, agg_t
 
 
@@ -584,7 +646,25 @@ if __name__ == "__main__":
     net = args[0] if args else "Net3"
     seeds = tuple(range(int(args[1]))) if len(args) > 1 else tuple(range(8))
     structural = "persistent" if "--structural=persistent" in sys.argv else ("--structural" in sys.argv)
-    _, agg, agg2, _, agg_t = main(net, seeds=seeds, structural_noise=structural)
+    opts = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a)
+    chemistry = opts.get("chemistry")
+    routes_dir = "outputs" if not structural else f"outputs/structural{'_' + structural if isinstance(structural, str) else ''}"
+    if chemistry is not None:
+        # task 13: the audit's fresh seeds (400 onwards, or --seed0=<first seed> for an unscored smoke run, which also
+        # needs --outdir so nothing scratch lands in outputs/); figures are not kept, only the CSVs and the summary
+        seed0 = int(opts.get("seed0", CHEM_FIRST_SEED))
+        if seed0 < CHEM_FIRST_SEED:
+            raise SystemExit(f"--chemistry runs use fresh seeds, {CHEM_FIRST_SEED} or above")
+        out_root = opts.get("outdir", "outputs")
+        if seed0 != CHEM_FIRST_SEED and out_root == "outputs":
+            raise SystemExit("a run on other seeds than the audit's needs --outdir=<scratch folder>")
+        match_h = float(opts.get("match", NET_CHEM_MATCH_H))
+        seeds = tuple(range(seed0, seed0 + len(seeds)))
+        _, agg, agg2, _, agg_t = main(net, seeds=seeds, outdir=out_root, cache=os.path.join("outputs", "cache"),
+                                      chemistry=chemistry, match_h=match_h, figures=False)
+        routes_dir = chem_outdir(out_root, chemistry, match_h)
+    else:
+        _, agg, agg2, _, agg_t = main(net, seeds=seeds, structural_noise=structural)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
     for col in ("rmse", "recall", "cov90"):
         print(f"\n== models under random sampling: {col}")
@@ -597,5 +677,5 @@ if __name__ == "__main__":
         print(f"\n== time-aware: DAILY MINIMUM from daytime samples, {col}")
         print(agg_t[agg_t.n.isin([3, 5, 8, 10, 12, 15])].pivot(index="n", columns="key", values=col).round(3))
     print("\n== routes: K sites chosen at once, daily-minimum recall / precision / F1")
-    print(pd.read_csv(os.path.join("outputs" if not structural else f"outputs/structural{'_' + structural if isinstance(structural, str) else ''}", f"results_routes_{net}.csv"))
+    print(pd.read_csv(os.path.join(routes_dir, f"results_routes_{net}.csv"))
           .groupby(["K", "route"])[["recall_min", "precision_min", "f1_min", "rmse_min", "coverage90_min", "recall_min_all", "f1_min_all"]].mean().round(3))

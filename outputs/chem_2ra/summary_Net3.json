@@ -1,0 +1,782 @@
+{
+  "chemistry": {
+    "truth": "2ra",
+    "match_h": 24.0,
+    "seeds": [
+      400,
+      401,
+      402,
+      403,
+      404,
+      405,
+      406,
+      407
+    ],
+    "per_seed": {
+      "400": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.8796395243882396,
+        "fast_mgL": 0.30220284584154383,
+        "slow_mgL": 0.767541741208169,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.29173409876606,
+          "Lake": 1.1888576671767888
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "401": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 1.0773523601172268,
+        "fast_mgL": 0.37012769455528866,
+        "slow_mgL": 0.9400588348439635,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.135308381164041,
+          "Lake": 1.2580256715396654
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "402": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.9059207963498997,
+        "fast_mgL": 0.311231857111442,
+        "slow_mgL": 0.7904738317786184,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.1761712440492231,
+          "Lake": 1.1474642098980397
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "403": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.8710429112111898,
+        "fast_mgL": 0.29924945312250917,
+        "slow_mgL": 0.7600406464261961,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.1862346488053515,
+          "Lake": 1.2678061175427062
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "404": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.9211617493930787,
+        "fast_mgL": 0.31646793308948457,
+        "slow_mgL": 0.8037725380237353,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.3107611759672853,
+          "Lake": 1.2335946757493201
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "405": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 1.1550587164563046,
+        "fast_mgL": 0.396823950663128,
+        "slow_mgL": 1.0078626003567943,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.2922933974950692,
+          "Lake": 1.1926461613123303
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "406": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.8293907250107869,
+        "fast_mgL": 0.28493971730881007,
+        "slow_mgL": 0.7236964501560045,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.1866967635463563,
+          "Lake": 1.1099020589802997
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      },
+      "407": {
+        "disinfectant": "free_chlorine",
+        "species": "free chlorine",
+        "kinetics": "2ra",
+        "temp_C": 20.0,
+        "toc_mgL": null,
+        "kb_per_day_matched": 0.4,
+        "match_h": 24.0,
+        "scale_s": 0.3040292521512392,
+        "bulk_month_factor": 0.8639702535403402,
+        "fast_mgL": 0.2968196199732083,
+        "slow_mgL": 0.7538693002859364,
+        "kfast_L_per_mg_h": 0.141,
+        "kslow_L_per_mg_h": 0.00366,
+        "source_doses_mgL": {
+          "River": 1.0961461841799693,
+          "Lake": 1.2992093784504737
+        },
+        "quality_scale": 1.0,
+        "msx_compiler": "GC",
+        "msx_fallback_reason": null
+      }
+    }
+  },
+  "scenario0": {
+    "junctions": 92,
+    "below_threshold_at_sampling_hour": 20,
+    "below_threshold_daily_min": 32,
+    "pct_below_by_hour": {
+      "0": 28.3,
+      "1": 28.3,
+      "2": 25.0,
+      "3": 19.6,
+      "4": 12.0,
+      "5": 8.7,
+      "6": 8.7,
+      "7": 8.7,
+      "8": 9.8,
+      "9": 9.8,
+      "10": 17.4,
+      "11": 18.5,
+      "12": 20.7,
+      "13": 20.7,
+      "14": 21.7,
+      "15": 22.8,
+      "16": 22.8,
+      "17": 22.8,
+      "18": 25.0,
+      "19": 29.3,
+      "20": 30.4,
+      "21": 30.4,
+      "22": 30.4,
+      "23": 28.3
+    }
+  },
+  "models_random_sampling": {
+    "3": {
+      "decay_only": {
+        "rmse": 1.055,
+        "recall": 0.488,
+        "f1": 0.403,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.305,
+        "recall": 0.125,
+        "f1": 0.03,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.244,
+        "recall": 0.331,
+        "f1": 0.263,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.569,
+        "recall": 0.524,
+        "f1": 0.424,
+        "cov90": 0.278
+      },
+      "physgp_rich": {
+        "rmse": 0.567,
+        "recall": 0.509,
+        "f1": 0.415,
+        "cov90": 0.338
+      },
+      "pinn_rich": {
+        "rmse": 0.228,
+        "recall": 0.329,
+        "f1": 0.292,
+        "cov90": 0.294
+      },
+      "simgp_core": {
+        "rmse": 0.072,
+        "recall": 0.878,
+        "f1": 0.861,
+        "cov90": 0.999
+      },
+      "simgp_core_g75": {
+        "rmse": 0.094,
+        "recall": 0.866,
+        "f1": 0.716,
+        "cov90": 0.882
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.071,
+        "recall": 0.87,
+        "f1": 0.845,
+        "cov90": 0.997
+      },
+      "simgp_rich": {
+        "rmse": 0.072,
+        "recall": 0.9,
+        "f1": 0.859,
+        "cov90": 0.997
+      }
+    },
+    "8": {
+      "decay_only": {
+        "rmse": 0.23,
+        "recall": 0.223,
+        "f1": 0.212,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.262,
+        "recall": 0.0,
+        "f1": 0.0,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.164,
+        "recall": 0.635,
+        "f1": 0.572,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.153,
+        "recall": 0.714,
+        "f1": 0.59,
+        "cov90": 0.558
+      },
+      "physgp_rich": {
+        "rmse": 0.173,
+        "recall": 0.681,
+        "f1": 0.573,
+        "cov90": 0.738
+      },
+      "pinn_rich": {
+        "rmse": 0.135,
+        "recall": 0.457,
+        "f1": 0.489,
+        "cov90": 0.384
+      },
+      "simgp_core": {
+        "rmse": 0.062,
+        "recall": 0.901,
+        "f1": 0.877,
+        "cov90": 0.991
+      },
+      "simgp_core_g75": {
+        "rmse": 0.089,
+        "recall": 0.894,
+        "f1": 0.784,
+        "cov90": 0.796
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.064,
+        "recall": 0.866,
+        "f1": 0.848,
+        "cov90": 0.96
+      },
+      "simgp_rich": {
+        "rmse": 0.067,
+        "recall": 0.885,
+        "f1": 0.858,
+        "cov90": 0.979
+      }
+    },
+    "15": {
+      "decay_only": {
+        "rmse": 0.238,
+        "recall": 0.211,
+        "f1": 0.209,
+        "cov90": NaN
+      },
+      "mean_of_samples": {
+        "rmse": 0.248,
+        "recall": 0.0,
+        "f1": 0.0,
+        "cov90": NaN
+      },
+      "nearest_sample": {
+        "rmse": 0.141,
+        "recall": 0.627,
+        "f1": 0.6,
+        "cov90": NaN
+      },
+      "physgp_core": {
+        "rmse": 0.149,
+        "recall": 0.698,
+        "f1": 0.64,
+        "cov90": 0.591
+      },
+      "physgp_rich": {
+        "rmse": 0.16,
+        "recall": 0.732,
+        "f1": 0.611,
+        "cov90": 0.735
+      },
+      "pinn_rich": {
+        "rmse": 0.117,
+        "recall": 0.662,
+        "f1": 0.65,
+        "cov90": 0.45
+      },
+      "simgp_core": {
+        "rmse": 0.057,
+        "recall": 0.897,
+        "f1": 0.868,
+        "cov90": 0.982
+      },
+      "simgp_core_g75": {
+        "rmse": 0.068,
+        "recall": 0.868,
+        "f1": 0.791,
+        "cov90": 0.804
+      },
+      "simgp_core_nogp": {
+        "rmse": 0.059,
+        "recall": 0.9,
+        "f1": 0.879,
+        "cov90": 0.959
+      },
+      "simgp_rich": {
+        "rmse": 0.061,
+        "recall": 0.884,
+        "f1": 0.854,
+        "cov90": 0.979
+      }
+    }
+  },
+  "strategies_simgp": {
+    "3": {
+      "random": {
+        "rmse": 0.072,
+        "recall": 0.878,
+        "f1": 0.861,
+        "recall_all": 0.885,
+        "cov90": 0.999
+      },
+      "straddle": {
+        "rmse": 0.078,
+        "recall": 0.857,
+        "f1": 0.827,
+        "recall_all": 0.847,
+        "cov90": 0.994
+      },
+      "uncertainty": {
+        "rmse": 0.079,
+        "recall": 0.847,
+        "f1": 0.819,
+        "recall_all": 0.835,
+        "cov90": 0.992
+      }
+    },
+    "8": {
+      "random": {
+        "rmse": 0.062,
+        "recall": 0.901,
+        "f1": 0.877,
+        "recall_all": 0.909,
+        "cov90": 0.991
+      },
+      "straddle": {
+        "rmse": 0.059,
+        "recall": 0.908,
+        "f1": 0.912,
+        "recall_all": 0.892,
+        "cov90": 0.987
+      },
+      "uncertainty": {
+        "rmse": 0.07,
+        "recall": 0.726,
+        "f1": 0.78,
+        "recall_all": 0.77,
+        "cov90": 0.932
+      }
+    },
+    "15": {
+      "random": {
+        "rmse": 0.057,
+        "recall": 0.897,
+        "f1": 0.868,
+        "recall_all": 0.921,
+        "cov90": 0.982
+      },
+      "straddle": {
+        "rmse": 0.051,
+        "recall": 1.0,
+        "f1": 0.984,
+        "recall_all": 0.895,
+        "cov90": 0.955
+      },
+      "uncertainty": {
+        "rmse": 0.053,
+        "recall": 0.794,
+        "f1": 0.791,
+        "recall_all": 0.894,
+        "cov90": 0.969
+      }
+    }
+  },
+  "map_params_mean_by_n": {
+    "3": {
+      "map_kb": 0.29,
+      "map_kw": 0.96,
+      "map_gamma": 0.44
+    },
+    "8": {
+      "map_kb": 0.44,
+      "map_kw": 0.8,
+      "map_gamma": 0.69
+    },
+    "15": {
+      "map_kb": 0.4,
+      "map_kw": 0.85,
+      "map_gamma": 0.69
+    }
+  },
+  "time_aware_daily_min": {
+    "3": {
+      "mean_of_samples/random": {
+        "rmse": 0.318,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.071,
+        "recall": 0.962,
+        "cov90": 0.941,
+        "recall_night": 0.915
+      },
+      "simgp24/straddle": {
+        "rmse": 0.071,
+        "recall": 0.962,
+        "cov90": 0.941,
+        "recall_night": 0.915
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.071,
+        "recall": 0.962,
+        "cov90": 0.941,
+        "recall_night": 0.915
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.071,
+        "recall": 0.962,
+        "cov90": 0.941,
+        "recall_night": 0.915
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.068,
+        "recall": 0.968,
+        "cov90": 0.794,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.195,
+        "recall": 0.493,
+        "cov90": 0.537,
+        "recall_night": 0.553
+      }
+    },
+    "8": {
+      "mean_of_samples/random": {
+        "rmse": 0.292,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.076,
+        "recall": 0.978,
+        "cov90": 0.894,
+        "recall_night": 0.963
+      },
+      "simgp24/straddle": {
+        "rmse": 0.07,
+        "recall": 0.952,
+        "cov90": 0.9,
+        "recall_night": 0.897
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.07,
+        "recall": 0.988,
+        "cov90": 0.885,
+        "recall_night": 0.973
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.103,
+        "recall": 0.98,
+        "cov90": 0.842,
+        "recall_night": 0.923
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.084,
+        "recall": 0.982,
+        "cov90": 0.674,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.183,
+        "recall": 0.532,
+        "cov90": 0.449,
+        "recall_night": 0.618
+      }
+    },
+    "15": {
+      "mean_of_samples/random": {
+        "rmse": 0.286,
+        "recall": 0.0,
+        "cov90": 0.0,
+        "recall_night": 0.0
+      },
+      "simgp24/random": {
+        "rmse": 0.07,
+        "recall": 0.976,
+        "cov90": 0.891,
+        "recall_night": 0.96
+      },
+      "simgp24/straddle": {
+        "rmse": 0.085,
+        "recall": 0.948,
+        "cov90": 0.856,
+        "recall_night": 0.915
+      },
+      "simgp24/straddle_min": {
+        "rmse": 0.071,
+        "recall": 0.987,
+        "cov90": 0.864,
+        "recall_night": 0.986
+      },
+      "simgp24/uncertainty": {
+        "rmse": 0.095,
+        "recall": 0.973,
+        "cov90": 0.826,
+        "recall_night": 0.983
+      },
+      "simgp24_g75/random": {
+        "rmse": 0.083,
+        "recall": 0.957,
+        "cov90": 0.666,
+        "recall_night": NaN
+      },
+      "simgp_timeblind/random": {
+        "rmse": 0.187,
+        "recall": 0.485,
+        "cov90": 0.429,
+        "recall_night": 0.56
+      }
+    }
+  },
+  "routes_daily_min": {
+    "5": {
+      "highest_demand": {
+        "recall_min": 0.951,
+        "precision_min": 0.8,
+        "f1_min": 0.865,
+        "rmse_min": 0.069,
+        "coverage90_min": 0.964,
+        "recall_min_all": 0.949,
+        "f1_min_all": 0.863
+      },
+      "optimised": {
+        "recall_min": 0.973,
+        "precision_min": 0.753,
+        "f1_min": 0.846,
+        "rmse_min": 0.092,
+        "coverage90_min": 0.839,
+        "recall_min_all": 0.976,
+        "f1_min_all": 0.847
+      },
+      "random": {
+        "recall_min": 0.943,
+        "precision_min": 0.792,
+        "f1_min": 0.855,
+        "rmse_min": 0.072,
+        "coverage90_min": 0.922,
+        "recall_min_all": 0.943,
+        "f1_min_all": 0.853
+      }
+    },
+    "8": {
+      "highest_demand": {
+        "recall_min": 0.965,
+        "precision_min": 0.8,
+        "f1_min": 0.872,
+        "rmse_min": 0.069,
+        "coverage90_min": 0.96,
+        "recall_min_all": 0.963,
+        "f1_min_all": 0.867
+      },
+      "optimised": {
+        "recall_min": 0.948,
+        "precision_min": 0.789,
+        "f1_min": 0.856,
+        "rmse_min": 0.083,
+        "coverage90_min": 0.851,
+        "recall_min_all": 0.954,
+        "f1_min_all": 0.844
+      },
+      "random": {
+        "recall_min": 0.965,
+        "precision_min": 0.758,
+        "f1_min": 0.844,
+        "rmse_min": 0.081,
+        "coverage90_min": 0.86,
+        "recall_min_all": 0.963,
+        "f1_min_all": 0.848
+      }
+    },
+    "12": {
+      "highest_demand": {
+        "recall_min": 0.964,
+        "precision_min": 0.773,
+        "f1_min": 0.854,
+        "rmse_min": 0.072,
+        "coverage90_min": 0.919,
+        "recall_min_all": 0.962,
+        "f1_min_all": 0.852
+      },
+      "optimised": {
+        "recall_min": 0.959,
+        "precision_min": 0.793,
+        "f1_min": 0.864,
+        "rmse_min": 0.087,
+        "coverage90_min": 0.82,
+        "recall_min_all": 0.965,
+        "f1_min_all": 0.859
+      },
+      "random": {
+        "recall_min": 0.955,
+        "precision_min": 0.759,
+        "f1_min": 0.84,
+        "rmse_min": 0.083,
+        "coverage90_min": 0.809,
+        "recall_min_all": 0.962,
+        "f1_min_all": 0.848
+      }
+    }
+  },
+  "route_scenario0_K8": [
+    {
+      "junction": "213",
+      "hour": 17,
+      "p_below": 0.5,
+      "score": 1.599,
+      "reason": "P(daily min < 0.2) = 0.50 \u2014 most uncertain violation call; sample at 17:00 where the band is widest by day; first site."
+    },
+    {
+      "junction": "151",
+      "hour": 11,
+      "p_below": 0.68,
+      "score": 1.268,
+      "reason": "P(daily min < 0.2) = 0.68 \u2014 most uncertain violation call; sample at 11:00 where the band is widest by day; 7.4 km from the nearest other route site."
+    },
+    {
+      "junction": "183",
+      "hour": 16,
+      "p_below": 0.54,
+      "score": 1.225,
+      "reason": "P(daily min < 0.2) = 0.54 \u2014 most uncertain violation call; sample at 16:00 where the band is widest by day; 3.2 km from the nearest other route site."
+    },
+    {
+      "junction": "249",
+      "hour": 13,
+      "p_below": 0.69,
+      "score": 1.503,
+      "reason": "P(daily min < 0.2) = 0.69 \u2014 most uncertain violation call; sample at 13:00 where the band is widest by day; 1.2 km from the nearest other route site."
+    },
+    {
+      "junction": "215",
+      "hour": 7,
+      "p_below": 0.62,
+      "score": 1.462,
+      "reason": "P(daily min < 0.2) = 0.62 \u2014 most uncertain violation call; sample at 07:00 where the band is widest by day; 1.3 km from the nearest other route site."
+    },
+    {
+      "junction": "229",
+      "hour": 14,
+      "p_below": 0.63,
+      "score": 1.536,
+      "reason": "P(daily min < 0.2) = 0.63 \u2014 most uncertain violation call; sample at 14:00 where the band is widest by day; 0.5 km from the nearest other route site."
+    },
+    {
+      "junction": "125",
+      "hour": 15,
+      "p_below": 0.81,
+      "score": 1.121,
+      "reason": "P(daily min < 0.2) = 0.81 \u2014 likely violation, confirm it; sample at 15:00 where the band is widest by day; 1.7 km from the nearest other route site."
+    },
+    {
+      "junction": "205",
+      "hour": 12,
+      "p_below": 0.39,
+      "score": 1.121,
+      "reason": "P(daily min < 0.2) = 0.39 \u2014 most uncertain violation call; sample at 12:00 where the band is widest by day; 1.6 km from the nearest other route site."
+    }
+  ]
+}

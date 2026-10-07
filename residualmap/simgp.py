@@ -56,9 +56,19 @@ ROUGH_GRID = [0.9, 1.0, 1.1]                    # global Hazen-Williams C multip
 KB_CA = [0.0025, 0.005, 0.01, 0.02, 0.04, 0.08, 0.16, 0.32]   # 1/day at 20 C
 KW_CA = [0.01, 0.03, 0.10, 0.30, 1.0]                          # m/day
 GAMMA_CA = [0.0, 0.5, 1.0, 2.0]
+# task 13, an OPT-IN variant (plan addendum 3): today's grid with four bulk rates below its 0.10 per day floor, which
+# binds in most fits under task 11's second-order truths and on Net2.  0.0125 lies inside, not below, the two-reactant
+# truth's local decay rate in Net2's oldest water (0.0138, 0.0126 and 0.0115 per day over 96 to 120, 120 to 144 and
+# 144 to 168 h at the 24 h match, outputs/chem_2ra/scaling.json), so the new floor does not bracket it.  Its own
+# cache name (grid_cache_path adds a tag); the default 'full' grid, its cache file and every committed number are
+# untouched.  Adopting it into the default path would move committed numbers: that is Devansh's decision, not the
+# task's.
+KB_LOWKB = [0.0125, 0.025, 0.05, 0.075] + KB_GRID   # 1/day
 GRIDS = {"decay": (KB_GRID, KW_GRID, GAMMA_GRID, [1.0], [1.0]),                    # iteration 2: 75 runs
          "full": (KB_GRID, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID),         # iteration 3: 675 runs
-         "chloramine": (KB_CA, KW_CA, GAMMA_CA, DEMAND_GRID, ROUGH_GRID)}         # task 12: 1440 runs, chloramine only
+         "chloramine": (KB_CA, KW_CA, GAMMA_CA, DEMAND_GRID, ROUGH_GRID),         # task 12: 1440 runs, chloramine only
+         "full_lowkb": (KB_LOWKB, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID)}   # task 13 opt-in: 1215 runs
+COMMITTED_GRID_NAMES = ("decay", "full", "chloramine")   # cache names without a grid tag (kept as committed)
 DOSE_GRID = [0.90, 0.95, 1.00, 1.05, 1.10]     # source-dose multiplier: first-order decay is linear in
                                                 # concentration, so this axis is an exact ln-offset, no runs
 # chloramine's effective-dose axis also absorbs the fast organic demand (5.92 S1 TOC mg/L, Duirk et al. 2005; about
@@ -116,9 +126,13 @@ def _non_default(cond: Chemistry | None) -> bool:
 def grid_cache_path(sc, cache_dir: str = "outputs/cache", grid: str = "full", cond: Chemistry | None = None) -> str:
     """Cache file of a grid.  Default calls (cond None, or a condition that reproduces today's path) keep the
     committed names, so existing pickles stay valid; any other condition appends its label and
-    chemistry.cache_tag (a hash of the grid definition and the condition)."""
+    chemistry.cache_tag (a hash of the grid definition and the condition).  A grid that is not one of
+    COMMITTED_GRID_NAMES (task 13's opt-in 'full_lowkb') always carries chemistry.cache_tag, which hashes its axes,
+    so a change to its axes can never be served an old file."""
     dose_tag = "" if abs(sc.source_dose - 1.2) < 1e-9 else f"_d{sc.source_dose:g}"
     cond_tag = f"_{cond.label()}_{cache_tag(cond, grid)}" if _non_default(cond) else ""
+    if not cond_tag and grid not in COMMITTED_GRID_NAMES:
+        cond_tag = f"_{cache_tag(None, grid)}"
     return os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}{cond_tag}.pkl")
 
 

@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 54,
+ "n_pass": 63,
  "n_fail": 0,
  "n_skipped": 0,
  "checks": [
@@ -873,6 +873,176 @@
     "experimental_label_shown": false,
     "reveal": "True daily-minimum violations: **9 of 35** junctions. On the unsampled junctions the map found **8 of 8** (recall 100%) with 3 false alarms. Mean of your sample",
     "reveal_no_violation": "True daily-minimum violations: **0 of 35** junctions. No unsampled junction is truly below the threshold, so recall is not testable here; the map raised 0 false"
+   }
+  },
+  {
+   "name": "two_reactant_msx_matches_lsoda",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "by_temperature": {
+     "10C": {
+      "max_abs_diff_mgL": 4.3163647203137145e-06,
+      "C_last_msx": 0.9076008796691895,
+      "C_last_lsoda": 0.9075973628438877,
+      "age_last_h": 23.561944901923454,
+      "compiler": "GC"
+     },
+     "20C": {
+      "max_abs_diff_mgL": 9.123608396444105e-06,
+      "C_last_msx": 0.8062495589256287,
+      "C_last_lsoda": 0.8062465731665406,
+      "age_last_h": 23.561944901923454,
+      "compiler": "GC"
+     },
+     "25C": {
+      "max_abs_diff_mgL": 1.3039076313892117e-05,
+      "C_last_msx": 0.7533081769943237,
+      "C_last_lsoda": 0.7533060889750314,
+      "age_last_h": 23.561944901923454,
+      "compiler": "GC"
+     }
+    },
+    "worst_mgL": 1.3039076313892117e-05,
+    "bar_mgL": 0.01
+   }
+  },
+  {
+   "name": "first_order_msx_wall_matches_epanet_at_temperatures",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "10C": {
+     "viscosity_ratio": 1.2989160133094786,
+     "diffusivity_ratio": 0.7436106421575758,
+     "max_abs_diff_mgL": 0.006120622158050537,
+     "mean_abs_diff_mgL": 0.0005491940537467599,
+     "before_fix_max_abs_diff_mgL": 0.08610168099403381,
+     "before_fix_mean_abs_diff_mgL": 0.020229309797286987
+    },
+    "25C": {
+     "viscosity_ratio": 0.8909726376383114,
+     "diffusivity_ratio": 1.1415121763031766,
+     "max_abs_diff_mgL": 0.005484521389007568,
+     "mean_abs_diff_mgL": 0.0006104435888119042,
+     "before_fix_max_abs_diff_mgL": 0.018057778477668762,
+     "before_fix_mean_abs_diff_mgL": 0.008041583932936192
+    },
+    "relative_viscosity_1_expressions_unchanged": true
+   }
+  },
+  {
+   "name": "two_reactant_scale_reproduces",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "Net3/2ra": {
+     "scale_s": 0.3040292521512392,
+     "apparent_rate_at_match": 0.399999999999999
+    },
+    "Net2/2ra": {
+     "scale_s": 0.08318454074736807,
+     "apparent_rate_at_match": 0.09999999999999981
+    },
+    "Net2/2ra_m96": {
+     "scale_s": 0.20788052390445197,
+     "apparent_rate_at_match": 0.09999999999999995
+    }
+   }
+  },
+  {
+   "name": "two_reactant_truth_draws_and_refusals",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "scale_s": 0.08318454074736807,
+    "bulk_month_factor": 0.8475538111236731,
+    "refused": {
+     "10C": true,
+     "toc": true,
+     "chloramine": true,
+     "grid": true,
+     "warming": true,
+     "loss_split": true,
+     "two_reactant_without_2ra": true
+    },
+    "median_daily_min_2ra": 0.16196076571941376,
+    "median_daily_min_first_order": 0.14828643202781677
+   }
+  },
+  {
+   "name": "paired_samples_are_the_same_across_truths",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "random_rule_fits_compared": 4,
+    "reading_errors_compared": 18,
+    "max_reading_error_difference": 0.0
+   }
+  },
+  {
+   "name": "lowkb_grid_nests_the_committed_grid",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "members": 1215,
+     "members_at_committed_rates_identical": 675,
+     "file": "grid24_full_lowkb_Net3_924eb8b02a.pkl"
+    },
+    "Net2": {
+     "members": 1215,
+     "members_at_committed_rates_identical": 675,
+     "file": "grid24_full_lowkb_Net2_924eb8b02a.pkl"
+    }
+   }
+  },
+  {
+   "name": "two_rate_grid_is_exact_and_nests_today",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "members": 4725,
+    "msx_two_parts_vs_epanet_mixture_max_abs_mgL": 0.005479782819747925,
+    "mean_abs_mgL": 0.0005263409693725407
+   }
+  },
+  {
+   "name": "default_path_untouched_by_task13_hooks",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "committed_keys": [
+     "rmse_min",
+     "precision_min",
+     "recall_min",
+     "f1_min",
+     "n_true_viol_min",
+     "coverage90_min"
+    ],
+    "extra_keys": [
+     "mae_min",
+     "bias_min",
+     "tp_min",
+     "fp_min"
+    ]
+   }
+  },
+  {
+   "name": "two_reactant_outputs_reproduce",
+   "group": "two_reactant",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "material": true
+    },
+    "Net2": {
+     "material": true
+    },
+    "csv_bytes_max": 206158,
+    "n_csv": 24,
+    "net2_seed400_2ra_values_compared": 3466,
+    "identical_to_6_significant_digits": true
    }
   },
   {

@@ -1,0 +1,178 @@
+{
+ "generated_by": "python -m residualmap.chemexp scaling",
+ "about": "Truth tuning for task 13's two-reactant (2RA) truth, disclosed. s is solved by brentq so that the 2RA batch's apparent first-order rate -ln(C(match)/C0)/match at C0 = 1.2 mg/L and 20 C equals the network's committed truth bulk rate (Net3 0.40, Net2 0.10 per day). Batch = plug flow, no wall, u = 1 (the truth multiplies both reactant loads by its monthly draw u ~ U(0.8, 1.2)).",
+ "constants": {
+  "kfast_L_per_mg_h": 0.141,
+  "kslow_L_per_mg_h": 0.00366,
+  "fast0_greenvale_mgL": 1.13,
+  "slow0_greenvale_mgL": 2.87,
+  "c0_mgL": 1.2,
+  "temp_C": 20.0,
+  "source": "Greenvale water, Fisher, Kastl & Sathasivan 2012 (doi:10.1016/j.watres.2012.03.017), via Walski's Bentley blog (secondary)"
+ },
+ "networks": {
+  "Net3": {
+   "2ra": {
+    "kb_matched_per_day": 0.4,
+    "match_h": 24.0,
+    "scale_s": 0.3040292521512392,
+    "fast0_mgL_at_u1": 0.34355305493090027,
+    "slow0_mgL_at_u1": 0.8725639536740566,
+    "apparent_rate_per_day_by_age_h": {
+     "2": 1.0674,
+     "6": 0.8292,
+     "12": 0.614,
+     "24": 0.4,
+     "48": 0.2433,
+     "96": 0.1531,
+     "144": 0.1206
+    },
+    "local_rate_per_day_96_to_168h": [
+     0.0569,
+     0.0539,
+     0.0512
+    ],
+    "dose_shift": {
+     "0.9": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       -0.3082,
+       -0.3895,
+       -0.4329,
+       -0.4539
+      ],
+      "first_order_ln_ratio": -0.2877
+     },
+     "1.6": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       0.311,
+       0.3732,
+       0.3908,
+       0.4033
+      ],
+      "first_order_ln_ratio": 0.2877
+     }
+    }
+   }
+  },
+  "Net2": {
+   "2ra": {
+    "kb_matched_per_day": 0.1,
+    "match_h": 24.0,
+    "scale_s": 0.08318454074736807,
+    "fast0_mgL_at_u1": 0.09399853104452591,
+    "slow0_mgL_at_u1": 0.23873963194494638,
+    "apparent_rate_per_day_by_age_h": {
+     "2": 0.2911,
+     "6": 0.2223,
+     "12": 0.1596,
+     "24": 0.1,
+     "48": 0.06,
+     "96": 0.0379,
+     "144": 0.0297
+    },
+    "local_rate_per_day_96_to_168h": [
+     0.0138,
+     0.0126,
+     0.0115
+    ],
+    "dose_shift": {
+     "0.9": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       -0.2934,
+       -0.3118,
+       -0.3173,
+       -0.3202
+      ],
+      "first_order_ln_ratio": -0.2877
+     },
+     "1.6": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       0.2941,
+       0.3077,
+       0.3101,
+       0.3132
+      ],
+      "first_order_ln_ratio": 0.2877
+     }
+    }
+   },
+   "2ra_m96": {
+    "kb_matched_per_day": 0.1,
+    "match_h": 96.0,
+    "scale_s": 0.20788052390445197,
+    "fast0_mgL_at_u1": 0.23490499201203072,
+    "slow0_mgL_at_u1": 0.5966171036057771,
+    "apparent_rate_per_day_by_age_h": {
+     "2": 0.7288,
+     "6": 0.562,
+     "12": 0.4106,
+     "24": 0.2627,
+     "48": 0.1586,
+     "96": 0.1,
+     "144": 0.0786
+    },
+    "local_rate_per_day_96_to_168h": [
+     0.037,
+     0.0345,
+     0.0323
+    ],
+    "dose_shift": {
+     "0.9": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       -0.3018,
+       -0.3532,
+       -0.3745,
+       -0.3843
+      ],
+      "first_order_ln_ratio": -0.2877
+     },
+     "1.6": {
+      "ages_h": [
+       6,
+       24,
+       48,
+       96
+      ],
+      "ln_C_dose_over_C_1.2": [
+       0.3037,
+       0.3423,
+       0.3511,
+       0.3591
+      ],
+      "first_order_ln_ratio": 0.2877
+     }
+    }
+   }
+  }
+ }
+}

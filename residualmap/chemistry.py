@@ -49,8 +49,9 @@ THRESHOLD_NOTE = {
     CHLORAMINE: "0.5 mg/L total chlorine: a common utility operating target, not a California rule "
                 "(California requires a detectable residual)",
 }
-KINETICS = ("first", "first_si", "order2", "clark", "epa_msx")   # first = the repo's legacy-unit first order;
-                                                             # epa_msx = task 12's chloramine truth (EPA model in MSX)
+KINETICS = ("first", "first_si", "order2", "clark", "epa_msx", "2ra")   # first = the repo's legacy-unit first order;
+                                                             # epa_msx = task 12's chloramine truth (EPA model in MSX);
+                                                             # 2ra = task 13's two-reactant free-chlorine truth (MSX)
 WALL_MODES = ("arrhenius", "mass_transfer_only")      # mass_transfer_only = ablation M1b (wall chemistry not scaled)
 TRUTH_SEED_OFFSET = {FREE_CHLORINE: 20_000, CHLORAMINE: 40_000}   # same pattern as default_rng(10_000 + seed)
 BUILT_DISINFECTANTS = (FREE_CHLORINE, CHLORAMINE)   # task 12 built chloramine's own physics (chloramine.py): a
@@ -169,7 +170,9 @@ class Chemistry:
                     'order2' and 'clark' (EPANET order 2, truth only; 'clark' is built in task 11 and needs
                     toc_mgL and phi; 'order2' is not built: task 12's MSX path passed its checks, so the plan's
                     reduced order-2 chloramine fallback was not needed), 'epa_msx' (task 12, chloramine truth only:
-                    EPA's unified chloramine model in EPANET-MSX, chloramine.py)
+                    EPA's unified chloramine model in EPANET-MSX, chloramine.py), '2ra' (task 13, a free-chlorine
+                    truth only, at 20 C with no TOC input: Fisher's two-reactant chlorine-organics chemistry in
+                    EPANET-MSX, msx.two_reactant_truth)
     temp_C        : water temperature; None = the file's own properties and the calibrated 20 C rates
     toc_mgL       : plant TOC; None = not logged (bulk rate unscaled)
     threshold_mgL : compliance threshold; None = 0.2 free chlorine / 0.5 total chlorine (see THRESHOLD_NOTE)
@@ -275,7 +278,8 @@ class Chemistry:
         """Refuse a condition whose physics is not built.  Chloramine (task 12) runs at 20 C only (no seasonal
         chloramine test was run, and the free-chlorine E/R must not be borrowed), with no TOC input (the truth draws
         its own TOC per seed), and with kinetics 'epa_msx' (EPA's model in MSX) or 'first' (its first-order twin, or a
-        first-order grid); 'epa_msx' is a chloramine truth only."""
+        first-order grid); 'epa_msx' is a chloramine truth only.  '2ra' (task 13) is a free-chlorine truth at 20 C with
+        no TOC input."""
         if self.disinfectant not in BUILT_DISINFECTANTS:
             raise NotImplementedError(f"{self.disinfectant} decay physics is not built")
         if self.disinfectant == CHLORAMINE:
@@ -289,6 +293,13 @@ class Chemistry:
                 raise NotImplementedError(f"chloramine kinetics must be one of {CHLORAMINE_TRUTH_KINETICS}")
         elif self.kinetics == "epa_msx":
             raise ValueError("kinetics 'epa_msx' is EPA's chloramine model; it has no free-chlorine form")
+        elif self.kinetics == "2ra":     # task 13: fixed conditions only (the plan's seasonal 2ra_warm was dropped)
+            if self.temp_C is not None and self.temp_C != TREF_C:
+                raise NotImplementedError("the two-reactant truth runs at 20 C only (task 13 audits fixed conditions; "
+                                          "the seasonal variant was dropped with the temperature models)")
+            if self.toc_mgL is not None:
+                raise NotImplementedError("the two-reactant truth takes no TOC input (its reactant loads are matched to "
+                                          "the network's committed bulk rate at TOC_ref)")
 
     def sim_kwargs(self) -> dict:
         """Keyword arguments for simulate.simulate_nominal_chlorine under this condition."""

@@ -1,7 +1,7 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
 
-    python -m residualmap.checks            # every check, about 250 s on this machine (54 checks, task 12 and its review)
+    python -m residualmap.checks            # every check, about 400 s on this machine (63 checks, after task 13)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 24 s)
 
@@ -1829,6 +1829,430 @@ def app_chloramine_mode():
     assert nv and "**0 of 35**" in nv[0] and "recall is not testable" in nv[0] and "%" not in nv[0], nv
     return {"flagged_label": res["flagged_label"], "experimental_label_shown": "Experimental" in banner[0],
             "reveal": res["reveal"][0][:160], "reveal_no_violation": nv[0][:160]}
+
+
+# ----------------------------------------------------------------------------- task 13: the richer-truth audit
+TRA_SMOKE_SEED = 990      # chemexp.SMOKE_SEEDS: never scored
+TRA_NET2 = dict(kb_per_day=0.10, kw_m_per_day=0.20)     # experiment.NET_TRUTH['Net2']
+
+
+def _two_ra_chain_run(temp_C: float, er_fast: float, er_slow: float, wall: bool = False):
+    """12-pipe plug-flow chain (0.3 m pipes of 1000 m, 0.01 m3/s: 1.96 h per pipe) under the 2RA MSX model at temp_C,
+    the rate constants scaled by the Arrhenius factor; returns (MSX last-hour chlorine at J1..J12, ages in hours)."""
+    from .chemistry import arrhenius
+    from . import msx as M
+    wn, t_days = _chain(quality_step=300)
+    wn.options.quality.parameter = "NONE"
+    kf = M.KF20_L_PER_MG_H * arrhenius(temp_C, er_fast)
+    ks = M.KS20_L_PER_MG_H * arrhenius(temp_C, er_slow)
+    m = M.two_reactant_model(wn, None, kf, ks)
+    f0, s0 = M.F0_GREENVALE_MGL * 0.304, M.S0_GREENVALE_MGL * 0.304
+    M.add_sources(m, wn, {"R": {"CL2": 1.2, "FAST": f0, "SLOW": s0}})
+    res, info = M.run(wn, m)
+    last = res.node["CL2"].iloc[-1]
+    return np.array([float(last[f"J{k}"]) for k in range(1, 13)]), t_days * 24.0, (kf, ks, f0, s0), info
+
+
+@check("two_reactant", quick=False)
+def two_reactant_msx_matches_lsoda():
+    """The 2RA reactions in EPANET-MSX (msx.two_reactant_model, no wall) on a 12-pipe plug-flow chain against the scipy
+    LSODA batch solution (msx.two_reactant_batch) at every junction's travel time, at 10, 20 and 25 C (Greenvale's
+    constants times the Arrhenius factor with E/R 6500 K fast and 10000 K slow, inside the plan's ranges; the audit's
+    truth runs at 20 C only): within 0.01 mg/L.  The source column reads the 1.2 mg/L dose, compiled reactions ran,
+    and no MSX scratch file is left."""
+    from . import msx as M
+    out, worst = {}, 0.0
+    for T in (10.0, 20.0, 25.0):
+        sim, ages, (kf, ks, f0, s0), info = _two_ra_chain_run(T, 6500.0, 10000.0)
+        ref = M.two_reactant_batch(1.2, f0, s0, ages, kf, ks)[0]
+        d = float(np.abs(sim - ref).max())
+        worst = max(worst, d)
+        out[f"{T:g}C"] = {"max_abs_diff_mgL": d, "C_last_msx": float(sim[-1]), "C_last_lsoda": float(ref[-1]),
+                          "age_last_h": float(ages[-1]), "compiler": info["compiler"]}
+    assert worst <= CHAIN_TOL_MGL, out
+    assert all(v["compiler"] == "GC" for v in out.values()), out
+    assert _root_scratch_files() == [] and not [f for f in os.listdir(".") if re.fullmatch(r"(msx|en)[A-Za-z0-9]{6}", f)]
+    return {"by_temperature": out, "worst_mgL": worst, "bar_mgL": CHAIN_TOL_MGL}
+
+
+@check("two_reactant", quick=False)
+def first_order_msx_wall_matches_epanet_at_temperatures():
+    """The plan's second engine check: one species with EPANET's first-order bulk (0.40 per day) and mass-transfer-
+    limited wall (0.70 m/day x the roughness factor) as MSX expressions against EPANET's CHEMICAL quality on Net3, with
+    the water's viscosity and diffusivity set for 10 and 25 C in both engines (chemistry.apply_water_temperature; the
+    20 C case is task 12's msx_first_order_matches_epanet), every junction and hour of the last day, at a 60 s quality
+    step (task 12's finding: at 300 s the two engines differ by about 0.03 mg/L at passing fronts).  Bar 0.03 mg/L.
+    Its first run failed at 10 C: MSX computes its Reynolds number with water's 20 C viscosity, whatever the file says.
+    msx.add_mass_transfer_terms now divides Re by the file's relative viscosity when that is not 1; at 1 (every
+    committed MSX run: Net3, Net2 and ky4) its expressions are as before, checked here.  The uncorrected runner is
+    rerun too (its term ReV set back to MSX's own Re), so the gap the fix closes is recorded (before_fix_*), and the
+    check asserts that the uncorrected runner fails the bar at 10 C (added after task 13's review)."""
+    from . import chloramine as C
+    from . import msx as M
+    from . import simulate as S
+    from .chemistry import apply_water_temperature
+    kb, kw, dose, step = 0.40, 0.70, 1.2, 60
+    out = {}
+    for T in (10.0, 25.0):
+        old = S.QUALITY_STEP_S
+        S.QUALITY_STEP_S = step
+        try:
+            ref = S.simulate_nominal_chlorine("Net3", kb, kw, 1.0, dose, file_prefix=os.path.join(os.getcwd(), "fo_t"),
+                                              temp_C=T)
+        finally:
+            S.QUALITY_STEP_S = old
+            for f in glob.glob("fo_t.*"):
+                os.remove(f)
+        diffs = {}
+        for fixed in (True, False):
+            wn = S.load("Net3")
+            wn.options.time.quality_timestep = step
+            v, d = apply_water_temperature(wn, T)
+            m = C.first_order_msx_model(wn, kb, {pn: kw * S.roughness_factor(p.roughness, 1.0) for pn, p in wn.pipes()})
+            m.options.timestep = step
+            if not fixed:                  # the runner before the fix: MSX's own Re, whatever the file's viscosity
+                m.reaction_system.terms["ReV"].expression = "Re"
+            M.add_sources(m, wn, {s: {"CL": dose} for s in S.source_nodes(wn)})
+            res, _ = M.run(wn, m)
+            q = S._last_day(res.node["CL"], wn.junction_name_list)
+            diffs[fixed] = (q - ref).abs()
+        out[f"{T:g}C"] = {"viscosity_ratio": v, "diffusivity_ratio": d, "max_abs_diff_mgL": float(diffs[True].values.max()),
+                          "mean_abs_diff_mgL": float(diffs[True].values.mean()),
+                          "before_fix_max_abs_diff_mgL": float(diffs[False].values.max()),
+                          "before_fix_mean_abs_diff_mgL": float(diffs[False].values.mean())}
+    assert all(x["max_abs_diff_mgL"] <= 0.03 for x in out.values()), out
+    assert out["10C"]["before_fix_max_abs_diff_mgL"] > 0.03, out     # the check catches the fault it found
+    wn = S.load("Net3")
+    m = C.first_order_msx_model(wn, kb, {pn: kw for pn in wn.pipe_name_list})
+    terms = {t: m.reaction_system.terms[t].expression for t in m.term_name_list}
+    assert "ReV" not in terms and terms["Yg"] == "D/Len*Re*Sc", terms
+    out["relative_viscosity_1_expressions_unchanged"] = True
+    return out
+
+
+@check("two_reactant")
+def two_reactant_scale_reproduces():
+    """s is what brentq gives (the 2RA batch's apparent first-order rate at the match age equals the committed truth
+    rate to 1e-9 per day: Net3 0.40 at 24 h, Net2 0.10 at 24 h and at 96 h), and the committed
+    outputs/chem_2ra/scaling.json is exactly what chemexp.scaling() writes."""
+    from . import msx as M
+    from .chemexp import _clean, scaling
+    path = os.path.join(REPO, "outputs", "chem_2ra", "scaling.json")
+    committed = json.load(open(path))
+    again = json.loads(json.dumps(_clean(scaling())))
+    assert again == committed, "outputs/chem_2ra/scaling.json is not what chemexp.scaling() gives"
+    out = {}
+    for net, ent in committed["networks"].items():
+        for truth, e in ent.items():
+            s = M.two_reactant_scale(e["kb_matched_per_day"], e["match_h"])
+            k = M.two_reactant_apparent_rate(s, e["match_h"])
+            assert s == e["scale_s"] and abs(k - e["kb_matched_per_day"]) < 1e-9, (net, truth, s, k)
+            out[f"{net}/{truth}"] = {"scale_s": s, "apparent_rate_at_match": k}
+    return out
+
+
+@check("two_reactant", quick=False)
+def two_reactant_truth_draws_and_refusals():
+    """The 2RA truth (Net2, smoke seed 990, never scored) consumes the committed draws in their committed order: its
+    source doses and monthly bulk factor equal the free-chlorine chemistry truth's at the same seed (Chemistry(temp_C=20),
+    which consumes them in the default branch's order), and its reactant loads are 1.13 s u and 2.87 s u.  Compiled
+    reactions ran, wn.msx is detached, no MSX scratch file is left.  Refused: a 2RA truth at 10 C, with a TOC input,
+    as chloramine, with in-network warming or the loss split, as a grid condition, and two_reactant= without kinetics
+    '2ra'."""
+    from . import msx as M
+    from .chemistry import CHLORAMINE, Chemistry, Warming
+    from .simulate import build_scenario
+    tr = build_scenario("Net2", TRA_SMOKE_SEED, chem=Chemistry(kinetics="2ra"), **TRA_NET2)
+    fo = build_scenario("Net2", TRA_SMOKE_SEED, chem=Chemistry(temp_C=20.0), **TRA_NET2)
+    assert tr.chem["source_doses_mgL"] == fo.chem["source_doses_mgL"]
+    assert tr.chem["bulk_month_factor"] == fo.chem["bulk_month_factor"]
+    s = M.two_reactant_scale(0.10)
+    u = tr.chem["bulk_month_factor"]
+    assert tr.chem["scale_s"] == s and np.isclose(tr.chem["fast_mgL"], 1.13 * s * u, rtol=1e-12)
+    assert np.isclose(tr.chem["slow_mgL"], 2.87 * s * u, rtol=1e-12)
+    assert tr.chem["msx_compiler"] == "GC" and tr.chem["msx_fallback_reason"] is None and tr.wn.msx is None
+    assert (tr.truth_daily_min >= 0).all()
+    refused = {}
+    cases = {"10C": lambda: Chemistry(kinetics="2ra", temp_C=10.0).require_built(),
+             "toc": lambda: Chemistry(kinetics="2ra", toc_mgL=2.5).require_built(),
+             "chloramine": lambda: Chemistry(disinfectant=CHLORAMINE, kinetics="2ra").require_built(),
+             "grid": lambda: Chemistry(kinetics="2ra").sim_kwargs(),
+             "warming": lambda: build_scenario("Net2", TRA_SMOKE_SEED, chem=Chemistry(kinetics="2ra", temp_C=20.0),
+                                               warming=Warming(soil_temp_C=18.0), **TRA_NET2),
+             "loss_split": lambda: build_scenario("Net2", TRA_SMOKE_SEED, chem=Chemistry(kinetics="2ra"),
+                                                  truth_loss_split=True, **TRA_NET2),
+             "two_reactant_without_2ra": lambda: build_scenario("Net2", TRA_SMOKE_SEED, two_reactant=M.TwoReactantTruth(),
+                                                                **TRA_NET2)}
+    for k, fn in cases.items():
+        try:
+            fn()
+            refused[k] = False
+        except (ValueError, NotImplementedError):
+            refused[k] = True
+    assert all(refused.values()), refused
+    assert _root_scratch_files() == [] and not [f for f in os.listdir(".") if re.fullmatch(r"(msx|en)[A-Za-z0-9]{6}", f)]
+    return {"scale_s": s, "bulk_month_factor": u, "refused": refused,
+            "median_daily_min_2ra": float(tr.truth_daily_min.median()), "median_daily_min_first_order": float(fo.truth_daily_min.median())}
+
+
+_PAIRED_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap import experiment as E
+from residualmap.chemexp import scenario
+from residualmap.features import build_features
+from residualmap.simgp import SimGP24
+cache = sys.argv[1]
+seen = {}
+class Rec(SimGP24):
+    def fit(self, S):
+        seen.setdefault(KEY, []).append([[str(j), int(h), float(y)] for j, h, y in zip(S.junction, S.hour, S.y)])
+        return super().fit(S)
+def mk(sc, X, seed, cache_dir, threshold):
+    return Rec(sc, X, seed=seed, cache_dir=cache_dir, threshold=threshold)
+truths = {}
+for truth, bl in (("first_order", True), ("first_order", False), ("2ra", False)):
+    sc = scenario("Net2", 990, truth)
+    truths[truth] = {f"{h}|{j}": float(sc.truth_by_hour.loc[h, j]) for h in range(24) for j in sc.junctions}
+    KEY = f"{truth}|{bl}"
+    E.run_scenario_time(sc, build_features(sc), n_max=6, seed=990, cache_dir=cache, make_model=mk, baselines=bl, extra=True)
+print("PAIRED_JSON " + json.dumps({"seen": seen, "truths": truths}))
+'''
+
+
+@check("two_reactant", quick=False)
+def paired_samples_are_the_same_across_truths():
+    """The pairing the materiality test rests on: experiment.run_scenario_time on Net2 smoke seed 990 (n up to 6), once
+    on the committed first-order truth and once on the 2RA truth, gives the random rule the same junctions, hours and
+    reading errors (reading minus the truth at that junction and hour, where the reading is not clipped at 0.01), and
+    the same 3 first samples to every rule; skipping the random-rule baselines (baselines=False, the audit's opt-in
+    variants) changes no sample.  Run in a single-threaded subprocess."""
+    r = subprocess.run([PY, "-c", _PAIRED_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV}, timeout=900)
+    line = [x for x in r.stdout.splitlines() if x.startswith("PAIRED_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"paired-sample run failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    d = json.loads(line[-1][len("PAIRED_JSON "):])
+    seen, truths = d["seen"], d["truths"]
+    fo_b, fo, tr = seen["first_order|True"], seen["first_order|False"], seen["2ra|False"]
+    assert fo_b == fo, "baselines=False changed the samples"
+    n_fits_rule = len(fo) // 4                                    # four rules, in experiment.TIME_STRATEGIES order
+    rnd_fo, rnd_tr = fo[:n_fits_rule], tr[:n_fits_rule]
+    errs = []
+    for a, b in zip(rnd_fo, rnd_tr):
+        assert [x[:2] for x in a] == [x[:2] for x in b], "the random rule's junctions or hours differ between truths"
+        for (j, h, ya), (_, _, yb) in zip(a, b):
+            if ya > 0.01 and yb > 0.01:
+                ea, eb = ya - truths["first_order"][f"{h}|{j}"], yb - truths["2ra"][f"{h}|{j}"]
+                errs.append(abs(ea - eb))
+    firsts = {tuple(map(tuple, (x[:2] for x in seen[k][i * n_fits_rule][:3]))) for k in ("first_order|False", "2ra|False")
+              for i in range(4)}
+    assert len(firsts) == 1, "the 3 first samples differ between rules or truths"
+    assert errs and max(errs) < 1e-9, max(errs) if errs else None
+    return {"random_rule_fits_compared": len(rnd_fo), "reading_errors_compared": len(errs),
+            "max_reading_error_difference": max(errs)}
+
+
+@check("two_reactant", quick=False)
+def lowkb_grid_nests_the_committed_grid():
+    """The opt-in low-kb grid (simgp.GRIDS['full_lowkb']): its members at today's five bulk rates are the committed
+    'full' grid's members bit for bit (Net3 and Net2), in grid order; its cache file carries a tag; the committed grids'
+    axes, cache names and the committed condition tag are unchanged; and the default SimGP24 still runs on 'full'."""
+    import inspect
+    from .chemistry import Chemistry, cache_tag
+    from .simgp import GRIDS, KB_GRID, KB_LOWKB, SimGP24, grid_cache_path
+    from .simulate import nominal_scenario
+    assert GRIDS["full"][0] == [0.10, 0.25, 0.40, 0.55, 0.70] and KB_LOWKB == [0.0125, 0.025, 0.05, 0.075] + KB_GRID
+    assert inspect.signature(SimGP24.__init__).parameters["grid"].default == "full"
+    assert cache_tag(Chemistry(temp_C=12.5, er_K=8000.0)) == "72f9c19f47"
+    out = {}
+    for net in ("Net3", "Net2"):
+        sc = nominal_scenario(net)
+        assert os.path.basename(grid_cache_path(sc)) == f"grid24_full_{net}.pkl"
+        lp = grid_cache_path(sc, CACHE, "full_lowkb")
+        assert re.search(r"grid24_full_lowkb_%s_[0-9a-f]{10}\.pkl$" % net, lp), lp
+        assert os.path.exists(lp), f"{lp} is built by the audit (python -m residualmap.chemexp audit {net} 8)"
+        P0, Z0 = pickle.load(open(grid_cache_path(sc, CACHE), "rb"))
+        P1, Z1 = pickle.load(open(lp, "rb"))
+        keep = [i for i, p in enumerate(P1) if p[0] in KB_GRID]
+        assert [tuple(P1[i]) for i in keep] == [tuple(p) for p in P0]
+        assert np.array_equal(Z1[keep], Z0), net
+        out[net] = {"members": len(P1), "members_at_committed_rates_identical": len(keep), "file": os.path.basename(lp)}
+    return out
+
+
+@check("two_reactant", quick=False)
+def two_rate_grid_is_exact_and_nests_today():
+    """The gated 'full2r' grid (chemexp.two_rate_grid) from Net3's committed grid: its first 675 members are today's
+    grid (B0 nested), it is in grid order (simgp.check_grid_order), and a two-rate member is ln(f C(k1) + (1 - f) C(k2))
+    of the committed members.  The exactness it rests on, checked against an engine: an MSX run carrying two chlorine
+    parts (dose f x 1.2 at bulk rate k1, (1 - f) x 1.2 at k2, the same mass-transfer-limited wall) on Net3 sums to the
+    mixture of two EPANET runs at k1 and k2 within 0.03 mg/L (60 s quality step)."""
+    from . import msx as M
+    from . import simulate as S
+    from .chemexp import two_rate_grid
+    from .simgp import check_grid_order, simulator_grid_24h
+    from .simulate import nominal_scenario
+    sc = nominal_scenario("Net3")
+    P, Z = simulator_grid_24h(sc, CACHE, "full")
+    members, P2, Z2 = two_rate_grid(P, Z)
+    assert len(P2) == 4725 and np.array_equal(Z2[:675], Z) and [tuple(p) for p in P2[:675]] == [tuple(p) for p in P]
+    check_grid_order(P2, 9)
+    i = members.index((0.55, 0.10, 0.25, 0.60, 1.0, 1.0, 1.0))
+    a, b = P.index((0.55, 0.60, 1.0, 1.0, 1.0)), P.index((0.10, 0.60, 1.0, 1.0, 1.0))
+    mix = np.log(0.25 * np.exp(Z[a].astype(np.float64)) + 0.75 * np.exp(Z[b].astype(np.float64)))
+    assert np.allclose(Z2[i], mix, atol=1e-6)
+    # engine check of the linearity
+    from wntr.msx import MsxModel
+    k1, k2, f, kw, dose, step = 0.55, 0.10, 0.25, 0.60, 1.2, 60
+    runs = {}
+    for k in (k1, k2):
+        old = S.QUALITY_STEP_S
+        S.QUALITY_STEP_S = step
+        try:
+            runs[k] = S.simulate_nominal_chlorine("Net3", k, kw, 1.0, dose, file_prefix=os.path.join(os.getcwd(), "tr_m"))
+        finally:
+            S.QUALITY_STEP_S = old
+            for fn in glob.glob("tr_m.*"):
+                os.remove(fn)
+    wn = S.load("Net3")
+    wn.options.time.quality_timestep = step
+    m = MsxModel()
+    m.options.rate_units, m.options.area_units, m.options.solver, m.options.timestep = "SEC", "M2", "RK5", step
+    for sp in ("CA", "CB"):
+        m.add_species(sp, "bulk", units="MG", atol=1e-8, rtol=1e-6)
+    m.add_constant("kA", k1 / 86400.0)
+    m.add_constant("kB", k2 / 86400.0)
+    M.add_mass_transfer_terms(m, wn)
+    m.add_parameter("kwp", 0.0)
+    M.set_pipe_parameter(m, "kwp", {pn: M.wall_rate_unit(wn, kw * S.roughness_factor(p.roughness, 1.0)) for pn, p in wn.pipes()})
+    m.add_reaction("CA", "pipe", "rate", "-kA*CA - (4/D)*kwp*Kf/(kwp+Kf)*CA")
+    m.add_reaction("CB", "pipe", "rate", "-kB*CB - (4/D)*kwp*Kf/(kwp+Kf)*CB")
+    m.add_reaction("CA", "tank", "rate", "-kA*CA")
+    m.add_reaction("CB", "tank", "rate", "-kB*CB")
+    M.add_sources(m, wn, {s: {"CA": f * dose, "CB": (1 - f) * dose} for s in S.source_nodes(wn)})
+    res, _ = M.run(wn, m)
+    tot = S._last_day(res.node["CA"] + res.node["CB"], wn.junction_name_list)
+    want = f * runs[k1] + (1 - f) * runs[k2]
+    d = (tot - want).abs()
+    assert float(d.values.max()) <= 0.03, float(d.values.max())
+    return {"members": len(P2), "msx_two_parts_vs_epanet_mixture_max_abs_mgL": float(d.values.max()),
+            "mean_abs_mgL": float(d.values.mean())}
+
+
+@check("two_reactant")
+def default_path_untouched_by_task13_hooks():
+    """Task 13's hooks keep the committed defaults: run_scenario_time's make_model None, baselines True and extra
+    False; _metrics_time with extra False returns exactly the committed keys; experiment.main's chemistry None and
+    figures True; the chemistry runs' folders.  (The byte-identical reruns are in baseline_reproduction.json.)"""
+    import inspect
+    from . import experiment as E
+    p = inspect.signature(E.run_scenario_time).parameters
+    assert p["make_model"].default is None and p["baselines"].default is True and p["extra"].default is False
+    m = inspect.signature(E.main).parameters
+    assert m["chemistry"].default is None and m["figures"].default is True and m["outdir"].default == "outputs"
+    assert inspect.signature(E._metrics_time).parameters["extra"].default is False
+    assert E.chem_outdir("outputs", "2ra") == os.path.join("outputs", "chem_2ra")
+    assert E.chem_outdir("outputs", "2ra", 96) == os.path.join("outputs", "chem_2ra", "match96")
+    assert E.chem_outdir("outputs", "first_order") == os.path.join("outputs", "chem_2ra", "first_order")
+    import types
+    sc = types.SimpleNamespace(truth_daily_min=pd.Series([0.1, 0.3, 0.5], index=["a", "b", "c"]))
+    pm = pd.DataFrame({"median": [0.15, 0.25, 0.6], "lo90": [0.05, 0.2, 0.4], "hi90": [0.3, 0.4, 0.8],
+                       "p_below": [0.9, 0.2, 0.0]}, index=["a", "b", "c"])
+    base = E._metrics_time(sc, pm, None, ["a", "b", "c"])
+    assert list(base) == ["rmse_min", "precision_min", "recall_min", "f1_min", "n_true_viol_min", "coverage90_min"]
+    ext = E._metrics_time(sc, pm, None, ["a", "b", "c"], extra=True)
+    assert {k: ext[k] for k in base} == base and ext["tp_min"] == 1 and ext["fp_min"] == 0
+    return {"committed_keys": list(base), "extra_keys": [k for k in ext if k not in base]}
+
+
+_TRA_ROWS_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap.chemexp import run_task, scenario
+from residualmap.experiment import run_scenario_time
+from residualmap.features import build_features
+cache = sys.argv[1]
+sc = scenario("Net2", 400, "2ra")
+df, _ = run_scenario_time(sc, build_features(sc), seed=400, cache_dir=cache, extra=True)
+res = run_task("Net2", 400, "2ra", cache, ("oracle", "lowkb"))
+def rows(d):
+    return [{k: (v if isinstance(v, str) else (None if v != v else float(v))) for k, v in r.items()} for r in d]
+print("TRA_JSON " + json.dumps({"time": rows(df.to_dict("records")), "audit": rows(res["audit"]),
+                                "lowkb": rows(res["lowkb"].to_dict("records"))}))
+'''
+
+
+def _same6(a, b) -> bool:
+    if (a is None or (isinstance(a, float) and a != a)) and pd.isna(b):
+        return True
+    return float("%.6g" % float(a)) == float("%.6g" % float(b))
+
+
+@check("two_reactant", quick=False)
+def two_reactant_outputs_reproduce():
+    """Task 13's committed outputs: each network's summary_audit is what chemexp.summarise computes from the committed
+    CSVs as written; every task-13 CSV is under 1 MB; and recomputing Net2 seed 400 under the 2RA truth in a
+    single-threaded subprocess gives the committed rows of results_time (every model and rule, n = 3 to 15), of the
+    oracle and of the opt-in low-kb grid to 6 significant digits."""
+    from .chemexp import _clean, summarise
+    out = {}
+    for net in ("Net3", "Net2"):
+        d = json.load(open(os.path.join(REPO, "outputs", "chem", f"summary_audit_{net}.json")))
+        old = os.getcwd()
+        os.chdir(REPO)                 # summarise reads outputs/ by relative path; it writes nothing
+        try:
+            again = json.loads(json.dumps(_clean(summarise(net))))
+        finally:
+            os.chdir(old)
+        assert again == d, f"{net}: the committed summary_audit is not what the committed CSVs give"
+        out[net] = {"material": d["acceptance"]["materiality"]["material"]}
+    sizes = {os.path.relpath(f, REPO): os.path.getsize(f) for f in
+             glob.glob(os.path.join(REPO, "outputs", "chem_2ra", "**", "*.csv"), recursive=True)
+             + glob.glob(os.path.join(REPO, "outputs", "chem", "*2ra*.csv")) + glob.glob(os.path.join(REPO, "outputs", "chem", "audit_*.csv"))}
+    assert sizes and all(v < 1_000_000 for v in sizes.values()), sizes
+    r = subprocess.run([PY, "-c", _TRA_ROWS_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV}, timeout=1800)
+    line = [x for x in r.stdout.splitlines() if x.startswith("TRA_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"recompute failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    got = json.loads(line[-1][len("TRA_JSON "):])
+    n, bad = 0, {}
+    want_t = pd.read_csv(os.path.join(REPO, "outputs", "chem_2ra", "results_time_Net2.csv"), float_precision="round_trip")
+    want_t = want_t[want_t.seed == 400]
+    assert len(got["time"]) == len(want_t), (len(got["time"]), len(want_t))
+    for g, (_, w) in zip(got["time"], want_t.iterrows()):
+        assert (g["model"], g["strategy"], g["n"]) == (w.model, w.strategy, w.n)
+        for c in want_t.columns:
+            if c in ("model", "strategy"):
+                continue
+            n += 1
+            if not _same6(g.get(c), w[c]):
+                bad[f"time.{g['model']}.{g['strategy']}.{int(w.n)}.{c}"] = (g.get(c), w[c])
+    A = pd.read_csv(os.path.join(REPO, "outputs", "chem", "audit_Net2.csv"), float_precision="round_trip")
+    A = A[(A.seed == 400) & (A.truth == "2ra") & (A.part == "oracle")]
+    for g in got["audit"]:
+        w = A[A.model == g["model"]]
+        assert len(w) == 1, g["model"]
+        for c in A.columns:
+            if c in ("net", "truth", "part", "model") or c not in g:
+                continue
+            n += 1
+            if not _same6(g[c], w[c].iloc[0]):
+                bad[f"oracle.{g['model']}.{c}"] = (g[c], w[c].iloc[0])
+    L = pd.read_csv(os.path.join(REPO, "outputs", "chem_2ra", "results_lowkb_Net2.csv"), float_precision="round_trip")
+    L = L[(L.seed == 400) & (L.truth == "2ra")]
+    assert len(got["lowkb"]) == len(L)
+    for g, (_, w) in zip(got["lowkb"], L.iterrows()):
+        for c in L.columns:
+            if c in ("model", "strategy", "truth"):
+                continue
+            n += 1
+            if not _same6(g.get(c), w[c]):
+                bad[f"lowkb.{g['strategy']}.{int(w.n)}.{c}"] = (g.get(c), w[c])
+    assert not bad, bad
+    return {**out, "csv_bytes_max": max(sizes.values()), "n_csv": len(sizes),
+            "net2_seed400_2ra_values_compared": n, "identical_to_6_significant_digits": True}
 
 
 # ----------------------------------------------------------------------------- full-run anchors

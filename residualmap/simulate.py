@@ -213,7 +213,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    month_seed: int | None = None, chem: Chemistry | None = None,
                    truth_age: bool = False, truth_loss_split: bool = False,
                    warming: Warming | None = None, truth_wall_law: str = "theta_w",
-                   chloramine_truth=None) -> Scenario:
+                   chloramine_truth=None, two_reactant=None) -> Scenario:
     """structural_noise: False, True (= "spec") or "persistent"; see apply_structural_noise.
     month_seed: if given, the pipe-level truth (per-pipe wall decay, roughness) comes from `seed` and the
     operating truth (bulk decay, demand, dose) from `month_seed`: the same network in a different month.
@@ -237,7 +237,11 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     chloramine_truth: task 12, with chem=Chemistry(disinfectant='chloramine', kinetics='epa_msx' or 'first'): a
     chloramine.ChloramineTruth (pH range, nitrification stress); None is the default chloramine truth.  The truth is
     total chlorine (mg/L as Cl2); source_dose is its nominal plant dose and kw_m_per_day its wall rate at C = 130 (see
-    chloramine.chloramine_truth).  Warming, another wall law and truth_loss_split are refused for chloramine."""
+    chloramine.chloramine_truth).  Warming, another wall law and truth_loss_split are refused for chloramine.
+    two_reactant: task 13, with chem=Chemistry(kinetics='2ra'): an msx.TwoReactantTruth (the match age of the reactant
+    scale s, the MSX compiler); None is the default 2RA truth (24 h match).  The truth is Fisher's two-reactant
+    chlorine-organics chemistry in EPANET-MSX on the committed draws (msx.two_reactant_truth).  Warming, another wall
+    law and truth_loss_split are refused for it."""
     if warming is not None and (chem is None or chem.temp_C is None):
         raise ValueError("warming needs chem=Chemistry(temp_C=<plant temperature>)")
     if truth_wall_law not in TRUTH_WALL_LAWS:
@@ -249,6 +253,12 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
         raise ValueError("chloramine_truth needs chem=Chemistry(disinfectant='chloramine', ...)")
     if is_ca and (warming is not None or truth_wall_law != "theta_w" or truth_loss_split):
         raise NotImplementedError("in-network warming, another wall law and the loss split are not built for chloramine")
+    is_2ra = chem is not None and chem.kinetics == "2ra"
+    if two_reactant is not None and not is_2ra:
+        raise ValueError("two_reactant needs chem=Chemistry(kinetics='2ra')")
+    if is_2ra and (warming is not None or truth_wall_law != "theta_w" or truth_loss_split):
+        raise NotImplementedError("in-network warming, another wall law and the loss split are not built for the "
+                                  "two-reactant truth")
     rng = np.random.default_rng(seed)
     rng_m = np.random.default_rng(month_seed) if month_seed is not None else rng
 
@@ -277,7 +287,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
         q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
     else:
         q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day, warming, name,
-                                   truth_wall_law, chloramine_truth)
+                                   truth_wall_law, chloramine_truth, two_reactant)
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
     loss_runs = None
@@ -369,7 +379,7 @@ def warming_temperatures(name: str, plant_C: float, warming: Warming, wn=None) -
 
 def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, kw_m_per_day,
                 warming: Warming | None = None, name: str | None = None, wall_law: str = "theta_w",
-                chloramine_truth=None):
+                chloramine_truth=None, two_reactant=None):
     """The hidden truth under a chemistry condition.  The committed draws are consumed exactly as in the
     default branch of build_scenario (bulk factor, per-pipe wall and roughness, global and per-node demand,
     dose per source); the new ones come from hidden_chem_draws (their own generator).
@@ -387,11 +397,17 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
     warming with Clark kinetics is refused (not built).
     warming (task 10, V3): every pipe gets its own bulk coefficient and wall factor at its own temperature, every
     tank its own bulk coefficient, and the viscosity and diffusivity options are set at the flow-weighted mixed
-    temperature (warming_temperatures); no extra draw is made."""
+    temperature (warming_temperatures); no extra draw is made.
+    kinetics '2ra' (task 13): Fisher's two-reactant chlorine-organics chemistry in EPANET-MSX on the same committed
+    draws, in the same order (msx.two_reactant_truth); no new draw."""
     chem.require_built()
     if chem.disinfectant == CHLORAMINE:      # task 12: its own physics, the same committed draws (chloramine.py)
         from .chloramine import chloramine_truth as _ca_truth
         return _ca_truth(wn, seed, rng, rng_m, chem, source_dose, kw_m_per_day, name, chloramine_truth)
+    if chem.kinetics == "2ra":               # task 13: two-reactant chemistry in MSX, the same committed draws (msx.py)
+        from .msx import TwoReactantTruth, two_reactant_truth
+        t = two_reactant or TwoReactantTruth()
+        return two_reactant_truth(wn, seed, rng, rng_m, source_dose, kb_per_day, kw_m_per_day, t.match_h, t.compiler)
     if chem.kinetics not in ("first", "first_si", "clark"):
         raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built")
     if chem.kinetics == "clark" and warming is not None:
