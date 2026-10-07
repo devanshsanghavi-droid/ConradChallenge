@@ -232,9 +232,9 @@ def loss_split(model) -> pd.DataFrame:
     if getattr(model, "map_params_", None) is None:
         raise ValueError("the loss split needs a calibrated member: fit the model on at least one sample")
     cond = getattr(model, "cond", None)
-    if cond is not None and not cond.is_default:
-        # SimGP24 has no chemistry condition yet; when it gains one (tasks 10 to 12) these runs must use the
-        # condition's sim_kwargs and the app's cache key its label, or the split is of a different member
+    if cond is not None and not cond.is_default and cond.sim_kwargs() != {"kb_scale": 1.0, "kw_scale": 1.0, "temp_C": None}:
+        # these runs use the member's rates as they are: right for today's grids and for task 12's chloramine grid
+        # (first order at 20 C, the neutral keywords), wrong for a condition that rescales them (a temperature or TOC)
         raise NotImplementedError("loss_split runs the 20 C member only; a model fitted under a chemistry "
                                   "condition needs that condition's rates here")
     sc = model.sc

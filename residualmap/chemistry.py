@@ -49,11 +49,15 @@ THRESHOLD_NOTE = {
     CHLORAMINE: "0.5 mg/L total chlorine: a common utility operating target, not a California rule "
                 "(California requires a detectable residual)",
 }
-KINETICS = ("first", "first_si", "order2", "clark")   # first = the repo's legacy-unit first order
+KINETICS = ("first", "first_si", "order2", "clark", "epa_msx")   # first = the repo's legacy-unit first order;
+                                                             # epa_msx = task 12's chloramine truth (EPA model in MSX)
 WALL_MODES = ("arrhenius", "mass_transfer_only")      # mass_transfer_only = ablation M1b (wall chemistry not scaled)
 TRUTH_SEED_OFFSET = {FREE_CHLORINE: 20_000, CHLORAMINE: 40_000}   # same pattern as default_rng(10_000 + seed)
-BUILT_DISINFECTANTS = (FREE_CHLORINE,)   # chloramine decay physics arrive with task 12: until then a chloramine
-                                         # truth or grid is refused rather than run with free-chlorine physics
+BUILT_DISINFECTANTS = (FREE_CHLORINE, CHLORAMINE)   # task 12 built chloramine's own physics (chloramine.py): a
+                                                     # chloramine truth is EPA's model in MSX (kinetics 'epa_msx') or its
+                                                     # first-order twin ('first'); a chloramine grid is first order on its
+                                                     # own ranges (simgp.GRIDS['chloramine']), at 20 C only
+CHLORAMINE_TRUTH_KINETICS = ("epa_msx", "first")
 CHEM_CACHE_VERSION = 1   # part of every cache_tag: bump it whenever the physics a condition runs changes
                          # (simulate_nominal_chlorine's condition keywords, Chemistry.sim_kwargs), so no grid
                          # pickled under the old physics is ever served for the new one
@@ -159,11 +163,13 @@ class Chemistry:
     """One chemistry condition, for a hidden truth (simulate.build_scenario(chem=...)) or for a grid
     (simgp.simulator_grid_24h(cond=...)).
 
-    disinfectant  : 'free_chlorine' (measured as free chlorine) or 'chloramine' (measured as total chlorine);
-                    a chloramine truth or grid is refused (NotImplementedError) until task 12 builds its physics
+    disinfectant  : 'free_chlorine' (measured as free chlorine) or 'chloramine' (measured as total chlorine; task
+                    12, at 20 C only, see require_built; its grid is simgp.GRIDS['chloramine'], never a free grid)
     kinetics      : 'first' (the repo's path), 'first_si' (first order with the corrected unit recipe),
                     'order2' and 'clark' (EPANET order 2, truth only; 'clark' is built in task 11 and needs
-                    toc_mgL and phi, 'order2' comes with task 12)
+                    toc_mgL and phi; 'order2' is not built: task 12's MSX path passed its checks, so the plan's
+                    reduced order-2 chloramine fallback was not needed), 'epa_msx' (task 12, chloramine truth only:
+                    EPA's unified chloramine model in EPANET-MSX, chloramine.py)
     temp_C        : water temperature; None = the file's own properties and the calibrated 20 C rates
     toc_mgL       : plant TOC; None = not logged (bulk rate unscaled)
     threshold_mgL : compliance threshold; None = 0.2 free chlorine / 0.5 total chlorine (see THRESHOLD_NOTE)
@@ -266,10 +272,23 @@ class Chemistry:
         return arrhenius(self.temp_C, self.er_K if self.wall_er_K is None else self.wall_er_K)
 
     def require_built(self) -> None:
-        """Refuse a disinfectant whose decay physics is not built yet (chloramine until task 12)."""
+        """Refuse a condition whose physics is not built.  Chloramine (task 12) runs at 20 C only (no seasonal
+        chloramine test was run, and the free-chlorine E/R must not be borrowed), with no TOC input (the truth draws
+        its own TOC per seed), and with kinetics 'epa_msx' (EPA's model in MSX) or 'first' (its first-order twin, or a
+        first-order grid); 'epa_msx' is a chloramine truth only."""
         if self.disinfectant not in BUILT_DISINFECTANTS:
-            raise NotImplementedError(f"{self.disinfectant} decay physics is not built yet (task 12); running it "
-                                      "now would give free-chlorine physics under a chloramine label")
+            raise NotImplementedError(f"{self.disinfectant} decay physics is not built")
+        if self.disinfectant == CHLORAMINE:
+            if self.temp_C is not None and self.temp_C != TREF_C:
+                raise NotImplementedError("a seasonal chloramine model or truth is not built (task 12 runs chloramine "
+                                          "at 20 C only)")
+            if self.toc_mgL is not None:
+                raise NotImplementedError("chloramine takes no TOC input (its truth draws TOC per seed; the fast organic "
+                                          "demand is absorbed by the dose axis)")
+            if self.kinetics not in CHLORAMINE_TRUTH_KINETICS:
+                raise NotImplementedError(f"chloramine kinetics must be one of {CHLORAMINE_TRUTH_KINETICS}")
+        elif self.kinetics == "epa_msx":
+            raise ValueError("kinetics 'epa_msx' is EPA's chloramine model; it has no free-chlorine form")
 
     def sim_kwargs(self) -> dict:
         """Keyword arguments for simulate.simulate_nominal_chlorine under this condition."""

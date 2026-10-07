@@ -1,5 +1,70 @@
 # Changelog
 
+## 2026-10-07, iteration 4, task 12: chloramine mode, kept strictly separate from free chlorine (tested, met its pre-registered bars where they apply)
+
+- **A separate chloramine mode, tested in simulation only.** Total chlorine is the measured species, and the mode has its own first-order grid (bulk 0.0025 to 0.32 per day, wall 0.01 to 1.0 m/day, old-pipe factor 0 to 2, demand and roughness 3 x 3: 1440 runs under its own cache tag), an effective-dose axis of 0.65 to 1.10 that also absorbs the fast organic demand, its own likelihood scale (`LIK_SD_CA = 0.10`) and a prior on the bulk rate from the plant's logged pH and Cl2:N (in the app, and in the pilot with `--ph` and `--cl2n`; without them the pilot uses a uniform prior). Its default threshold is 0.5 mg/L total chlorine, labelled as a common utility operating target, not a California rule (California requires a detectable residual), and configurable. It adds a nitrification watch, labelled as literature thresholds and not validated. Free chlorine stays the default everywhere, and every free-chlorine output is unchanged.
+- **New modules.**
+  - `residualmap/msx.py`: the shared EPANET-MSX runner. It handles the library preload, a clear error without Homebrew's libomp, one OpenMP thread, a temporary working directory per run, COMPILER GC with a loud fallback to NONE, SETPOINT sources at reservoirs, per-pipe parameters only, reserved-name checks and EPANET's mass-transfer wall term as MSX expressions. It also renames the result columns, because WNTR 1.5's MSX reader labels them in the wrong order for a network built in code.
+  - `residualmap/chloramine.py`: EPA's unified chloramine model (Wahman 2018; constants from EPA's app.R; 8 species, 14 inorganic and 2 organic reactions) as a Python batch port and as an MSX model with an NH2Cl wall term and an optional nitrification stress. It also holds the chloramine truths (the committed draws, plus pH, Cl2:N, TOC and alkalinity from `default_rng(40_000 + seed)`), their first-order twin, the kb prior table, the nitrification watch and the experiment.
+- **Edited.**
+  - `chemistry.py`: chloramine built at 20 C only, with kinetics `epa_msx` for truths; seasonal or TOC-scaled chloramine refused.
+  - `simulate.py`: the chloramine truth branch and four new hidden draws after the existing two.
+  - `simgp.py`: `GRIDS['chloramine']`, `DOSES_CA`, `LIK_SD_CA`, an optional member log prior, `SimGP24(cond=...)`, and a guard so the chloramine grid and a chloramine condition only ever go together.
+  - `experiment.py`: the threshold threaded through `run_scenario_time`, `_metrics_time` and the acquisition, default unchanged; `--disinfectant=chloramine`.
+  - `pilot.py`: `free_chlorine_mgL` or `total_chlorine_mgL`, never both, and a log whose species does not match `--disinfectant` is refused; with chloramine, `--ph` and `--cl2n` set the prior and `--dose` defaults to 2.0 mg/L total chlorine.
+  - `age.py`: the loss split works for the chloramine grid.
+  - `app.py`: a Disinfectant choice, free chlorine by default, with the chloramine mode, its banner, threshold label and nitrification watch.
+  - `docs/example_grab_log_total.csv`, new: a simulated format example, not data.
+- **Settings by rules on seeds never scored** (`outputs/chloramine/calibration_chloramine.json`). The truth's wall rate kw_ref, from 10 to 30% of junctions below 0.5 mg/L on seed 0, closest to 20%: 0.20 m/day on Net3 and 0.05 on Net2. `LIK_SD_CA`, the best member's daytime mismatch on Net3 seeds 100 to 103 rounded up: 0.10. The batch port reproduces Wahman's 10-day example with assumed inputs (0.842 against 0.84 mg/L at pH 7, 3.089 against 3.2 at pH 9).
+- **Pre-registered** in the journal (task 12) at 03:46 PDT on 7 October, after smoke runs on unscored seeds and before any scored run; a copy is kept outside the repository. Fresh seeds: Net3 300 to 307 plus low-pH stress seeds 308 to 311, Net2 300 to 307.
+- **Results** (simulated; `outputs/chloramine/summary_chloramine_<net>.json`): the mode's model met all four bars where they apply (A1 and A4 on Net3, A2 and A3 on both networks), so it is not labelled experimental. On Net2, where A1 was not a bar, its recall at 8 straddle samples was 0.784, below the 0.80 that applied on Net3.
+  - With 8 straddle-chosen samples on Net3 it found 97 of 109 low junction-days (recall 0.890, bar 0.80).
+  - Its random-sample 90% band held the true daily minimum 0.896 (Net3) and 0.887 (Net2) of the time (bar 0.85 to 0.97).
+  - Its bulk-rate and wall-rate edge mass at 15 samples was 0.021 and 0.000 on Net3, and 0.016 and 0.105 on Net2 (bar 0.5).
+  - Its RMSE was lower than the free-chlorine settings' in 8 of 8 Net3 seeds (bar 6; 7 of 8 on Net2, no bar).
+  - The conflation test (free-chlorine grid and settings on the chloraminated network): 0.60 (Net3) and 0.96 (Net2) of the posterior sits at the free grid's 0.10 per day floor at 15 samples. The daily minimum is predicted 0.17 mg/L too low on Net3 (-0.07 in the youngest age decile, -0.27 to -0.31 in the two oldest). The free settings catch nearly every low junction but with 94 false alarms against the mode's 37 at 8 random samples on Net3 (54 against 19 on Net2), and their RMSE is 0.242 against 0.167 mg/L on Net3 and 0.189 against 0.108 on Net2.
+  - No bar:
+    - the low-pH stress seeds keep the mode's coverage at 0.91 to 0.97, but there its pH and Cl2:N prior costs accuracy: its random-sample RMSE is 10 to 15% above the uniform prior's at every n;
+    - the uniform-prior model (b) scores about the same on the MSX truth as on its first-order twin on Net3 at 8 and 15 random samples (0.155 against 0.154 mg/L at 8), and 7 to 10% worse on Net2 at every random n, so first-order kinetics cost little here, not nothing;
+    - the same bars applied to model (b) for information (`acceptance_model_b_no_bar`): it meets them too where they apply (recall 0.872 on Net3);
+    - in the nitrification sweep the watch catches 61 (random rule) to 77 (straddle rule) of 97 affected junction-days at Fm 3 and 0.25 to 0.36 of them at Fm 30, where the stress acts largely through tanks that start the simulation empty.
+- **`residualmap/checks.py`**: 54 checks, all passing (53 as first built, one added by the review).
+  - Task 8's chloramine refusal is replaced by `chloramine_built_and_kept_separate`.
+  - 10 new checks (the first write-up said 8; there were 9 before the review):
+    - the Wahman example and the prior table;
+    - MSX against the Python port on a plug-flow chain (worst 1.2e-6 mg/L, bar 0.05);
+    - single-species first-order MSX against EPANET on Net3: 0.0057 mg/L at a 60 s quality step, bar 0.03. At the repo's 300 s step the difference is 0.031 at one front and is recorded; each engine alone moves by about 0.18 mg/L there between the two steps;
+    - the truth's draws, twin and cleanup;
+    - the prior and nesting;
+    - the pilot's species rule (A7);
+    - "not testable" (A6);
+    - the committed chloramine outputs recomputed;
+    - the app's chloramine mode through AppTest;
+    - after the review, the compiled-to-uncompiled MSX fallback with a failing compiler.
+- **Regressions, recorded not hidden:** none in the free-chlorine numbers (the four committed reruns, label `post_task12` in `outputs/chem/baseline_reproduction.json`, and the app's default demo, 42 of 92 flagged, 41 violations, 36 of 36 found, 1 false alarm, sample mean 0.53 mg/L). In the new mode:
+  - under the straddle rule the 90% band is too narrow (0.726 at 8 samples and 0.784 at 15 on Net3), and the RMSE rises from 8 to 15 straddle samples (0.184 to 0.202 mg/L on Net3);
+  - at 15 straddle-chosen samples on Net3 the free-chlorine settings beat the mode: RMSE 0.175 against 0.202 mg/L, 90% coverage 0.84 against 0.78, recall 0.99 against 0.90 (with 40 false alarms against 16, on different unsampled sets); the same RMSE order holds on the low-pH stress seeds there (0.122 against 0.142);
+  - Net2's random-sample coverage is inside the 0.85 to 0.97 band only at 8 samples: 0.980 at 3 (too wide) and 0.806 at 15 (too narrow); the bar averages over n;
+  - model (c)'s prior was centred on the simulated plant's exact pH and Cl2:N, with no logging error, which flatters it mildly;
+  - the maps are biased low on Net3 by 0.02 to 0.08 mg/L;
+  - the conflation figure's single-scenario panels happen to show the free settings ahead on that scenario.
+
+  Process:
+  - the plan's single-species MSX check (0.03 mg/L) was missed at the repo's 300 s quality step (0.031 at one front) and met at 60 s (0.0057); moving it to 60 s, adding a 300 s mean bar after the result and not building the plan's order-2 fallback is a judgement call left to the lead;
+  - the first scored launch was stopped before writing output and relaunched with an absolute cache path and one thread per worker;
+  - the plan's grids were widened for margin (bulk top 0.32 per day, dose axis down to 0.65);
+  - the plan's seeds 0 to 7 were replaced by fresh seeds.
+
+- **After the review** (three independent reviewers; no scored number changed, and the free-chlorine outputs are again 50 of 50 byte-identical, label `post_task12_review`):
+  - `msx.py`: the compiled-to-uncompiled fallback did not work (a failed compile left MSX's project open, so the retry failed with MSX error 520). A failed run now closes the project; a machine with no C compiler skips straight to uncompiled; a lock lets one MSX run change the working directory at a time within a process.
+  - `app.py`: the chloramine demo truth runs in a separate process, the cache and upload paths are absolute, the spinner says when the reactions will run uncompiled, the bulk rate prints to 3 significant figures in chloramine mode (the PDF printed 0.0025 per day as 0.00), the demo reveal says recall is not testable when no unsampled junction is below the threshold (it printed 0%, in either mode), and two reworded free-chlorine strings are back to their committed text.
+  - `pilot.py`: `--ph` and `--cl2n` give the chloramine pilot model (c)'s prior (it ran only the uniform prior, while the README and the protocol said otherwise); `--dose` defaults to 2.0 mg/L with chloramine (it was the free default, 1.2, which pinned the fitted dose at its axis edge), with a warning when the fitted dose sits at an edge; the refusal of a log with both species says which column to drop.
+  - `simgp.py`: SimGP24's likelihood scale, dose axis and threshold, when not given, follow the condition's disinfectant, so the chloramine grid never runs on free chlorine's settings by omission (free defaults unchanged).
+  - `chloramine.py`: the summaries gain `acceptance_model_b_no_bar`; the nitrification figure's fourth panel title was cut off and mislabelled the red rings (all affected junctions), now redrawn.
+  - Docs: the claim of "all four bars on both networks", the straddle-15 reversal, Net2's per-n coverage, the low-pH prior cost, the range of the first-order cost, the "orders of magnitude" claim, the oracle called a floor, the plan's citations and the exact-pH assumption, all corrected or added in the README, the journal and the pilot protocol.
+
+  Costs: two new git-ignored grid files per network in `outputs/cache` (12.8 MB and 4.9 MB for the chloramine grids; 6.0 MB and 2.3 MB for the free grid at the 2.0 mg/L dose). The scored runs took 128 s on Net3 and 31 s on Net2, with 44 MSX runs averaging 11 to 16 s each. New tracked outputs total about 1.2 MB in `outputs/chloramine/`, each CSV under 0.2 MB.
+
 ## 2026-10-07, iteration 4, task 11: organics (TOC) as a logged input (tested, stopped at its stop rule, not adopted)
 
 - **Stopped, not adopted.** The pre-registered stop rule (T3) triggered on Net3 on one robust pair and on Net2 on three pairs within count noise, so M_TOC is not wired into the pilot path or the app, and task 12 waits for a decision. Today's model, the app and every committed number are unchanged; the plant log keeps its `toc_mgL` column, unused. The bars were written into the journal (task 11) at 02:03 PDT on 7 October, before the first scored run, and were not changed; a copy is kept outside the repository. Following the plan's addendum 2, the comparison is today's model (B0) against M_TOC on truths at a fixed 20 C, on fresh seeds (Net3 32 to 47, Net2 16 to 23).

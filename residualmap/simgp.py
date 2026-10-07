@@ -38,7 +38,7 @@ from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
-from .chemistry import Chemistry, cache_tag, remove_epanet_files
+from .chemistry import DEFAULT_THRESHOLD_MGL, Chemistry, cache_tag, remove_epanet_files
 from .features import CORE
 from .simulate import simulate_nominal_chlorine
 
@@ -48,10 +48,24 @@ KW_GRID = [0.10, 0.30, 0.60, 1.00, 1.50]        # m/day
 GAMMA_GRID = [0.0, 0.5, 1.0]                    # old-pipe sensitivity
 DEMAND_GRID = [0.85, 1.0, 1.15]                 # global demand multiplier (hydraulic mismatch)
 ROUGH_GRID = [0.9, 1.0, 1.1]                    # global Hazen-Williams C multiplier (hydraulic mismatch)
+# chloramine (task 12): total chlorine, first order on its own ranges.  KB_CA spans the batch port's apparent rates
+# (0.012 to 0.16 per day over pH 7.5 to 8.5 and Cl2:N 4 to 5; up to 0.22 at the low-pH stress pH 7.0 to 7.5) with
+# margin at both ends (0.32 was added to the plan's 0.0025 to 0.16, per the plan's addendum 3); the compiled literature
+# range is 0.004 to 0.16 per day (Odimayomi et al. 2026, secondary).  KW_CA is an ASSUMPTION, a log span from plastic to
+# old iron.  GAMMA_CA is widened upward (wall rates at least 4x bulk in iron and cement pipe).
+KB_CA = [0.0025, 0.005, 0.01, 0.02, 0.04, 0.08, 0.16, 0.32]   # 1/day at 20 C
+KW_CA = [0.01, 0.03, 0.10, 0.30, 1.0]                          # m/day
+GAMMA_CA = [0.0, 0.5, 1.0, 2.0]
 GRIDS = {"decay": (KB_GRID, KW_GRID, GAMMA_GRID, [1.0], [1.0]),                    # iteration 2: 75 runs
-         "full": (KB_GRID, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID)}         # iteration 3: 675 runs
+         "full": (KB_GRID, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID),         # iteration 3: 675 runs
+         "chloramine": (KB_CA, KW_CA, GAMMA_CA, DEMAND_GRID, ROUGH_GRID)}         # task 12: 1440 runs, chloramine only
 DOSE_GRID = [0.90, 0.95, 1.00, 1.05, 1.10]     # source-dose multiplier: first-order decay is linear in
                                                 # concentration, so this axis is an exact ln-offset, no runs
+# chloramine's effective-dose axis also absorbs the fast organic demand (5.92 S1 TOC mg/L, Duirk et al. 2005; about
+# 0.24 mg/L at TOC 2, d about 0.88 at a 2.0 mg/L dose), so it mixes dose error with that demand.  0.65 and 0.70 were
+# added below the plan's 0.75 for margin (TOC 3 and a dose draw of 0.9 give about 0.74).
+DOSES_CA = [0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 1.10]
+DOSES = {"free_chlorine": DOSE_GRID, "chloramine": DOSES_CA}
 
 
 HOURS = list(range(24))
@@ -108,6 +122,17 @@ def grid_cache_path(sc, cache_dir: str = "outputs/cache", grid: str = "full", co
     return os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}{cond_tag}.pkl")
 
 
+def check_grid_disinfectant(grid: str, cond: Chemistry | None) -> None:
+    """Free chlorine and chloramine never share a grid: GRIDS['chloramine'] runs only under a chloramine condition,
+    and a chloramine condition only on GRIDS['chloramine'].  (A free-chlorine grid may still be scored against a
+    chloramine truth: that is task 12's conflation test, run with cond=None.)"""
+    ca = cond is not None and cond.disinfectant == "chloramine"
+    if (grid == "chloramine") != ca:
+        raise ValueError(f"grid {grid!r} with disinfectant {cond.disinfectant if cond is not None else 'free_chlorine'!r}: "
+                         "the chloramine grid needs Chemistry(disinfectant='chloramine') and that condition needs the "
+                         "chloramine grid")
+
+
 def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
                        n_jobs: int | None = None, cond: Chemistry | None = None) -> tuple[list[tuple], np.ndarray]:
     """All grid members' ln C for every hour of the last day: (params, array [members, 24, junctions]).
@@ -118,8 +143,10 @@ def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
     hydraulic-mismatch axes (675 runs); grid="decay" is the iteration-2 grid (75 runs).
     cond: a chemistry.Chemistry; params stay the 20 C values, the runs use cond's rate multipliers and water
     properties.  Cached under grid_cache_path; a build (not a cache hit) is refused below MIN_FREE_GB free disk.
-    A condition the grid cannot run (chloramine before task 12, kinetics other than 'first') is refused before
-    the cache is read, so a file under its name is never served."""
+    A condition the grid cannot run (a seasonal or TOC-scaled chloramine grid, kinetics other than 'first', a
+    disinfectant on the other disinfectant's grid) is refused before the cache is read, so a file under its name is
+    never served."""
+    check_grid_disinfectant(grid, cond)
     if _non_default(cond):
         cond.sim_kwargs()      # raises for a condition that is not built
     os.makedirs(cache_dir, exist_ok=True)
@@ -137,6 +164,7 @@ def build_grid_24h(sc, grid: str = "full", n_jobs: int | None = None, cond: Chem
                    preflight_paths=None) -> tuple[list[tuple], np.ndarray]:
     """The grid itself, without the cache (simulator_grid_24h caches it).  Every run's EPANET files are deleted
     as soon as it is read, and the whole build is refused below MIN_FREE_GB free disk."""
+    check_grid_disinfectant(grid, cond)
     extra = (cond.sim_kwargs(),) if _non_default(cond) else ()
     disk_preflight(list(preflight_paths or []) + [tempfile.gettempdir()])
     params = list(itertools.product(*GRIDS[grid]))
@@ -188,12 +216,16 @@ def grid_weights(z_sim, z_obs, lik_sd, lik="gauss", nu=3.0) -> np.ndarray:
 
 
 def grid_dose_weights(z_sim: np.ndarray, z_obs: np.ndarray, lik_sd: float, lik: str, nu: float,
-                      doses=DOSE_GRID) -> tuple[np.ndarray, np.ndarray]:
+                      doses=DOSE_GRID, log_prior: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Joint posterior over (grid member, dose multiplier): W [members x doses], and the ln-offsets.
     A dose multiplier m shifts every simulated ln C by ln m, so member k at dose d predicts Z_k + offs_d,
-    which is scored against z_obs as Z_k against (z_obs - offs_d)."""
+    which is scored against z_obs as Z_k against (z_obs - offs_d).
+    log_prior: an optional log prior over the members (task 12's model (c)); None is the committed uniform prior and
+    the committed arithmetic."""
     offs = np.log(np.asarray(doses, dtype=float))
     ll = np.stack([grid_loglik(z_sim, z_obs - d, lik_sd, lik, nu) for d in offs], axis=1)
+    if log_prior is not None:
+        ll = ll + np.asarray(log_prior, dtype=float)[:, None]
     return np.exp(ll - logsumexp(ll)), offs
 
 
@@ -212,6 +244,10 @@ def posterior_moments(W: np.ndarray, offs: np.ndarray, Z: np.ndarray) -> tuple[n
 
 LIK_SD = 0.35   # log-space scale of the calibration likelihood = the day-time RMS mismatch between the truth
                 # and the best grid member on Net3 (0.33), i.e. model error, not grab-sample noise (0.03 mg/L)
+LIK_SD_CA = 0.10   # task 12, the same rule on the chloramine truth: the daytime RMS ln mismatch of the best member of
+                   # GRIDS['chloramine'] on Net3 calibration seeds 100 to 103 (never scored) is 0.0955 on average, rounded
+                   # up to a multiple of 0.05 (outputs/chloramine/calibration_chloramine.json; Net2's would be 0.20)
+LIK_SD_BY = {"free_chlorine": LIK_SD, "chloramine": LIK_SD_CA}
 
 
 def n_hydraulic(grid: str) -> int:
@@ -369,14 +405,25 @@ class SimGP24:
     rest on the calibrated physics, and the band says so.
     """
 
-    def __init__(self, sc, X: pd.DataFrame, seed: int = 0, lik_sd: float = LIK_SD,
+    def __init__(self, sc, X: pd.DataFrame, seed: int = 0, lik_sd: float | None = None,
                  cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
-                 grid: str = "full", local_hydraulic: bool = True, doses=DOSE_GRID, smooth_hours: bool = True,
-                 threshold: float = 0.2):
+                 grid: str = "full", local_hydraulic: bool = True, doses=None, smooth_hours: bool = True,
+                 threshold: float | None = None, cond: Chemistry | None = None, log_prior: np.ndarray | None = None):
+        # lik_sd, doses and threshold left as None follow the condition's disinfectant (task 12 review): free chlorine
+        # (cond None) gets the committed LIK_SD, DOSE_GRID and 0.2, exactly as before; a chloramine condition gets
+        # LIK_SD_CA, DOSES_CA and 0.5 (chemistry.DEFAULT_THRESHOLD_MGL), so the chloramine grid never runs on free
+        # chlorine's settings by omission
+        dis = cond.disinfectant if cond is not None else "free_chlorine"
+        lik_sd = LIK_SD_BY[dis] if lik_sd is None else lik_sd
+        doses = DOSES[dis] if doses is None else doses
+        threshold = DEFAULT_THRESHOLD_MGL[dis] if threshold is None else threshold
         self.sc, self.seed, self.lik_sd, self.n_draws = sc, seed, lik_sd, n_draws
         self.lik, self.nu, self.doses, self.smooth_hours = lik, nu, doses, smooth_hours
         self.threshold = float(threshold)   # compliance threshold of predict_daily_min's p_below column (mg/L)
-        self.params, self.Z = simulator_grid_24h(sc, cache_dir, grid)  # members x 24 x J
+        # task 12: the grid's chemistry condition (None: the committed free-chlorine grids; a chloramine condition with
+        # grid='chloramine') and an optional log prior over the grid members (None: uniform, the committed arithmetic)
+        self.cond, self.log_prior = cond, log_prior
+        self.params, self.Z = simulator_grid_24h(sc, cache_dir, grid, cond=cond)  # members x 24 x J
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
         if self.n_hyd > 1:
             check_grid_order(self.params, self.n_hyd)
@@ -404,6 +451,9 @@ class SimGP24:
         """No samples yet: uniform weights over grid members and doses, no discrepancy GP.  This is what
         the operator gets from the .inp alone, and what the first route is planned from."""
         W = np.full((len(self.params), len(self.doses)), 1.0 / (len(self.params) * len(self.doses)))
+        if self.log_prior is not None:
+            p = np.exp(np.asarray(self.log_prior, dtype=float) - logsumexp(self.log_prior))
+            W = np.repeat(p[:, None] / len(self.doses), len(self.doses), axis=1)
         offs = np.log(np.asarray(self.doses, dtype=float))
         w = W.sum(axis=1)
         self.w_, self.W_, self.offs_ = w, W, offs
@@ -423,7 +473,7 @@ class SimGP24:
         idx = np.array([self.jidx[j] for j in samples.junction])
         h = samples.hour.astype(int).values
         z_obs = np.log(np.clip(samples.y.values, FLOOR, None))
-        W, offs = grid_dose_weights(self.Z[:, h, idx], z_obs, self.lik_sd, self.lik, self.nu, self.doses)
+        W, offs = grid_dose_weights(self.Z[:, h, idx], z_obs, self.lik_sd, self.lik, self.nu, self.doses, self.log_prior)
         w = W.sum(axis=1)
         self.w_, self.W_, self.offs_ = w, W, offs
         self.m_, self.v_ = posterior_moments(W, offs, self.Z)          # 24 x J

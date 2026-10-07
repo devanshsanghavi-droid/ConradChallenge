@@ -6,6 +6,10 @@ experiment.py — three questions, answered on junctions that were NOT sampled:
   Q3  Does smart sampling (uncertainty / straddle) beat random sampling?
 
 Plus the finding that drives iteration 3: the network is worst at hours nobody samples.
+
+    python -m residualmap.experiment Net3 8                              # free chlorine, the committed experiments
+    python -m residualmap.experiment Net3 --disinfectant=chloramine      # task 12: the chloramine mode (chloramine.py),
+                                                                         # outputs to outputs/chloramine/
 """
 from __future__ import annotations
 
@@ -148,11 +152,13 @@ def run_scenario(sc, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outpu
 
 
 # ----------------------------------------------------------------------------- time-aware (task 1)
-def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask) -> dict:
+def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask, threshold: float = THRESHOLD) -> dict:
     """Scores against the DAILY MINIMUM (the compliance number) and the night snapshot, on unsampled
-    junctions.  pmin needs columns median / lo90 / hi90 / p_below."""
+    junctions.  pmin needs columns median / lo90 / hi90 / p_below (computed at `threshold`; the default is the
+    committed 0.2 mg/L free chlorine; task 12's chloramine mode scores in residualmap/chloramine.py, where a rate with
+    no junction below the threshold is 'not testable' instead of the 1.0 kept here for the committed outputs)."""
     t, m = sc.truth_daily_min.loc[mask], pmin.loc[mask]
-    tv, pv = t < THRESHOLD, m["p_below"] > 0.5
+    tv, pv = t < threshold, m["p_below"] > 0.5
     tp = int((tv & pv).sum()); fp = int((~tv & pv).sum()); fn = int((tv & ~pv).sum())
     prec = tp / (tp + fp) if tp + fp else 1.0
     rec = tp / (tp + fn) if tp + fn else 1.0
@@ -163,17 +169,19 @@ def _metrics_time(sc, pmin: pd.DataFrame, p_night: pd.DataFrame | None, mask) ->
         out.update(_coverage_levels(sc.truth_daily_min, pmin, mask, "_min"))
     if p_night is not None:
         tn, mn = sc.truth_by_hour.loc[NIGHT_HOUR, mask], p_night.loc[mask]
-        tvn, pvn = tn < THRESHOLD, mn["p_below"] > 0.5
+        tvn, pvn = tn < threshold, mn["p_below"] > 0.5
         out["rmse_night"] = float(np.sqrt(np.mean((tn - mn["median"]) ** 2)))
         out["recall_night"] = float((tvn & pvn).sum() / tvn.sum()) if tvn.sum() else 1.0
         out["coverage90_night"] = float(((tn >= mn["lo90"]) & (tn <= mn["hi90"])).mean())
     return out
 
 
-def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outputs/cache"):
+def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_dir="outputs/cache",
+                      threshold: float = THRESHOLD):
     """Task 1: samples are (junction, hour) with hour in the operator's 07:00-17:00 window; the model
     predicts all 24 h and the daily minimum.  Baselines: the time-blind iteration-2 model (every sample
-    treated as a 14:00 sample) and the mean of samples."""
+    treated as a 14:00 sample) and the mean of samples.  threshold (task 12) goes to the models, the acquisition and
+    the scores; the default is the committed 0.2 mg/L."""
     rng = np.random.default_rng(2000 + seed)
 
     def observe(js, hs):
@@ -188,27 +196,28 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
         S = pd.DataFrame({"junction": seed_js, "hour": seed_hs, "y": seed_y})
         for n in range(n_seed, n_max + 1):
             unsampled = [j for j in sc.junctions if j not in set(S.junction)]
-            m = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(S)
+            m = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, threshold=threshold).fit(S)
             hourly = m.predict_hours()
             pmin = m.predict_daily_min()
-            pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight)
-            r = {"model": "simgp24", "strategy": strat, "n": n, "seed": seed, **_metrics_time(sc, pmin, pnight, unsampled)}
+            pnight = m.predict_hour(NIGHT_HOUR, hourly); pnight["p_below"] = SimGP24.p_below(pnight, threshold)
+            r = {"model": "simgp24", "strategy": strat, "n": n, "seed": seed,
+                 **_metrics_time(sc, pmin, pnight, unsampled, threshold)}
             r["map_kb"], r["map_kw"], r["map_gamma"], r["map_demand"], r["map_rough"] = m.map_params_
             r["map_dose"] = m.map_dose_
             rows.append(r)
             if strat == "random":
                 m0 = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid="decay", lik_sd=0.25, doses=[1.0],
-                             smooth_hours=False).fit(S)   # the task-1 model, for the before/after comparison
+                             smooth_hours=False, threshold=threshold).fit(S)   # the task-1 model, for the before/after comparison
                 rows.append({"model": "simgp24_g75", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, m0.predict_daily_min(), None, unsampled)})
+                             **_metrics_time(sc, m0.predict_daily_min(), None, unsampled, threshold)})
                 tb = SimGP(sc, seed=seed, cache_dir=cache_dir, lik="t").fit(X.loc[S.junction], S.y.values).predict(X)
-                tb["p_below"] = SimGP.p_below(tb)          # its 14:00 flags, scored against the daily minimum
+                tb["p_below"] = SimGP.p_below(tb, threshold)   # its 14:00 flags, scored against the daily minimum
                 rows.append({"model": "simgp_timeblind", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, tb, tb, unsampled)})
+                             **_metrics_time(sc, tb, tb, unsampled, threshold)})
                 mu = float(np.mean(S.y))
-                bm = pd.DataFrame({"median": mu, "lo90": mu, "hi90": mu, "p_below": float(mu < THRESHOLD)}, index=sc.junctions)
+                bm = pd.DataFrame({"median": mu, "lo90": mu, "hi90": mu, "p_below": float(mu < threshold)}, index=sc.junctions)
                 rows.append({"model": "mean_of_samples", "strategy": strat, "n": n, "seed": seed,
-                             **_metrics_time(sc, bm, bm, unsampled)})
+                             **_metrics_time(sc, bm, bm, unsampled, threshold)})
             if strat == TIME_MAIN and n in (n_seed, 8, n_max):
                 snapshots[n] = {"samples": S.copy(), "pmin": pmin.copy(), "pnight": pnight.copy(),
                                 "hourly": (hourly[0].copy(), hourly[1].copy())}
@@ -217,7 +226,7 @@ def run_scenario_time(sc, X, n_seed=3, n_max=15, noise_sd=0.03, seed=0, cache_di
             cols = sc.junctions
             hourly_df = (pd.DataFrame(hourly[0], columns=cols), pd.DataFrame(hourly[1], columns=cols),
                          pd.DataFrame(m.z_sd_acq_, columns=cols))
-            j, h = acquire_time(strat, hourly_df, pmin, unsampled, DAY_HOURS, rng, THRESHOLD)
+            j, h = acquire_time(strat, hourly_df, pmin, unsampled, DAY_HOURS, rng, threshold)
             S = pd.concat([S, pd.DataFrame({"junction": [j], "hour": [h], "y": observe([j], [h])})], ignore_index=True)
     return pd.DataFrame(rows), snapshots
 
@@ -567,6 +576,10 @@ def main(network="Net3", seeds=tuple(range(8)), n_seed=3, n_max=15, outdir="outp
 
 if __name__ == "__main__":
     import sys
+    if any(a.startswith("--disinfectant") for a in sys.argv[1:]):
+        # task 12: the chloramine mode's experiment (residualmap/chloramine.py), outputs to outputs/chloramine/
+        from .chloramine import cli as _ca_cli
+        sys.exit(_ca_cli(sys.argv[1:]))
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     net = args[0] if args else "Net3"
     seeds = tuple(range(int(args[1]))) if len(args) > 1 else tuple(range(8))

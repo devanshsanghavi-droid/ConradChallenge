@@ -9,8 +9,16 @@ operator could run by hand (last reading at the same tap; mean of all recent sam
     python -m residualmap.pilot --inp their_model.inp --samples grab_log.csv --taps tap_map.csv --dose 1.2
     python -m residualmap.pilot --synthetic Net3          # six synthetic months, to see the report format
     python -m residualmap.pilot --inp ... --plant plant_log.csv   # with the plant's monthly water temperature (task 10)
+    python -m residualmap.pilot --inp ... --samples total_log.csv --taps ... --disinfectant chloramine --dose 2.0 \
+                                --ph 8.0 --cl2n 4.5
+                                       # a chloraminated system (task 12): total chlorine, the chloramine grid,
+                                       # threshold 0.5 mg/L total chlorine unless --threshold is given; with the
+                                       # plant's pH and Cl2:N the bulk rate gets the chloramine mode's prior (model
+                                       # (c), the one held to task 12's bars), without them a uniform prior (model (b))
 
 grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
+                or, for a chloraminated system (--disinfectant chloramine), total_chlorine_mgL instead (never both
+                columns: a log that mixes the two species is refused; docs/example_grab_log_total.csv)
 tap_map.csv   : tap_id, junction_id                                          [optional: flush_min, notes]
 plant_log.csv : month (YYYY-MM), temp_C                                      [optional: toc_mgL, dose_mgL]
                 With a plant log the model is seasonal.SeasonalSimGP24: every grab sample is explained at its own
@@ -24,12 +32,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
 from .chemistry import Chemistry, Warming
+from .chloramine import CA_DOSE_MGL
 from .features import build_features
 from .simgp import DAY_HOURS, SimGP24
 from .simulate import build_scenario, load, nominal_scenario
@@ -37,9 +47,29 @@ from .simulate import build_scenario, load, nominal_scenario
 LEVELS = (50, 80, 90, 95)
 
 
-def load_log(samples_csv: str, taps_csv: str) -> pd.DataFrame:
-    """Join the grab log to the tap map -> junction, hour, y, month, date."""
+SPECIES_COLUMN = {"free_chlorine": "free_chlorine_mgL", "chloramine": "total_chlorine_mgL"}
+
+
+def load_log(samples_csv: str, taps_csv: str, disinfectant: str = "free_chlorine") -> pd.DataFrame:
+    """Join the grab log to the tap map -> junction, hour, y, month, date.  The log's reading column names its species:
+    free_chlorine_mgL (free chlorine) or total_chlorine_mgL (total chlorine, a chloraminated system).  A log with both
+    columns is refused (one likelihood must never mix species), and so is a log whose species does not match
+    `disinfectant`."""
+    if disinfectant not in SPECIES_COLUMN:
+        raise ValueError(f"disinfectant must be one of {sorted(SPECIES_COLUMN)}")
     log = pd.read_csv(samples_csv, dtype={"tap_id": str})
+    have = [c for c in SPECIES_COLUMN.values() if c in log.columns]
+    if len(have) > 1:
+        what = ("the free-chlorine model reads free chlorine only: drop or rename the total_chlorine_mgL column"
+                if disinfectant == "free_chlorine" else
+                "the chloramine mode reads total chlorine only: drop or rename the free_chlorine_mgL column")
+        what += " (or, if the log mixes a free-chlorine and a chloraminated system, split it by disinfectant)"
+        raise ValueError(f"the grab log has both {have[0]} and {have[1]}: free and total chlorine are different "
+                         f"measurements and one model never mixes them; {what}")
+    want = SPECIES_COLUMN[disinfectant]
+    if have != [want]:
+        found = have[0] if have else "neither column"
+        raise ValueError(f"--disinfectant {disinfectant} needs a {want} column; the grab log has {found}")
     taps = pd.read_csv(taps_csv, dtype={"tap_id": str, "junction_id": str})
     df = log.merge(taps[["tap_id", "junction_id"]], on="tap_id", how="left")
     missing = df.junction_id.isna()
@@ -49,7 +79,7 @@ def load_log(samples_csv: str, taps_csv: str) -> pd.DataFrame:
         df = df[~missing]
     ts = pd.to_datetime(df.date.astype(str) + " " + df.time.astype(str))
     return pd.DataFrame({"junction": df.junction_id.astype(str), "hour": ts.dt.hour.astype(int),
-                         "y": df.free_chlorine_mgL.astype(float), "month": ts.dt.to_period("M").astype(str),
+                         "y": df[want].astype(float), "month": ts.dt.to_period("M").astype(str),
                          "date": ts.dt.date.astype(str), "tap_id": df.tap_id.astype(str)}).reset_index(drop=True)
 
 
@@ -128,9 +158,14 @@ def load_plant(path: str) -> pd.DataFrame:
     return p
 
 
-def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 0.2, window_months: int = 3,
-             holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0,
-             plant: pd.DataFrame | None = None, bank_cache: str = "readwrite") -> tuple[pd.DataFrame, pd.DataFrame]:
+DEFAULT_DOSE_MGL = {"free_chlorine": 1.2, "chloramine": CA_DOSE_MGL}   # mg/L; typical chloramine doses are 1.5 to 4.0
+
+
+def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: float | None = None,
+             window_months: int = 3, holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0,
+             plant: pd.DataFrame | None = None, bank_cache: str = "readwrite",
+             disinfectant: str = "free_chlorine", ph: float | None = None,
+             cl2n: float | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Rolling hold-out: for each held-out month, fit on the `window_months` before it and predict its
     samples.  Returns (per-sample predictions, per-month summary).
     plant: the plant log (load_plant).  None is the committed temperature-blind SimGP24, unchanged.  With a plant log,
@@ -138,7 +173,22 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
     for every month of the plant log; otherwise the dose is taken as --dose throughout) and predicts the held-out month
     at its own; the summary gains the month's temperature, kb20 and the posterior over
     the temperature hypotheses.  The bank of grids at the log's temperatures is built once and cached (bank_cache, as
-    seasonal.covariate_bank's cache: 'read' never writes a cache file)."""
+    seasonal.covariate_bank's cache: 'read' never writes a cache file).
+    disinfectant 'chloramine' (task 12): the log is total chlorine and the model is the chloramine mode's (the
+    chloramine grid, its dose axis and likelihood scale).  With the plant's logged pH and Cl2:N (ph, cl2n) the bulk rate
+    gets the chloramine mode's prior, model (c), the one held to task 12's bars; without them the prior is uniform,
+    model (b).  A plant log is refused (no seasonal chloramine model is built).  dose and threshold default to the
+    disinfectant's (1.2 mg/L free chlorine and 0.2; 2.0 mg/L total chlorine and 0.5)."""
+    if disinfectant not in DEFAULT_DOSE_MGL:
+        raise ValueError(f"disinfectant must be one of {sorted(DEFAULT_DOSE_MGL)}")
+    if disinfectant == "chloramine" and plant is not None:
+        raise NotImplementedError("a plant log (temperature) with chloramine: no seasonal chloramine model is built")
+    if (ph is None) != (cl2n is None):
+        raise ValueError("give both the plant's pH and its Cl2:N ratio, or neither")
+    if ph is not None and disinfectant != "chloramine":
+        raise ValueError("pH and Cl2:N set the chloramine mode's prior; they are not used with free chlorine")
+    dose = DEFAULT_DOSE_MGL[disinfectant] if dose is None else dose
+    threshold = (0.5 if disinfectant == "chloramine" else 0.2) if threshold is None else threshold
     sc = nominal_scenario(inp, sample_hour=14, source_dose=dose)
     X = build_features(sc)
     unknown = sorted(set(log.junction) - set(sc.junctions))
@@ -160,7 +210,19 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
     for m in held:
         train_months = [t for t in months if t < m][-window_months:]
         train, test = log[log.month.isin(train_months)], log[log.month == m]
-        if bank is None:
+        if bank is None and disinfectant == "chloramine":
+            from .chloramine import ca_condition, prior_log_vector
+            from .simgp import DOSES_CA, LIK_SD_CA
+            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid="chloramine", cond=ca_condition(),
+                            lik_sd=LIK_SD_CA, doses=DOSES_CA, threshold=threshold)
+            if ph is not None:
+                model.log_prior = prior_log_vector(model.params, float(ph), float(cl2n))
+            model.fit(train[["junction", "hour", "y"]])
+            if model.map_dose_ in (DOSES_CA[0], DOSES_CA[-1]):
+                print(f"warning: held-out month {m}: the fitted effective dose sits at the edge of the chloramine dose "
+                      f"axis (x{model.map_dose_:.2f} of {dose:g} mg/L): check --dose, the total chlorine leaving the "
+                      f"plant", file=sys.stderr, flush=True)
+        elif bank is None:
             model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(train[["junction", "hour", "y"]])
         else:
             model = SeasonalSimGP24(sc, X, bank, seed=seed, cache_dir=cache_dir).fit(
@@ -196,6 +258,10 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
                          "n_true_below": int(viol.sum()), "recall_below": float((viol & flagged).sum() / viol.sum()) if viol.sum() else float("nan"),
                          "false_alarms": int((~viol & flagged).sum()),
                          "map_kb": model.map_params_[0], "map_kw": model.map_params_[1], "map_gamma": model.map_params_[2], "map_dose": model.map_dose_})
+            if disinfectant == "chloramine":
+                from .simgp import DOSES_CA
+                rows[-1].update({"model": "(c) pH and Cl2:N prior" if ph is not None else "(b) uniform prior",
+                                 "map_dose_at_axis_edge": bool(model.map_dose_ in (DOSES_CA[0], DOSES_CA[-1]))})
             if bank is not None:
                 rows[-1].update({"temp_C": float(pl.temp_C[m]), "kb20": model.kb20(), "map_hypothesis": model.map_hypothesis_,
                                  **{f"P_{k}": v for k, v in model.hypothesis_posterior().items()}})
@@ -205,15 +271,38 @@ def validate(inp: str, log: pd.DataFrame, dose: float = 1.2, threshold: float = 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inp", help="the utility's EPANET model")
-    ap.add_argument("--samples", help="grab log CSV: date,time,tap_id,free_chlorine_mgL")
+    ap.add_argument("--samples", help="grab log CSV: date,time,tap_id,free_chlorine_mgL (or total_chlorine_mgL)")
     ap.add_argument("--taps", help="tap map CSV: tap_id,junction_id")
-    ap.add_argument("--dose", type=float, default=1.2, help="free chlorine leaving the plant, mg/L")
-    ap.add_argument("--threshold", type=float, default=0.2)
+    ap.add_argument("--dose", type=float, default=None,
+                    help="free chlorine leaving the plant, mg/L (default 1.2); with chloramine, total chlorine (default 2.0)")
+    ap.add_argument("--threshold", type=float, default=None,
+                    help="minimum residual, mg/L: default 0.2 free chlorine, or 0.5 total chlorine with chloramine (a "
+                         "common utility operating target, not a California rule: California requires a detectable residual)")
+    ap.add_argument("--disinfectant", choices=sorted(SPECIES_COLUMN), default="free_chlorine",
+                    help="free_chlorine (the default) or chloramine (total chlorine; task 12)")
+    ap.add_argument("--ph", type=float, default=None, help="chloramine only: the plant water's logged pH (with --cl2n "
+                                                           "it sets the bulk-rate prior, model (c))")
+    ap.add_argument("--cl2n", type=float, default=None, help="chloramine only: the plant's chlorine to ammonia-N ratio "
+                                                             "by mass (with --ph)")
     ap.add_argument("--window", type=int, default=3, help="months of history to fit on")
     ap.add_argument("--synthetic", metavar="NETWORK", help="demonstrate on a synthetic six-month log from this bundled network")
     ap.add_argument("--plant", help="plant log CSV: month,temp_C[,toc_mgL,dose_mgL]; makes the model temperature-aware")
     ap.add_argument("--out", default="outputs/pilot")
     a = ap.parse_args()
+    if a.threshold is None:
+        a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
+    if a.dose is None:
+        a.dose = DEFAULT_DOSE_MGL[a.disinfectant]
+        if a.disinfectant == "chloramine":
+            print(f"--dose not given: taking {a.dose:g} mg/L total chlorine leaving the plant (typical chloramine doses "
+                  f"are 1.5 to 4.0); give the plant's own", file=sys.stderr)
+    if (a.ph is not None or a.cl2n is not None) and a.disinfectant != "chloramine":
+        ap.error("--ph and --cl2n set the chloramine mode's prior; use them with --disinfectant chloramine")
+    if (a.ph is None) != (a.cl2n is None):
+        ap.error("give both --ph and --cl2n, or neither")
+    if a.synthetic and a.disinfectant != "free_chlorine":
+        ap.error("--synthetic makes a free-chlorine log; the chloramine mode's simulated test is "
+                 "python -m residualmap.experiment <net> --disinfectant=chloramine")
     os.makedirs(a.out, exist_ok=True)
     if a.synthetic:
         truth_kw = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}.get(a.synthetic, {})
@@ -223,9 +312,10 @@ def main():
     else:
         if not (a.inp and a.samples and a.taps):
             ap.error("--inp, --samples and --taps are required (or --synthetic NETWORK)")
-        log, inp, dose = load_log(a.samples, a.taps), a.inp, a.dose
+        log, inp, dose = load_log(a.samples, a.taps, a.disinfectant), a.inp, a.dose
     plant = load_plant(a.plant) if a.plant else None
-    preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant)
+    preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
+                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n)
     tag = (a.synthetic or os.path.splitext(os.path.basename(inp))[0]) + ("_plant" if plant is not None else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
     summary.to_csv(os.path.join(a.out, f"validation_{tag}.csv"), index=False)

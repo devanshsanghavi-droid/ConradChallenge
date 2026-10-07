@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 44,
+ "n_pass": 54,
  "n_fail": 0,
  "n_skipped": 0,
  "checks": [
@@ -233,18 +233,23 @@
    }
   },
   {
-   "name": "chloramine_refused_until_built",
+   "name": "chloramine_built_and_kept_separate",
    "group": "chemistry_truth",
    "pass": true,
    "detail": {
     "refused": {
-     "truth": true,
-     "truth_neutral": true,
-     "sim_kwargs": true,
-     "grid": true
+     "seasonal_grid": true,
+     "seasonal_truth": true,
+     "toc_input": true,
+     "clark_chloramine": true,
+     "epa_msx_free": true,
+     "epa_msx_grid": true,
+     "ca_on_free_grid": true,
+     "ca_grid_without_ca": true,
+     "loss_split_chloramine": true
     },
-    "chloramine_rng_seed": 40003,
-    "free_chlorine_rng_seed": 20003
+    "chloramine_grid_cache_name": "grid24_chloramine_Net3_d2_ca_37fc41c356.pkl",
+    "chloramine_rng_seed": 40003
    }
   },
   {
@@ -658,6 +663,216 @@
     },
     "net3_O2_S_seed32_november_values_compared": 111,
     "identical_to_6_significant_digits": true
+   }
+  },
+  {
+   "name": "batch_port_reproduces_wahman_example",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "port_mgL": {
+     "7.0": 0.8422792198912712,
+     "9.0": 3.089447068319581
+    },
+    "published_mgL": {
+     "7.0": 0.84,
+     "9.0": 3.2
+    },
+    "max_abs_diff_mgL": 0.11055293168041924,
+    "k_app_range_per_day": [
+     0.002724539306363942,
+     0.2170914232113363
+    ]
+   }
+  },
+  {
+   "name": "msx_port_matches_batch_port",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "by_pH": {
+     "7.0": {
+      "msx_mgL": [
+       1.4396,
+       0.99,
+       0.5688
+      ],
+      "port_mgL": [
+       1.4396,
+       0.99,
+       0.5688
+      ],
+      "max_abs_diff": 1.1522183088752413e-06,
+      "compiler": "GC",
+      "source_mgL": 2.0
+     },
+     "8.0": {
+      "msx_mgL": [
+       1.676,
+       1.5348,
+       1.3328
+      ],
+      "port_mgL": [
+       1.676,
+       1.5348,
+       1.3328
+      ],
+      "max_abs_diff": 4.486852411833553e-07,
+      "compiler": "GC",
+      "source_mgL": 2.0
+     },
+     "9.0": {
+      "msx_mgL": [
+       1.749,
+       1.7225,
+       1.6732
+      ],
+      "port_mgL": [
+       1.749,
+       1.7225,
+       1.6732
+      ],
+      "max_abs_diff": 1.0059513577687085e-07,
+      "compiler": "GC",
+      "source_mgL": 2.0
+     }
+    },
+    "worst_mgL": 1.1522183088752413e-06
+   }
+  },
+  {
+   "name": "msx_falls_back_to_uncompiled",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "failing_gcc": {
+     "compiler_available": true,
+     "compiler": "NONE",
+     "fallback_reason": "EpanetMsxException: (Error 522) could not compile chemistry functions",
+     "msx_mgL": [
+      1.6760022640228271,
+      1.6005502939224243
+     ],
+     "port_mgL": [
+      1.6760021596358643,
+      1.6005501433935578
+     ],
+     "source_mgL": 2.0,
+     "loud_message_on_stderr": true,
+     "max_abs_diff_vs_port_mgL": 1.5052886648270203e-07
+    },
+    "no_gcc": {
+     "compiler_available": false,
+     "refused_without_fallback": true,
+     "loud_message_on_stderr": false
+    }
+   }
+  },
+  {
+   "name": "msx_first_order_matches_epanet",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "step_300s": {
+     "max_abs_diff_mgL": 0.030974745750427246,
+     "mean_abs_diff_mgL": 0.002911033807322383,
+     "p999_abs_diff_mgL": 0.01023140549659729
+    },
+    "step_60s": {
+     "max_abs_diff_mgL": 0.005665242671966553,
+     "mean_abs_diff_mgL": 0.0005939752445556223,
+     "p999_abs_diff_mgL": 0.003315896959975362
+    },
+    "epanet_300s_vs_60s": {
+     "max_abs_diff_mgL": 0.17578141391277313
+    },
+    "msx_300s_vs_60s": {
+     "max_abs_diff_mgL": 0.18124470114707947
+    }
+   }
+  },
+  {
+   "name": "chloramine_truth_draws_twin_and_cleanup",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "pH": 7.952570733818886,
+    "cl2n": 4.596160955431479,
+    "median_daily_min_msx": 0.6623938679695129,
+    "median_daily_min_twin": 0.6600260734558105,
+    "kb_twin_per_day": 0.05517957096436149
+   }
+  },
+  {
+   "name": "chloramine_model_prior_and_nesting",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "defaults_follow_disinfectant": true,
+    "k_hat_pH8_cl2n4.5": 0.05124955917527923,
+    "prior_mode_kb": 0.04,
+    "posterior_geo_kb_uniform": 0.026611439857421256,
+    "posterior_geo_kb_prior": 0.04831402760450446
+   }
+  },
+  {
+   "name": "pilot_log_species_never_mixed",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "refused": {
+     "mixed_free": true,
+     "mixed_chloramine": true,
+     "total_as_free": true,
+     "free_as_chloramine": true,
+     "validate_ph_cl2n": true,
+     "validate_ph_disinfectant": true
+    },
+    "total_log_rows": 78,
+    "total_log_mean_mgL": 1.180897435897436
+   }
+  },
+  {
+   "name": "not_testable_is_never_one",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "recall_no_violation": "not testable",
+    "summary_cells_not_testable": 0
+   }
+  },
+  {
+   "name": "chloramine_outputs_reproduce",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "Net3": {
+     "experimental": false,
+     "csv_bytes": {
+      "results_time_Net3.csv": 186656,
+      "truths_Net3.csv": 6032
+     }
+    },
+    "Net2": {
+     "experimental": false,
+     "csv_bytes": {
+      "results_time_Net2.csv": 100894,
+      "truths_Net2.csv": 2390
+     }
+    },
+    "net2_seed300_twin_values_compared": 588,
+    "identical_to_6_significant_digits": true
+   }
+  },
+  {
+   "name": "app_chloramine_mode",
+   "group": "chloramine",
+   "pass": true,
+   "detail": {
+    "flagged_label": "Junctions likely below 0.5 mg/L (daily minimum)",
+    "experimental_label_shown": false,
+    "reveal": "True daily-minimum violations: **9 of 35** junctions. On the unsampled junctions the map found **8 of 8** (recall 100%) with 3 false alarms. Mean of your sample",
+    "reveal_no_violation": "True daily-minimum violations: **0 of 35** junctions. No unsampled junction is truly below the threshold, so recall is not testable here; the map raised 0 false"
    }
   },
   {

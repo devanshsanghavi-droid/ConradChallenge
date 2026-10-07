@@ -1,9 +1,9 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
 
-    python -m residualmap.checks            # every check, about 125 s on this machine (44 checks, task 11)
+    python -m residualmap.checks            # every check, about 250 s on this machine (54 checks, task 12 and its review)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
-                                            # seasonal and organics checks (about 23 s)
+                                            # seasonal, organics and chloramine (MSX) checks (about 24 s)
 
 Plain asserts on purpose (pytest is not in .venv).  Exits non-zero if any check fails.  A full run writes
 outputs/chem/checks_report.json, which holds only results that do not change from run to run (no dates, timings
@@ -458,35 +458,51 @@ def warm_water_truth_decays_faster_and_draws_are_isolated():
 
 
 @check("chemistry_truth")
-def chloramine_refused_until_built():
-    """Chloramine has no decay physics before task 12, so a chloramine truth, grid or grid cache lookup raises
-    NotImplementedError instead of running free-chlorine physics under a total-chlorine label.  Its hidden draws
-    already have their own generator, default_rng(40_000 + seed)."""
+def chloramine_built_and_kept_separate():
+    """Task 12 replaced task 8's refusal: chloramine has its own physics now, and is kept apart from free chlorine.  A
+    chloramine grid condition is first order at 20 C with neutral keywords; a seasonal or TOC-scaled chloramine model
+    or truth is refused (NotImplementedError), and so is 'epa_msx' for free chlorine (ValueError); the chloramine grid
+    runs only under a chloramine condition and a chloramine condition only on it (ValueError, before any cache is read);
+    its cache name carries its own tag.  The truth's hidden draws keep task 8's order: E_true and theta_w first, then the
+    four chloramine uniforms, from default_rng(40_000 + seed); free chlorine's draws are unchanged."""
     from .chemistry import CHLORAMINE, Chemistry
-    from .simgp import grid_cache_path, simulator_grid_24h
+    from .simgp import GRIDS, grid_cache_path, simulator_grid_24h
     from .simulate import build_scenario, hidden_chem_draws, nominal_scenario
-    ca = Chemistry(disinfectant=CHLORAMINE, temp_C=15.0)
+    ca = Chemistry(disinfectant=CHLORAMINE)
+    assert ca.sim_kwargs() == {"kb_scale": 1.0, "kw_scale": 1.0, "temp_C": None}
+    assert Chemistry(disinfectant=CHLORAMINE, temp_C=20.0).sim_kwargs() == {"kb_scale": 1.0, "kw_scale": 1.0, "temp_C": 20.0}
     refused = {}
     sc = nominal_scenario("Net3")
-    before = os.path.exists(grid_cache_path(sc, CACHE, "decay", ca))
-    for name, call in (("truth", lambda: build_scenario("Net3", 3, chem=ca)),
-                       ("truth_neutral", lambda: build_scenario("Net3", 3, chem=Chemistry(disinfectant=CHLORAMINE))),
-                       ("sim_kwargs", ca.sim_kwargs),
-                       ("grid", lambda: simulator_grid_24h(sc, CACHE, "decay", cond=ca))):
+    before = sorted(os.listdir(CACHE))
+    for name, call, exc in (
+            ("seasonal_grid", Chemistry(disinfectant=CHLORAMINE, temp_C=15.0).sim_kwargs, NotImplementedError),
+            ("seasonal_truth", lambda: build_scenario("Net3", 3, chem=Chemistry(disinfectant=CHLORAMINE, temp_C=15.0)), NotImplementedError),
+            ("toc_input", Chemistry(disinfectant=CHLORAMINE, toc_mgL=2.0).sim_kwargs, NotImplementedError),
+            ("clark_chloramine", lambda: Chemistry(disinfectant=CHLORAMINE, kinetics="clark", toc_mgL=2.0, phi=0.85).require_built(), NotImplementedError),
+            ("epa_msx_free", Chemistry(kinetics="epa_msx").require_built, ValueError),
+            ("epa_msx_grid", Chemistry(disinfectant=CHLORAMINE, kinetics="epa_msx").sim_kwargs, ValueError),
+            ("ca_on_free_grid", lambda: simulator_grid_24h(sc, CACHE, "decay", cond=ca), ValueError),
+            ("ca_grid_without_ca", lambda: simulator_grid_24h(sc, CACHE, "chloramine"), ValueError),
+            ("loss_split_chloramine", lambda: build_scenario("Net3", 3, chem=ca, truth_loss_split=True), NotImplementedError)):
         try:
             call()
-        except NotImplementedError:
+        except exc:
             refused[name] = True
         else:
             refused[name] = False
     assert all(refused.values()), refused
-    assert os.path.exists(grid_cache_path(sc, CACHE, "decay", ca)) == before, "a refused grid call wrote a cache file"
+    assert sorted(os.listdir(CACHE)) == before, "a refused call wrote a cache file"
+    name = os.path.basename(grid_cache_path(nominal_scenario("Net3", 14, 2.0), CACHE, "chloramine", ca))
+    assert name.startswith("grid24_chloramine_Net3_d2_ca_") and len(GRIDS["chloramine"][0]) == 8, name
     d_ca, d_fc = hidden_chem_draws(CHLORAMINE, 3), hidden_chem_draws("free_chlorine", 3)
     assert d_ca["rng_seed"] == 40_003 and d_fc["rng_seed"] == 20_003 and d_ca["E_true_K"] != d_fc["E_true_K"]
+    rc = np.random.default_rng(40_003)
+    e, t = rc.uniform(4660.0, 12104.0), rc.uniform(1.00, 1.07)
+    assert (d_ca["E_true_K"], d_ca["theta_w"]) == (float(e), float(t)) and set(d_fc) == {"rng_seed", "E_true_K", "theta_w"}
+    assert [d_ca[k] for k in ("u_pH", "u_cl2n", "u_toc", "u_alk")] == [float(rc.random()) for _ in range(4)]
     fc = build_scenario("Net3", 3, chem=Chemistry(temp_C=15.0))
     assert fc.chem["rng_seed"] == 20_003 and fc.chem["E_true_K"] == d_fc["E_true_K"] and fc.chem["species"] == "free chlorine"
-    assert ca.species == "total chlorine"
-    return {"refused": refused, "chloramine_rng_seed": d_ca["rng_seed"], "free_chlorine_rng_seed": fc.chem["rng_seed"]}
+    return {"refused": refused, "chloramine_grid_cache_name": name, "chloramine_rng_seed": d_ca["rng_seed"]}
 
 
 # ----------------------------------------------------------------------------- the model
@@ -1397,6 +1413,422 @@ def organics_outputs_reproduce():
                 bad[c] = (v, w)
     assert not bad, bad
     return {**out, "net3_O2_S_seed32_november_values_compared": n, "identical_to_6_significant_digits": not bad}
+
+
+# ----------------------------------------------------------------------------- task 12: the chloramine mode
+CA_NETS = ("Net3", "Net2")
+
+
+def _ca_chain(n_seg=7, diam=0.3, flow=0.01, days=10):
+    """Reservoir, then n_seg pipes of one day's travel each, then one demand (plug flow; junction k is k days old).
+    Built in code, so its node order differs from EPANET's (msx.run renames the columns; this chain checks that too)."""
+    import wntr
+    wn = wntr.network.WaterNetworkModel()
+    wn.add_reservoir("R", base_head=100.0)
+    length = flow / (np.pi * diam ** 2 / 4) * 86400.0
+    prev = "R"
+    for k in range(1, n_seg + 1):
+        wn.add_junction(f"J{k}", base_demand=(flow if k == n_seg else 0.0), elevation=0.0)
+        wn.add_pipe(f"P{k}", prev, f"J{k}", length=length, diameter=diam, roughness=130)
+        prev = f"J{k}"
+    wn.options.time.duration = int(days * 86400)
+    wn.options.time.hydraulic_timestep = 3600
+    wn.options.time.report_timestep = 3600
+    wn.options.time.quality_timestep = 300
+    return wn
+
+
+@check("chloramine")
+def batch_port_reproduces_wahman_example():
+    """The Python batch port of EPA's model reproduces Wahman 2018's worked example (4 mg/L held 10 days falls to 0.84
+    mg/L at pH 7 and 3.2 at pH 9) within 0.15 mg/L, with ASSUMED inputs (Cl2:N 5, 25 C, alkalinity 50, no TOC,
+    simultaneous addition); the committed calibration file holds the same numbers.  The prior table's rate falls as the
+    pH rises and rises with the Cl2:N ratio."""
+    from .chloramine import kb_prior_table, wahman_example
+    w = wahman_example()
+    assert w["max_abs_diff_mgL"] <= 0.15, w
+    cal = json.load(open(os.path.join(REPO, "outputs", "chloramine", "calibration_chloramine.json")))["wahman_example"]
+    assert cal["port_mgL"] == w["port_mgL"], (cal["port_mgL"], w["port_mgL"])
+    tab = kb_prior_table()
+    P = tab.pivot(index="pH", columns="cl2n", values="k_app_per_day")
+    assert (np.diff(P.values, axis=0) < 0).all() and (np.diff(P.values, axis=1) > 0).all()
+    committed = pd.read_csv(os.path.join(REPO, "outputs", "chloramine", "kb_prior_table.csv"))
+    assert np.allclose(committed.k_app_per_day.values, tab.k_app_per_day.values, rtol=1e-5, atol=0)
+    return {"port_mgL": w["port_mgL"], "published_mgL": w["published_mgL"], "max_abs_diff_mgL": w["max_abs_diff_mgL"],
+            "k_app_range_per_day": [float(P.values.min()), float(P.values.max())]}
+
+
+@check("chloramine", quick=False)
+def msx_port_matches_batch_port():
+    """EPA's model in EPANET-MSX (the network truth's reaction model, without the wall) on a plug-flow chain of 1-day
+    pipes against the Python batch port at 1, 3 and 7 days, pH 7, 8 and 9 (dose 2.0 mg/L, Cl2:N 4.5, TOC 2,
+    alkalinity 100, 20 C): within 0.05 mg/L total chlorine.  No MSX scratch file is left in the working directory."""
+    from . import chloramine as C
+    from . import msx as M
+    out, worst = {}, 0.0
+    for ph in (7.0, 8.0, 9.0):
+        wn = _ca_chain()
+        m = C.build_msx_model(wn, C.rate_constants(ph, 100.0, 20.0))
+        M.add_sources(m, wn, {"R": C.source_species(2.0, 4.5, 2.0)})
+        res, info = M.run(wn, m)
+        last = C.total_chlorine_mgL({sp: res.node[sp] for sp in ("TOTCL", "NH2CL", "NHCL2", "NCL3")}).iloc[-1]
+        port = C.batch(ph, 100.0, 20.0, 2.0, 4.5, 2.0, days=8.0, t_eval_days=[1, 3, 7]).total_mgL.values
+        msxv = np.array([float(last[f"J{d}"]) for d in (1, 3, 7)])
+        d = float(np.abs(msxv - port).max())
+        worst = max(worst, d)
+        out[str(ph)] = {"msx_mgL": msxv.round(4).tolist(), "port_mgL": port.round(4).tolist(), "max_abs_diff": d,
+                        "compiler": info["compiler"], "source_mgL": float(last["R"])}
+    assert worst <= 0.05, out
+    assert all(abs(v["source_mgL"] - 2.0) < 1e-3 for v in out.values()), "the source column is not the reservoir"
+    assert _root_scratch_files() == [] and not [f for f in os.listdir(".") if re.fullmatch(r"(msx|en)[A-Za-z0-9]{6}", f)]
+    return {"by_pH": out, "worst_mgL": worst}
+
+
+_FALLBACK_CHILD = r'''
+import json, sys
+from residualmap import checks as K, chloramine as C, msx as M
+mode = sys.argv[1]
+wn = K._ca_chain(n_seg=2, days=3)
+m = C.build_msx_model(wn, C.rate_constants(8.0, 100.0, 20.0))
+M.add_sources(m, wn, {"R": C.source_species(2.0, 4.5, 2.0)})
+out = {"compiler_available": M.compiler_available()}
+if mode == "no_gcc":
+    try:
+        M.run(wn, m, fallback=False)
+        out["refused_without_fallback"] = False
+    except RuntimeError:
+        out["refused_without_fallback"] = True
+else:
+    res, info = M.run(wn, m)
+    last = C.total_chlorine_mgL({sp: res.node[sp] for sp in ("TOTCL", "NH2CL", "NHCL2", "NCL3")}).iloc[-1]
+    port = C.batch(8.0, 100.0, 20.0, 2.0, 4.5, 2.0, days=3.0, t_eval_days=[1, 2]).total_mgL.values
+    out.update(compiler=info["compiler"], fallback_reason=info["fallback_reason"],
+               msx_mgL=[float(last["J1"]), float(last["J2"])], port_mgL=[float(v) for v in port],
+               source_mgL=float(last["R"]))
+print("RESULT " + json.dumps(out))
+'''
+
+
+@check("chloramine", quick=False)
+def msx_falls_back_to_uncompiled():
+    """COMPILER GC with no working compiler falls back to COMPILER NONE and gives the same chemistry.  In a subprocess
+    whose PATH holds only a `gcc` that fails, MSX's compile fails (MSX error 522), the runner closes the half-open MSX
+    project and reruns uncompiled; the result matches the batch port on a 2-pipe plug-flow chain (1 and 2 days old,
+    pH 8) within 0.05 mg/L.  With no gcc on the PATH at all, the runner does not try GC, and refuses when the fallback
+    is off.  (Found in the task-12 review: the retry used to fail with MSX error 520, a project already open.)"""
+    out = {}
+    with tempfile.TemporaryDirectory(prefix="rm_nocc_") as tmp:
+        fake = os.path.join(tmp, "failing_gcc")
+        os.makedirs(fake)
+        with open(os.path.join(fake, "gcc"), "w") as fh:
+            fh.write("#!/bin/sh\nexit 1\n")
+        os.chmod(os.path.join(fake, "gcc"), 0o755)
+        for mode, path in (("failing_gcc", fake), ("no_gcc", os.path.join(tmp, "empty"))):
+            env = {**os.environ, "PATH": path, "PYTHONPATH": REPO}
+            r = subprocess.run([PY, "-c", _FALLBACK_CHILD, mode], cwd=tmp, env=env, capture_output=True, text=True,
+                               timeout=900)
+            line = [x for x in r.stdout.splitlines() if x.startswith("RESULT ")]
+            assert r.returncode == 0 and line, (mode, r.returncode, r.stderr[-2000:])
+            out[mode] = json.loads(line[-1][len("RESULT "):])
+            out[mode]["loud_message_on_stderr"] = "COMPILER NONE" in r.stderr
+    f, n = out["failing_gcc"], out["no_gcc"]
+    assert f["compiler_available"] and f["compiler"] == "NONE" and "522" in f["fallback_reason"], f
+    diff = float(np.abs(np.array(f["msx_mgL"]) - np.array(f["port_mgL"])).max())
+    assert diff <= 0.05 and abs(f["source_mgL"] - 2.0) < 1e-3 and f["loud_message_on_stderr"], f
+    assert not n["compiler_available"] and n["refused_without_fallback"], n
+    assert _root_scratch_files() == []
+    f["fallback_reason"] = f["fallback_reason"].split(" [")[0]          # drop the run-specific pointer text
+    return {"failing_gcc": {**f, "max_abs_diff_vs_port_mgL": diff}, "no_gcc": n}
+
+
+@check("chloramine", quick=False)
+def msx_first_order_matches_epanet():
+    """One species with EPANET's own first-order bulk (0.40 /day) and mass-transfer-limited wall (0.70 m/day x the
+    roughness factor) written as MSX expressions, against EPANET's CHEMICAL quality on Net3 (dose 1.2 mg/L, every
+    junction and hour of the last day).  The plan's bar is 0.03 mg/L.  At the repo's 300 s quality step the two engines
+    differ by up to about 0.031 mg/L at one junction and hour where a front passes (each engine alone moves by up to
+    0.18 mg/L between a 300 s and a 60 s step there), so the bar is checked at a 60 s step in both engines and the 300 s
+    difference is recorded."""
+    from . import chloramine as C
+    from . import msx as M
+    from . import simulate as S
+    kb, kw, dose = 0.40, 0.70, 1.2
+    out, runs = {}, {}
+    for step in (300, 60):
+        old = S.QUALITY_STEP_S
+        S.QUALITY_STEP_S = step
+        try:
+            ref = S.simulate_nominal_chlorine("Net3", kb, kw, 1.0, dose, file_prefix=os.path.join(os.getcwd(), "fo_ref"))
+        finally:
+            S.QUALITY_STEP_S = old
+            for f in glob.glob("fo_ref.*"):
+                os.remove(f)
+        wn = S.load("Net3")
+        wn.options.time.quality_timestep = step
+        m = C.first_order_msx_model(wn, kb, {pn: kw * S.roughness_factor(p.roughness, 1.0) for pn, p in wn.pipes()})
+        m.options.timestep = step
+        M.add_sources(m, wn, {s: {"CL": dose} for s in S.source_nodes(wn)})
+        res, _ = M.run(wn, m)
+        q = S._last_day(res.node["CL"], wn.junction_name_list)
+        d = (q - ref).abs()
+        out[f"step_{step}s"] = {"max_abs_diff_mgL": float(d.values.max()), "mean_abs_diff_mgL": float(d.values.mean()),
+                                "p999_abs_diff_mgL": float(np.quantile(d.values, 0.999))}
+        runs[step] = (ref, q)
+    for i, eng in enumerate(("epanet", "msx")):    # each engine against itself: the quality step's own effect at fronts
+        out[f"{eng}_300s_vs_60s"] = {"max_abs_diff_mgL": float((runs[300][i] - runs[60][i]).abs().values.max())}
+    assert out["step_60s"]["max_abs_diff_mgL"] <= 0.03, out
+    assert out["step_300s"]["mean_abs_diff_mgL"] <= 0.005, out
+    return out
+
+
+@check("chloramine", quick=False)
+def chloramine_truth_draws_twin_and_cleanup():
+    """The chloramine truth (Net2, seed 900, never scored) consumes the committed draws in their committed order: its
+    source doses are the free-chlorine chemistry truth's at the same seed and dose, and the first-order twin has the
+    same doses; its chemistry is the seed's own draws on their ranges; the low-pH stress maps the same pH draw onto
+    7.0 to 7.5; MSX ran compiled, wn.msx is detached after the run (a later EPANET AGE run of the same network works),
+    and no MSX scratch file is left in the working directory."""
+    from .chemistry import Chemistry
+    from .chloramine import PH_RANGE_STRESS, ChloramineTruth, truth_chemistry, truth_scenario
+    from .simulate import build_scenario, hidden_chem_draws
+    msx_sc = truth_scenario("Net2", 900, 0.05, "epa_msx")
+    twin = truth_scenario("Net2", 900, 0.05, "first")
+    free = build_scenario("Net2", 900, source_dose=2.0, kb_per_day=0.10, kw_m_per_day=0.20, chem=Chemistry(temp_C=20.0))
+    assert msx_sc.chem["source_doses_mgL"] == twin.chem["source_doses_mgL"] == free.chem["source_doses_mgL"]
+    hd = hidden_chem_draws("chloramine", 900)
+    want = truth_chemistry(hd)
+    assert all(msx_sc.chem[k] == want[k] for k in ("pH", "cl2n", "toc_mgL", "alk_mgL_caco3"))
+    lo = truth_chemistry(hd, ChloramineTruth(ph_range=PH_RANGE_STRESS))["pH"]
+    assert abs((lo - 7.0) / 0.5 - (want["pH"] - 7.5) / 1.0) < 1e-12 and 7.0 <= lo < 7.5
+    assert msx_sc.chem["msx_compiler"] == "GC" and msx_sc.chem["msx_fallback_reason"] is None
+    assert msx_sc.wn.msx is None
+    dmin, tmin = msx_sc.truth_daily_min, twin.truth_daily_min
+    assert (dmin >= 0).all() and float(dmin.max()) <= 2.0 * 1.1 + 1e-6
+    assert _root_scratch_files() == [] and not [f for f in os.listdir(".") if re.fullmatch(r"(msx|en)[A-Za-z0-9]{6}", f)]
+    return {"pH": msx_sc.chem["pH"], "cl2n": msx_sc.chem["cl2n"], "median_daily_min_msx": float(dmin.median()),
+            "median_daily_min_twin": float(tmin.median()), "kb_twin_per_day": twin.chem["kb_twin_per_day"]}
+
+
+@check("chloramine")
+def chloramine_model_prior_and_nesting():
+    """Model (c)'s prior: a log prior of zeros gives exactly the uniform posterior (and today's arithmetic when it is
+    None); the pH and Cl2:N prior is centred on k_hat and, with no samples, the prior is the posterior.  On Net3's
+    chloramine grid (cached) at seed 0's chemistry.  SimGP24's likelihood scale, dose axis and threshold, left unset,
+    follow the condition's disinfectant (chloramine's 0.10, DOSES_CA and 0.5 with a chloramine condition)."""
+    from .chloramine import ca_condition, k_hat, nominal_ca, prior_log_vector, prior_table_cached
+    from .features import build_features
+    from .simgp import DOSES_CA, LIK_SD_CA, SimGP24
+    sc = nominal_ca("Net3")
+    X = build_features(sc)
+    def model(lp=None):
+        m = SimGP24(sc, X, seed=0, cache_dir=CACHE, grid="chloramine", cond=ca_condition(), lik_sd=LIK_SD_CA,
+                    doses=DOSES_CA, threshold=0.5)
+        m.log_prior = lp
+        return m
+    S = pd.DataFrame({"junction": ["15", "123", "247", "60"], "hour": [9, 11, 14, 16], "y": [1.9, 1.1, 0.6, 1.4]})
+    m0 = model().fit(S)
+    mz = model(np.zeros(len(m0.params))).fit(S)
+    assert np.array_equal(m0.W_, mz.W_), float(np.abs(m0.W_ - mz.W_).max())
+    lp = prior_log_vector(m0.params, 8.0, 4.5)
+    kh = k_hat(8.0, 4.5, prior_table_cached())
+    kbs = np.array([p[0] for p in m0.params])
+    assert np.isclose(np.exp(np.sum(np.log(kbs) * np.exp(lp)) / np.exp(lp).sum()), kh, rtol=0.6)
+    mp = model(lp).fit_prior()
+    marg = pd.Series(mp.w_).groupby(kbs).sum()
+    assert int(np.argmax(marg.values)) == int(np.argmin(np.abs(np.log(marg.index.values) - np.log(kh))))
+    mc = model(lp).fit(S)
+    # left unset, the settings follow the condition's disinfectant (review fix): chloramine's with a chloramine
+    # condition, the committed free-chlorine ones without one
+    from .simgp import DOSE_GRID, LIK_SD
+    dflt = SimGP24(sc, X, seed=0, cache_dir=CACHE, grid="chloramine", cond=ca_condition())
+    assert (dflt.lik_sd, dflt.doses, dflt.threshold) == (LIK_SD_CA, DOSES_CA, 0.5)
+    assert np.array_equal(dflt.fit(S).W_, m0.W_)
+    import inspect
+    free = {k: v.default for k, v in inspect.signature(SimGP24.__init__).parameters.items()}
+    assert all(free[k] is None for k in ("lik_sd", "doses", "threshold")) and (LIK_SD, DOSE_GRID) == (0.35, [0.90, 0.95, 1.00, 1.05, 1.10])
+    return {"defaults_follow_disinfectant": True, "k_hat_pH8_cl2n4.5": kh, "prior_mode_kb": float(marg.idxmax()),
+            "posterior_geo_kb_uniform": float(np.exp(m0.w_ @ np.log(kbs))),
+            "posterior_geo_kb_prior": float(np.exp(mc.w_ @ np.log(kbs)))}
+
+
+@check("chloramine")
+def pilot_log_species_never_mixed():
+    """A7: the pilot's grab log takes free_chlorine_mgL or total_chlorine_mgL, never both: a mixed log is refused, and so
+    is a log whose species does not match --disinfectant; docs/example_grab_log_total.csv loads as total chlorine and
+    the committed free-chlorine example still loads as before.  Since the review: the pilot's default dose follows the
+    disinfectant (1.2 free, 2.0 total chlorine), and its pH and Cl2:N prior inputs are refused with free chlorine or
+    one without the other."""
+    from .pilot import load_log
+    taps = os.path.join(REPO, "docs", "example_tap_map.csv")
+    free_csv, total_csv = os.path.join(REPO, "docs", "example_grab_log.csv"), os.path.join(REPO, "docs", "example_grab_log_total.csv")
+    free = load_log(free_csv, taps)
+    total = load_log(total_csv, taps, "chloramine")
+    mixed = pd.read_csv(free_csv)
+    mixed["total_chlorine_mgL"] = mixed["free_chlorine_mgL"]
+    tmp = os.path.join(os.getcwd(), "mixed_log.csv")
+    mixed.to_csv(tmp, index=False)
+    refused = {}
+    try:
+        for name, args in (("mixed_free", (tmp, taps, "free_chlorine")), ("mixed_chloramine", (tmp, taps, "chloramine")),
+                           ("total_as_free", (total_csv, taps, "free_chlorine")), ("free_as_chloramine", (free_csv, taps, "chloramine"))):
+            try:
+                load_log(*args)
+            except ValueError:
+                refused[name] = True
+            else:
+                refused[name] = False
+    finally:
+        os.remove(tmp)
+    assert all(refused.values()), refused
+    assert len(free) == 78 and len(total) == len(free) and list(free.columns) == list(total.columns)
+    # review fixes: the pilot's dose defaults follow the disinfectant, and the chloramine prior's pH and Cl2:N go
+    # together and only with chloramine (refused before any simulation)
+    from .chloramine import CA_DOSE_MGL
+    from .pilot import DEFAULT_DOSE_MGL, validate
+    assert DEFAULT_DOSE_MGL == {"free_chlorine": 1.2, "chloramine": CA_DOSE_MGL}
+    for kw in ({"ph": 8.0, "cl2n": 4.5}, {"ph": 8.0, "disinfectant": "chloramine"}):
+        try:
+            validate("Net3", free, **kw)
+        except ValueError:
+            refused[f"validate_{'_'.join(kw)}"] = True
+        else:
+            refused[f"validate_{'_'.join(kw)}"] = False
+    assert all(refused.values()), refused
+    return {"refused": refused, "total_log_rows": len(total), "total_log_mean_mgL": float(total.y.mean())}
+
+
+@check("chloramine")
+def not_testable_is_never_one():
+    """A6: a rate with no junction below the threshold is null in the summary and printed 'not testable', never 1.0;
+    the committed summaries hold no recall of exactly 1.0 for a cell with no true violation."""
+    from .chloramine import _fmt, rates
+    z = {"n_uns": 10, "sse": 0.1, "sae": 0.5, "sse_ln": 0.2, "se": 0.1, "in50": 5.0, "in80": 8.0, "in90": 9.0,
+         "in95": 10.0, "n_true_viol": 0, "tp": 0, "fp": 2, "fn": 0}
+    r = rates(z)
+    assert math.isnan(r["recall"]) and _fmt(r["recall"]) == "not testable" and r["precision"] == 0.0
+    r2 = rates({**z, "fp": 0})
+    assert math.isnan(r2["precision"]) and math.isnan(r2["f1"])
+    n_null = 0
+    for net in CA_NETS:
+        d = json.load(open(os.path.join(REPO, "outputs", "chloramine", f"summary_chloramine_{net}.json")))
+        for v in d["pooled"].values():
+            for m in v.values():
+                for rr in m.values():
+                    for cell in rr.values():
+                        if cell["n_true_viol"] == 0:
+                            assert cell["recall"] is None, cell
+                            n_null += 1
+    return {"recall_no_violation": _fmt(r["recall"]), "summary_cells_not_testable": n_null}
+
+
+CA_ROWS_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap.chloramine import KW_REF, run_task
+res = run_task("Net2", 300, "twin", KW_REF["Net2"], sys.argv[1])
+print("CA_ROWS_JSON " + json.dumps([{k: (v if isinstance(v, str) else float(v)) for k, v in r.items()} for r in res["rows"]]))
+print("CA_TRUTH_JSON " + json.dumps({k: v for k, v in res["truth"].items() if not isinstance(v, (dict, list))}, default=str))
+"""
+
+
+@check("chloramine", quick=False)
+def chloramine_outputs_reproduce():
+    """Task 12's committed outputs: each network's summary carries the acceptance key and is what --resummarise computes
+    from the committed CSVs; every CSV is under 1 MB; the experimental label follows the bars; and recomputing Net2 seed
+    300 under the first-order twin (model (b) and the oracle, both rules, n = 3, 8, 15) in a single-threaded subprocess
+    gives the committed rows to the CSV's 6 significant digits."""
+    from .chloramine import CSV_FLOAT, OUT_DIR as CA_OUT, _clean, summarise
+    out = {}
+    for net in CA_NETS:
+        df = pd.read_csv(os.path.join(REPO, CA_OUT, f"results_time_{net}.csv"))
+        tr = pd.read_csv(os.path.join(REPO, CA_OUT, f"truths_{net}.csv"))
+        d = json.load(open(os.path.join(REPO, CA_OUT, f"summary_chloramine_{net}.json")))
+        again = json.loads(json.dumps(_clean(summarise(net, df, tr))))
+        assert again == d, f"{net}: the committed summary is not what the committed CSVs give"
+        A = d["acceptance"]
+        bars = [v["pass"] for k, v in A.items() if k[:2] in ("A1", "A2", "A3", "A4")]
+        assert A["experimental"] == (not all(bars)), A
+        sizes = {f: os.path.getsize(os.path.join(REPO, CA_OUT, f)) for f in (f"results_time_{net}.csv", f"truths_{net}.csv")}
+        assert all(v < 1_000_000 for v in sizes.values()), sizes
+        out[net] = {"experimental": A["experimental"], "csv_bytes": sizes}
+    r = subprocess.run([PY, "-c", CA_ROWS_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV})
+    line = [x for x in r.stdout.splitlines() if x.startswith("CA_ROWS_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"recompute failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    rows = pd.DataFrame(json.loads(line[-1][len("CA_ROWS_JSON "):]))
+    want = pd.read_csv(os.path.join(REPO, CA_OUT, "results_time_Net2.csv"), float_precision="round_trip")
+    want = want[(want.variant == "twin") & (want.seed == 300)]
+    bad, n = {}, 0
+    for _, g in rows.iterrows():
+        w = want[(want.model == g.model) & (want.rule == g.rule) & (want.n == g.n)]
+        assert len(w) == 1, (g.model, g.rule, g.n)
+        for c in want.columns:
+            if c in ("net", "variant", "model", "rule") or c not in g:
+                continue
+            a, b = g[c], w[c].iloc[0]
+            n += 1
+            if not ((pd.isna(a) and pd.isna(b)) or float(CSV_FLOAT % float(a)) == float(b)):
+                bad[f"{g.model}.{g.rule}.{int(g.n)}.{c}"] = (a, b)
+    assert len(rows) == len(want) and not bad, (len(rows), len(want), bad)
+    return {**out, "net2_seed300_twin_values_compared": n, "identical_to_6_significant_digits": True}
+
+
+APP_CA_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+at = AppTest.from_file(sys.argv[1], default_timeout=900).run()
+assert not at.exception, [e.value for e in at.exception]
+at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith("Net2")][0]).run()
+[r for r in at.radio if r.label == "Disinfectant"][0].set_value("Chloramine (total chlorine)").run()
+assert not at.exception, [e.value for e in at.exception]
+metric = [m for m in at.metric if m.label.startswith("Junctions likely below")][0]
+res = {"flagged_label": metric.label, "info": [i.value for i in at.info],
+       "subheaders": [s.value for s in at.subheader], "captions": [c.value for c in at.caption],
+       "number_inputs": [n.label for n in at.number_input]}
+[t for t in at.toggle if t.label.startswith("Show the true daily-minimum map")][0].set_value(True)
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["reveal"] = [m.value for m in at.markdown if "True daily-minimum violations" in m.value]
+[n for n in at.number_input if n.label.startswith("Minimum residual, total chlorine")][0].set_value(0.05)
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["reveal_no_violation"] = [m.value for m in at.markdown if "True daily-minimum violations" in m.value]
+print("APP_CA_JSON " + json.dumps(res))
+"""
+
+
+@check("chloramine", quick=False)
+def app_chloramine_mode():
+    """Headless AppTest: on Net2 with the demo on, choosing 'Chloramine (total chlorine)' runs without exceptions; the
+    threshold defaults to 0.5 mg/L total chlorine with its label (a common utility operating target, not a California
+    rule); the mode's banner says total chlorine and carries the experimental label exactly when the committed summaries
+    say so; the nitrification watch is shown with its 'not validated' label; the demo truth's reveal works, and with
+    the threshold at 0.05 mg/L (no junction below it) it says recall is not testable instead of printing a rate (A6;
+    a review fix).  The demo truth runs in a separate process.  The free chlorine default demo is checked by
+    app_default_demo."""
+    from .chloramine import THRESHOLD_NOTE
+    r = subprocess.run([PY, "-c", APP_CA_SCRIPT, os.path.join(REPO, "app.py")], cwd=os.getcwd(), capture_output=True,
+                       text=True, env={**os.environ, "PYTHONPATH": REPO})
+    line = [x for x in r.stdout.splitlines() if x.startswith("APP_CA_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    res = json.loads(line[-1][len("APP_CA_JSON "):])
+    assert res["flagged_label"] == "Junctions likely below 0.5 mg/L (daily minimum)", res["flagged_label"]
+    banner = [i for i in res["info"] if i.startswith("Chloramine mode")]
+    assert banner and "TOTAL chlorine" in banner[0] and "not a California rule" in banner[0], res["info"]
+    exp = any(json.load(open(os.path.join(REPO, "outputs", "chloramine", f"summary_chloramine_{n}.json")))["acceptance"]["experimental"]
+              for n in CA_NETS)
+    assert ("Experimental" in banner[0]) == exp, (banner[0], exp)
+    assert "Nitrification watch (chloramine)" in res["subheaders"]
+    assert any("not validated" in c for c in res["captions"])
+    assert "Minimum residual, total chlorine (mg/L)" in res["number_inputs"] and "not a California rule" in THRESHOLD_NOTE
+    assert res["reveal"], "the demo reveal did not render"
+    nv = res["reveal_no_violation"]
+    assert nv and "**0 of 35**" in nv[0] and "recall is not testable" in nv[0] and "%" not in nv[0], nv
+    return {"flagged_label": res["flagged_label"], "experimental_label_shown": "Experimental" in banner[0],
+            "reveal": res["reveal"][0][:160], "reveal_no_violation": nv[0][:160]}
 
 
 # ----------------------------------------------------------------------------- full-run anchors

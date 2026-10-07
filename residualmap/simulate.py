@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import wntr
 
-from .chemistry import (ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TOC_REF_MGL, TREF_C, TRUTH_SEED_OFFSET,
+from .chemistry import (CHLORAMINE, ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TOC_REF_MGL, TREF_C, TRUTH_SEED_OFFSET,
                         Chemistry, Warming, apply_water_temperature, arrhenius, remove_epanet_files, set_bulk_kinetics,
                         toc_ratio, use_mg_per_litre)
 
@@ -212,14 +212,15 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                    kw_m_per_day: float = 0.70, structural_noise: bool | str = False,
                    month_seed: int | None = None, chem: Chemistry | None = None,
                    truth_age: bool = False, truth_loss_split: bool = False,
-                   warming: Warming | None = None, truth_wall_law: str = "theta_w") -> Scenario:
+                   warming: Warming | None = None, truth_wall_law: str = "theta_w",
+                   chloramine_truth=None) -> Scenario:
     """structural_noise: False, True (= "spec") or "persistent"; see apply_structural_noise.
     month_seed: if given, the pipe-level truth (per-pipe wall decay, roughness) comes from `seed` and the
     operating truth (bulk decay, demand, dose) from `month_seed`: the same network in a different month.
     chem: None is the committed truth, draw for draw.  A chemistry.Chemistry gives the truth that chemistry
     (see _chem_truth); it consumes the same rng / rng_m draws in the same order, and every new draw comes from
     its own generator, default_rng(20_000 + seed) for free chlorine or default_rng(40_000 + seed) for chloramine
-    (a chloramine truth is refused until task 12 builds its decay physics).
+    (task 12: chloramine.chloramine_truth).
     truth_age: also run EPANET AGE on the truth's perturbed network after all draws (no new draws), and once more
     with every junction's and tank's initial age raised, for truth_initial_share (see initial_water_share).
     truth_loss_split: also rerun the truth's own network with wall decay off, with bulk decay off and with no decay
@@ -232,13 +233,22 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
     truth_wall_law: how the truth's wall rate moves with temperature (needs chem).  'theta_w' (the default, the
     pre-registered task-10 truth) is theta_w^(T - 20); 'arrhenius' is f(T; E_true), the bulk factor (the structure
     the temperature bank M assumes); 'none' is 1 (the structure the bulk-only ablation M1b assumes).  The last two
-    exist only for the task-10 mechanism checks run after the stop (seasonal.mechanism_checks); no draw changes."""
+    exist only for the task-10 mechanism checks run after the stop (seasonal.mechanism_checks); no draw changes.
+    chloramine_truth: task 12, with chem=Chemistry(disinfectant='chloramine', kinetics='epa_msx' or 'first'): a
+    chloramine.ChloramineTruth (pH range, nitrification stress); None is the default chloramine truth.  The truth is
+    total chlorine (mg/L as Cl2); source_dose is its nominal plant dose and kw_m_per_day its wall rate at C = 130 (see
+    chloramine.chloramine_truth).  Warming, another wall law and truth_loss_split are refused for chloramine."""
     if warming is not None and (chem is None or chem.temp_C is None):
         raise ValueError("warming needs chem=Chemistry(temp_C=<plant temperature>)")
     if truth_wall_law not in TRUTH_WALL_LAWS:
         raise ValueError(f"truth_wall_law must be one of {TRUTH_WALL_LAWS}")
     if truth_wall_law != "theta_w" and chem is None:
         raise ValueError("truth_wall_law needs chem=Chemistry(...)")
+    is_ca = chem is not None and chem.disinfectant == CHLORAMINE
+    if chloramine_truth is not None and not is_ca:
+        raise ValueError("chloramine_truth needs chem=Chemistry(disinfectant='chloramine', ...)")
+    if is_ca and (warming is not None or truth_wall_law != "theta_w" or truth_loss_split):
+        raise NotImplementedError("in-network warming, another wall law and the loss split are not built for chloramine")
     rng = np.random.default_rng(seed)
     rng_m = np.random.default_rng(month_seed) if month_seed is not None else rng
 
@@ -267,7 +277,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
         q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
     else:
         q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day, warming, name,
-                                   truth_wall_law)
+                                   truth_wall_law, chloramine_truth)
     junctions = wn.junction_name_list
     truth_by_hour = _last_day(q, junctions).clip(lower=0.0)
     loss_runs = None
@@ -300,12 +310,18 @@ def hidden_chem_draws(disinfectant: str, seed: int) -> dict:
       E_true  ~ U(4660, 12104) K   bulk Arrhenius E/R of this network's water (the compiled span quoted by
                                    Cejas, Diaz & Gonzalez 2026)
       theta_w ~ U(1.00, 1.07)      wall temperature factor theta_w^(T - 20) (ASSUMPTION: Lee et al. 2014 give
-                                   only the direction, wall decay rising with temperature)"""
+                                   only the direction, wall decay rising with temperature)
+    and, for chloramine only (task 12), four more uniforms on [0, 1), drawn after those two so neither moves:
+      u_pH, u_cl2n, u_toc, u_alk   mapped by chloramine.truth_chemistry onto the pH, Cl2:N, TOC and alkalinity ranges
+                                   (a stress subset maps u_pH onto a lower pH range: the same draw, another range)."""
     rng_seed = TRUTH_SEED_OFFSET[disinfectant] + seed
     rc = np.random.default_rng(rng_seed)
     er_true = float(rc.uniform(*ER_TRUTH_RANGE_K))
     theta_w = float(rc.uniform(*THETA_W_TRUTH_RANGE))
-    return {"rng_seed": rng_seed, "E_true_K": er_true, "theta_w": theta_w}
+    out = {"rng_seed": rng_seed, "E_true_K": er_true, "theta_w": theta_w}
+    if disinfectant == CHLORAMINE:
+        out.update({k: float(rc.random()) for k in ("u_pH", "u_cl2n", "u_toc", "u_alk")})
+    return out
 
 
 @functools.lru_cache(maxsize=16)
@@ -352,14 +368,15 @@ def warming_temperatures(name: str, plant_C: float, warming: Warming, wn=None) -
 
 
 def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, kw_m_per_day,
-                warming: Warming | None = None, name: str | None = None, wall_law: str = "theta_w"):
+                warming: Warming | None = None, name: str | None = None, wall_law: str = "theta_w",
+                chloramine_truth=None):
     """The hidden truth under a chemistry condition.  The committed draws are consumed exactly as in the
     default branch of build_scenario (bulk factor, per-pipe wall and roughness, global and per-node demand,
     dose per source); the new ones come from hidden_chem_draws (their own generator).
     At T = 20 C (or None), TOC = TOC_ref (or None) and first order, every factor is exactly 1 and the truth
     equals build_scenario(chem=None) bit for bit (a saved check).  kinetics 'first_si' runs the same first
-    order with the corrected unit recipe (chemistry.use_mg_per_litre); 'order2' arrives with task 12, and a
-    chloramine truth is refused until task 12 builds its decay physics.
+    order with the corrected unit recipe (chemistry.use_mg_per_litre); 'order2' is not built.  A chloramine condition
+    (task 12) goes to chloramine.chloramine_truth, which consumes the same committed draws in the same order.
     kinetics 'clark' (task 11, Clark 1998, J Environ Eng 124(1):16): the bulk and tank reaction is EPANET order 2
     with a limiting potential, dC/dt = -k2 C (C - CL), with CL = d - phi TOC (d the mean of the month's drawn source
     doses, one CL per run, so one plant dose is assumed) and k2 = kb_per_day u f(T; E_true) / (phi TOC_ref): at
@@ -372,8 +389,11 @@ def _chem_truth(wn, seed, rng, rng_m, chem: Chemistry, source_dose, kb_per_day, 
     tank its own bulk coefficient, and the viscosity and diffusivity options are set at the flow-weighted mixed
     temperature (warming_temperatures); no extra draw is made."""
     chem.require_built()
+    if chem.disinfectant == CHLORAMINE:      # task 12: its own physics, the same committed draws (chloramine.py)
+        from .chloramine import chloramine_truth as _ca_truth
+        return _ca_truth(wn, seed, rng, rng_m, chem, source_dose, kw_m_per_day, name, chloramine_truth)
     if chem.kinetics not in ("first", "first_si", "clark"):
-        raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built yet (task 12)")
+        raise NotImplementedError(f"truth kinetics {chem.kinetics!r} is not built")
     if chem.kinetics == "clark" and warming is not None:
         raise NotImplementedError("in-network warming with Clark kinetics is not built")
     hd = hidden_chem_draws(chem.disinfectant, seed)
