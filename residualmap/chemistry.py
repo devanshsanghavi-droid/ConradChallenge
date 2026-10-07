@@ -169,6 +169,11 @@ class Chemistry:
     er_K          : E/R used by a MODEL condition (a grid); hidden truths draw their own E/R per seed
     wall_mode     : 'arrhenius' scales the wall rate by the same factor as the bulk rate (an ASSUMPTION);
                     'mass_transfer_only' leaves wall chemistry at 20 C (ablation M1b)
+    wall_er_K     : task 10b, a MODEL condition's own wall E/R under 'arrhenius': the wall rate is scaled by
+                    f(T; wall_er_K) while the bulk rate keeps f(T; er_K).  None (the default) means the wall follows
+                    er_K, as before.  It is stored in canonical form, so a condition that is physically one of the
+                    task-10 conditions IS that condition, with its cache tag and its cached grid: wall_er_K equal to
+                    er_K is stored as None, and wall_er_K = 0 (f = 1 at every T) as wall_mode 'mass_transfer_only'.
     """
     disinfectant: str = FREE_CHLORINE
     kinetics: str = "first"
@@ -177,6 +182,7 @@ class Chemistry:
     threshold_mgL: float | None = None
     er_K: float = ER_DEFAULT_K
     wall_mode: str = "arrhenius"
+    wall_er_K: float | None = None
 
     def __post_init__(self):
         # numbers are stored as Python floats, so equal conditions (10, 10.0, numpy 10) share one cache_tag
@@ -192,6 +198,19 @@ class Chemistry:
             raise ValueError(f"kinetics must be one of {KINETICS}, got {self.kinetics!r}")
         if self.wall_mode not in WALL_MODES:
             raise ValueError(f"wall_mode must be one of {WALL_MODES}, got {self.wall_mode!r}")
+        if self.wall_er_K is not None:
+            w = float(self.wall_er_K)
+            if not (w >= 0.0 and math.isfinite(w)):
+                raise ValueError(f"wall_er_K must be zero or positive, got {self.wall_er_K}")
+            if self.wall_mode != "arrhenius":
+                raise ValueError("wall_er_K is a wall E/R under wall_mode 'arrhenius'; 'mass_transfer_only' already "
+                                 "fixes the wall chemistry at 20 C")
+            if w == self.er_K:          # canonical forms (task 10b): the task-10 conditions keep their cache tags
+                w = None
+            elif w == 0.0:
+                object.__setattr__(self, "wall_mode", "mass_transfer_only")
+                w = None
+            object.__setattr__(self, "wall_er_K", w)
         if self.temp_C is not None and not (0.0 <= self.temp_C <= 35.0):
             raise ValueError(f"temp_C {self.temp_C} is outside 0 to 35 C, beyond every rate law used here")
         if self.toc_mgL is not None and not (0.0 < self.toc_mgL <= 20.0):
@@ -227,10 +246,11 @@ class Chemistry:
         return f * toc_ratio(self.toc_mgL)
 
     def kw_scale(self) -> float:
-        """Wall multiplier for a MODEL condition: f(T; E) under 'arrhenius', 1 under 'mass_transfer_only'."""
+        """Wall multiplier for a MODEL condition: f(T; E) under 'arrhenius' (f(T; wall_er_K) when a wall E/R of its
+        own is set, task 10b), 1 under 'mass_transfer_only'."""
         if self.temp_C is None or self.wall_mode == "mass_transfer_only":
             return 1.0
-        return arrhenius(self.temp_C, self.er_K)
+        return arrhenius(self.temp_C, self.er_K if self.wall_er_K is None else self.wall_er_K)
 
     def require_built(self) -> None:
         """Refuse a disinfectant whose decay physics is not built yet (chloramine until task 12)."""
@@ -258,6 +278,8 @@ class Chemistry:
             parts.append(f"TOC{self.toc_mgL:g}")
         if self.wall_mode != "arrhenius":
             parts.append("M1b")
+        if self.wall_er_K is not None:
+            parts.append(f"W{self.wall_er_K:g}")
         return "_".join(parts)
 
     def with_(self, **kw) -> "Chemistry":
@@ -266,14 +288,16 @@ class Chemistry:
 
 def cache_tag(cond: Chemistry | None, grid: str = "full", n_chars: int = 10) -> str:
     """Short sha1 over everything that changes a cached grid: CHEM_CACHE_VERSION, the GRIDS contents of `grid`,
-    FLOOR, HOURS, the quality step and run length, and the condition's kinetics, temperature, TOC, E/R, wall mode
-    and disinfectant.  The threshold is left out on purpose: it does not change a simulated grid."""
+    FLOOR, HOURS, the quality step and run length, and the condition's kinetics, temperature, TOC, E/R, wall mode,
+    wall E/R and disinfectant.  The threshold is left out on purpose: it does not change a simulated grid.  An unset
+    wall E/R (None, the wall following the bulk E/R) is left out too, so every task-10 tag is unchanged."""
     from . import simgp, simulate      # lazy: simgp imports this module
     payload = {"version": CHEM_CACHE_VERSION, "grid": grid,
                "grid_axes": [list(map(float, ax)) for ax in simgp.GRIDS[grid]],
                "floor": simgp.FLOOR, "hours": list(simgp.HOURS),
                "quality_step_s": simulate.QUALITY_STEP_S, "duration_days": simulate.DURATION_DAYS,
-               "cond": None if cond is None else {k: v for k, v in asdict(cond).items() if k != "threshold_mgL"}}
+               "cond": None if cond is None else {k: v for k, v in asdict(cond).items()
+                                                  if k != "threshold_mgL" and not (k == "wall_er_K" and v is None)}}
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:n_chars]
 
 

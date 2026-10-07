@@ -1,8 +1,9 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
 
-    python -m residualmap.checks            # every check, 20 to 40 s on this machine
-    python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot and the app (a few seconds)
+    python -m residualmap.checks            # every check, about 75 to 80 s on this machine (39 checks, task 10b)
+    python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
+                                            # seasonal checks (about 15 s)
 
 Plain asserts on purpose (pytest is not in .venv).  Exits non-zero if any check fails.  A full run writes
 outputs/chem/checks_report.json, which holds only results that do not change from run to run (no dates, timings
@@ -997,6 +998,172 @@ def season_outputs_reproduce():
         diffs[row["model"]] = bad
     assert not any(diffs.values()), diffs
     return {"acceptance": out, "net3_seed0_april_rows_identical": sorted(diffs), "n_values_compared": n_compared}
+
+
+# ----------------------------------------------------------------------------- task 10b: the wall's response, learned
+TASK10_TAG_T12_5_E8000 = "72f9c19f47"     # cache_tag(Chemistry(temp_C=12.5)) in the committed task-10 checks report
+
+
+@check("seasonal_wall")
+def wall_condition_canonical_forms():
+    """Chemistry's wall E/R (task 10b) leaves every task-10 condition as it was: the committed T12.5/E8000 tag is
+    unchanged; a wall E/R equal to the bulk E/R IS task 10's M condition and a wall E/R of 0 IS its M1b condition
+    (equal objects, equal tags, equal cache names), so M2's bank reads those cached files instead of rebuilding them;
+    any other wall E/R gets its own tag and label, scales the wall by f(T; wall E/R) and the bulk by f(T; E/R); a
+    negative wall E/R, or one given with wall_mode 'mass_transfer_only', is refused.  wall_bank_cache_files for the
+    full 3 x 5 grid contains every file of task 10's M and M1b banks."""
+    from . import simgp
+    from .chemistry import Chemistry, arrhenius, cache_tag
+    from .seasonal import (WALL_ER_HYPOTHESES_K, all_bank_temps, bank_cache_files, nested_prior, wall_bank_cache_files,
+                           wall_pairs, WallBank)
+    from .simulate import nominal_scenario
+    assert cache_tag(Chemistry(temp_C=12.5)) == TASK10_TAG_T12_5_E8000
+    out = {}
+    for e in (5000.0, 8000.0, 12000.0):
+        m = Chemistry(temp_C=10.0, er_K=e, wall_er_K=e)
+        b = Chemistry(temp_C=10.0, er_K=e, wall_er_K=0.0)
+        assert m == Chemistry(temp_C=10.0, er_K=e) and cache_tag(m) == cache_tag(Chemistry(temp_C=10.0, er_K=e))
+        assert b == Chemistry(temp_C=10.0, er_K=e, wall_mode="mass_transfer_only")
+        assert cache_tag(b) == cache_tag(Chemistry(temp_C=10.0, er_K=e, wall_mode="mass_transfer_only"))
+    w = Chemistry(temp_C=10.0, er_K=8000.0, wall_er_K=2500.0)
+    assert w.kb_scale() == arrhenius(10.0, 8000.0) and w.kw_scale() == arrhenius(10.0, 2500.0)
+    assert w.label() == "free_T10_E8000_W2500"
+    tags = {cache_tag(Chemistry(temp_C=10.0, er_K=b_, wall_er_K=w_)) for b_, w_ in wall_pairs()}
+    assert len(tags) == 15, len(tags)
+    for bad in ({"wall_er_K": -1.0}, {"wall_er_K": 2500.0, "wall_mode": "mass_transfer_only"}):
+        try:
+            Chemistry(temp_C=10.0, **bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"Chemistry accepted {bad}")
+    sc = nominal_scenario("Net3")
+    temps, _ = all_bank_temps()
+    t10 = set(bank_cache_files(sc, temps, cache_dir=CACHE)) | set(bank_cache_files(sc, temps, wall_mode="mass_transfer_only",
+                                                                                     cache_dir=CACHE))
+    allf = wall_bank_cache_files(sc, temps, cache_dir=CACHE)
+    assert t10 <= set(allf) and len(set(allf)) == len(allf) == 6 * 15, (len(t10), len(allf))
+    p = nested_prior(WallBank([], np.zeros(1), {}, wall_pairs(), "wall_er", "full"))
+    assert p[0] == 0.25 and np.allclose(p[1:], 0.05, rtol=0, atol=1e-15) and abs(p.sum() - 1) < 1e-12
+    out.update(tag_T10_E8000_W2500=cache_tag(w), wall_grid_K=list(WALL_ER_HYPOTHESES_K),
+               wall_ratio_20C_over_10C=[round(1.0 / arrhenius(10.0, x), 4) for x in WALL_ER_HYPOTHESES_K],
+               n_task10_files_reused=len(t10), n_new_files_per_network=len(allf) - len(t10))
+    return out
+
+
+@check("seasonal_wall", quick=False)
+def wall_bank_and_model_nest_m_and_m1b():
+    """On the 75-member decay grid, built in memory (cache 'off'): the wall bank's (8000, 8000) block at 10.5 C equals a
+    direct build of task 10's M condition, its (8000, 0) block a direct build of the M1b condition and its (8000, 2500)
+    block a direct build of that condition, bit for bit; at 20 C every pair is the committed grid; at 10.5 C, for a fixed
+    bulk E/R, chlorine never falls as the wall E/R rises.  nested('M') and nested('M1b') are task 10's banks over the
+    same arrays.  The model: M2 fitted on Net3 scenario 0's 8 samples (logged at 10.5 C, predicting 19.5 C) with all its
+    prior mass on H0 and the pairs (b, b) gives M's posterior and hourly predictions; on H0 and the pairs (b, 0), M1b's."""
+    from .chemistry import Chemistry
+    from .seasonal import SeasonalSimGP24, WallSeasonalSimGP24, wall_bank
+    from .simgp import build_grid_24h, simulator_grid_24h
+    sc, X, S, _ = _fitted_net3()
+    pairs = ((5000.0, 0.0), (5000.0, 5000.0), (8000.0, 0.0), (8000.0, 2500.0), (8000.0, 8000.0), (12000.0, 0.0),
+             (12000.0, 12000.0))
+    wb = wall_bank(sc, [10.5, 19.5, 20.0], pairs=pairs, grid="decay", cache_dir=CACHE, cache="off")
+    p0, Z0 = simulator_grid_24h(sc, CACHE, "decay")
+    assert all(np.array_equal(wb.blocks[(20.0, p)], Z0) for p in pairs)
+    for p, cond in (((8000.0, 8000.0), Chemistry(temp_C=10.5, er_K=8000.0)),
+                    ((8000.0, 0.0), Chemistry(temp_C=10.5, er_K=8000.0, wall_mode="mass_transfer_only")),
+                    ((8000.0, 2500.0), Chemistry(temp_C=10.5, er_K=8000.0, wall_er_K=2500.0))):
+        assert np.array_equal(wb.blocks[(10.5, p)], build_grid_24h(sc, "decay", cond=cond)[1]), p
+    z0, z25, z8 = (wb.blocks[(10.5, (8000.0, w))] for w in (0.0, 2500.0, 8000.0))
+    gaps = {"W2500_vs_W0": float((z25 - z0).min()), "W8000_vs_W2500": float((z8 - z25).min())}
+    assert all(v >= -1e-6 for v in gaps.values()), gaps
+    out = {"min_ln_gap_at_10.5C_bulk8000": gaps}
+    H = wb.hypotheses
+    s = S.assign(temp_C=10.5)
+    for name in ("M", "M1b"):
+        nb = wb.nested(name)
+        assert nb.ers == (5000.0, 8000.0, 12000.0) and nb.wall_mode == ("arrhenius" if name == "M" else "mass_transfer_only")
+        keep = [f"B{b:g}_W{(b if name == 'M' else 0.0):g}" for b in nb.ers]
+        assert all(nb.blocks[(T, b)] is wb.blocks[(T, (b, b if name == "M" else 0.0))] for T in nb.temps for b in nb.ers)
+        pm = np.array([1.0 if h == "H0" or h in keep else 0.0 for h in H])
+        m2 = WallSeasonalSimGP24(sc, X, wb, prior_mass=pm / pm.sum(), seed=0, cache_dir=CACHE).fit(s, target_temp_C=19.5)
+        mm = SeasonalSimGP24(sc, X, nb, seed=0, cache_dir=CACHE).fit(s, target_temp_C=19.5)
+        idx = [0] + [H.index(k) for k in keep]
+        W2 = m2.W_.reshape(len(H), -1, m2.W_.shape[1])[idx].reshape(-1, m2.W_.shape[1])
+        dW = float(np.abs(W2 - mm.W_).max())
+        a, b = m2.predict_hours(), mm.predict_hours()
+        d_mu, d_sd = float(np.abs(a[0] - b[0]).max()), float(np.abs(a[1] - b[1]).max())
+        assert dW < 1e-12 and d_mu < 1e-10 and d_sd < 1e-10, (name, dW, d_mu, d_sd)
+        assert abs(m2.kb20() - mm.kb20()) < 1e-12
+        out[f"M2_as_{name}"] = {"max_abs_diff_W": dW, "max_abs_diff_hourly_z_mu": d_mu, "max_abs_diff_hourly_z_sd": d_sd}
+    m2 = WallSeasonalSimGP24(sc, X, wb, seed=0, cache_dir=CACHE).fit(s, target_temp_C=19.5)
+    pc = m2.posterior_columns()
+    assert abs(pc["P_H0"] + sum(v for k, v in pc.items() if k.startswith("P_W")) - 1) < 1e-12
+    assert abs(sum(v for k, v in pc.items() if k.startswith("P_W")) - sum(v for k, v in pc.items() if k.startswith("P_B"))) < 1e-12
+    return out
+
+
+SEASON2_ROWS_SCRIPT = r'''
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from residualmap.seasonal import run_task, wall_bank
+from residualmap.simulate import nominal_scenario
+cache = sys.argv[1]
+sc = nominal_scenario("Net3")
+wb = wall_bank(sc, [12.5, 17.5, 19.5, 20.0], cache_dir=cache, cache="read")
+res = run_task("Net3", 16, "V1", wb.nested("M"), wb.nested("M1b"), None, cache, targets=(10,),
+               models={"B0", "M", "M1b", "M2"}, temp_errors=(), truth_wall_law="arrhenius", bank_m2=wb)
+def conv(v):
+    return v if isinstance(v, (str, bool)) else float(v)
+print("SEASON2_ROWS_JSON " + json.dumps([{k: conv(v) for k, v in r.items()} for r in res["rows"]]))
+'''
+
+
+@check("seasonal_wall", quick=False)
+def season2_outputs_reproduce():
+    """Task 10b's committed outputs: summary_season2_<net>.json for Net3 and Net2 carries A2 to A7 and R1 for both worlds,
+    and its CSVs exist and are under 1 MB; recomputing Net3 seed 16, world W2, V1 (fit July to September, predict
+    October and December; B0, M, M1b, M2 and the oracle) in a single-threaded subprocess gives the committed
+    July-to-September-to-December rows (one month, so the aggregated row is that month's) and the October fit's row of
+    the windows file, to the CSVs' 6 significant digits."""
+    from .seasonal import CSV_FLOAT_10B, SUM_COLS_10B
+    out = {}
+    for net in SEASON_NETS:
+        d = json.load(open(os.path.join(OUT_DIR, f"summary_season2_{net}.json")))
+        for w in ("W1", "W2"):
+            assert all(k in d["acceptance"][w] for k in ("A2", "A3", "A4", "A5", "A6", "A7", "R1")), (net, w)
+        sizes = {f: os.path.getsize(os.path.join(OUT_DIR, f)) for f in (f"season2_{net}.csv", f"season2_windows_{net}.csv")}
+        assert all(v < 1_000_000 for v in sizes.values()), sizes
+        out[net] = {"A7_stop": {w: d["acceptance"][w]["A7"]["stop"] for w in ("W1", "W2")}, "csv_bytes": sizes}
+    r = subprocess.run([PY, "-c", SEASON2_ROWS_SCRIPT, CACHE], cwd=os.getcwd(), capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": REPO, **SINGLE_THREAD_ENV})
+    line = [x for x in r.stdout.splitlines() if x.startswith("SEASON2_ROWS_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"recompute failed (exit {r.returncode}): {r.stderr[-2000:]}")
+    rows = pd.DataFrame(json.loads(line[-1][len("SEASON2_ROWS_JSON "):]))
+    agg = pd.read_csv(os.path.join(OUT_DIR, "season2_Net3.csv"), float_precision="round_trip")
+    win = pd.read_csv(os.path.join(OUT_DIR, "season2_windows_Net3.csv"), float_precision="round_trip")
+
+    def same(a, b):
+        if pd.isna(a) and pd.isna(b):
+            return True
+        return float(CSV_FLOAT_10B % float(a)) == float(b)
+    bad, n = {}, 0
+    for model in ("B0", "M", "M1b", "M2", "oracle"):
+        got = rows[(rows.test == "jul_sep_to_dec") & (rows.model == model)]
+        want = agg[(agg.world == "W2") & (agg.variant == "V1") & (agg.test == "jul_sep_to_dec") & (agg.seed == 16)
+                   & (agg.model == model) & (agg.temp_error == "none")]
+        assert len(got) == 1 and len(want) == 1 and int(want.n_months.iloc[0]) == 1, (model, len(got), len(want))
+        for c in SUM_COLS_10B:
+            n += 1
+            if not same(got[c].iloc[0], want[c].iloc[0]):
+                bad[f"{model}.{c}"] = (got[c].iloc[0], want[c].iloc[0])
+    wrow = win[(win.world == "W2") & (win.variant == "V1") & (win.seed == 16) & (win.month == 10)].iloc[0]
+    for model in ("B0", "M", "M1b", "M2"):
+        g = rows[(rows.test == "rolling") & (rows.model == model)].iloc[0]
+        for c in [c for c in win.columns if c.startswith(f"{model}_")]:
+            n += 1
+            if not same(g[c[len(model) + 1:]], wrow[c]):
+                bad[c] = (g[c[len(model) + 1:]], wrow[c])
+    assert not bad, bad
+    return {**out, "net3_W2_seed16_V1_values_compared": n, "identical_to_6_significant_digits": not bad}
 
 
 # ----------------------------------------------------------------------------- full-run anchors
