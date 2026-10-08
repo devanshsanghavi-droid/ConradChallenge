@@ -10,9 +10,12 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 63,
+ "n_pass": 68,
  "n_fail": 0,
  "n_skipped": 0,
+ "run_log_only": {
+  "no_listed_names_in_tracked_files": "reads a private list kept outside the repository (RESIDUALMAP_NAMES_CSV) and is skipped without it, so its result is in outputs/chem/checks_run.json only; a failure still fails the run"
+ },
  "checks": [
   {
    "name": "arrhenius_values",
@@ -1157,6 +1160,208 @@
      "needs_sample_note": true,
      "route_age_column": true,
      "pdf_button": true
+    }
+   }
+  },
+  {
+   "name": "capabilities_table_reads_outputs",
+   "group": "task14",
+   "pass": true,
+   "detail": {
+    "rows": [
+     "Water age",
+     "Organics and chlorine demand",
+     "Chlorine type",
+     "Temperature"
+    ],
+    "numbers": {
+     "age_cov_max_Net3": 0.7907608695652174,
+     "age_cov_max_Net2": 0.7785714285714285,
+     "age_cov_max_ky4": 0.8106508875739645,
+     "age_band_label_Net3": "range across demand and roughness errors",
+     "wall_share_mae_Net3": 0.0643828057218343,
+     "age_lb_max_Net3": 87,
+     "age_lb_max_Net2": 29,
+     "age_lb_max_ky4": 799,
+     "age_n_js_Net3": 736,
+     "age_n_js_Net2": 280,
+     "age_n_js_ky4": 1918,
+     "age_n_seeds_Net3": 8,
+     "age_n_seeds_Net2": 8,
+     "age_n_seeds_ky4": 2,
+     "toc_readings_ratio_Net3": 0.988317,
+     "toc_first_storm_ratio_Net3": 0.93801,
+     "toc_first_storm_pass_Net3": false,
+     "toc_adopted_Net3": false,
+     "toc_adopted_Net2": false,
+     "audit_oldest_bias_Net3": -0.0761194,
+     "lowkb_candidate": true,
+     "ca_recall_straddle8_Net3": 0.8899082568807339,
+     "ca_low_straddle8_Net3": 109.0,
+     "ca_cov90_straddle8_Net3": 0.7261904761904762,
+     "ca_cov90_random_Net3": 0.896,
+     "ca_cov90_random_Net2": 0.887,
+     "ca_free_floor_mass_Net3": 0.601,
+     "ca_false_alarms_mode_Net3": 37.0,
+     "ca_false_alarms_free_Net3": 94.0,
+     "ca_experimental_Net3": false,
+     "ca_experimental_Net2": false,
+     "temp_m_julsep_rmse_Net3": 0.13713298640172203,
+     "temp_b0_julsep_rmse_Net3": 0.10052136603032709,
+     "temp_m_stop_Net3": true,
+     "temp_m_stop_Net2": true,
+     "temp_m2_ratio_Net3_W1": 0.916057,
+     "temp_m2_ratio_Net3_W2": 0.774223,
+     "temp_m2_ratio_Net2_W1": 0.902373,
+     "temp_m2_ratio_Net2_W2": 0.807121,
+     "temp_m2_stop_Net3_W1": true,
+     "temp_m2_stop_Net3_W2": true,
+     "temp_m2_stop_Net2_W1": true,
+     "temp_m2_stop_Net2_W2": false,
+     "temp_m2_adopted_Net3": false,
+     "temp_m2_adopted_Net2": false,
+     "audit_n_cells": 16,
+     "audit_n_within": 15,
+     "ca_found_straddle8_Net3": 97,
+     "temp_m2_ratio_min": 0.774223,
+     "temp_m2_ratio_max": 0.916057,
+     "temp_m2_ratio_min_world": "W2",
+     "temp_m2_n_stop": 3,
+     "temp_adopted": false,
+     "toc_adopted": false,
+     "age_n_junctions_Net3": 92,
+     "age_n_junctions_Net2": 35,
+     "age_n_junctions_ky4": 959,
+     "ca_experimental": false
+    },
+    "pdf_lines_free": [
+     "Disinfectant: free chlorine. Measured species: free chlorine (mg/L as Cl2); every reading and map value is free chlorine.",
+     "Minimum residual: 0.2 mg/L free chlorine: a common operating minimum, not a California rule (California requires a detectable residual).",
+     "Season: water temperature and organics (TOC) are not inputs; their effect is absorbed into the decay rates, refitted from the last three months of samples (temperature and TOC models were tested in simulation and not adopted).",
+     "Validated in simulation only: no real grab-sample data has been scored yet."
+    ]
+   }
+  },
+  {
+   "name": "grid_edge_warning_text",
+   "group": "task14",
+   "pass": true,
+   "detail": {
+    "full": "Grid edge: 100% of the calibration sits on the lowest bulk decay rate the grid allows (0.1 per day). The water may need a rate outside the grid, so treat the map with more caution there. In simulation the free-chlorine fit often sat at this floor of 0.10 per day (journal, tasks 10b, 11 and 13), and today's map was biased low in those simulations; the cause is not settled. A grid with lower rates was tested and is a candidate, not yet the default.",
+    "chloramine": "Grid edge: 100% of the calibration sits on the highest wall decay rate the grid allows (1 m/day). The water may need a rate outside the grid, so treat the map with more caution there."
+   }
+  },
+  {
+   "name": "app_task14_runs",
+   "group": "task14",
+   "pass": true,
+   "detail": {
+    "default": {
+     "violations": 41,
+     "junctions": 92,
+     "found": 36,
+     "unsampled_violations": 36,
+     "false_alarms": 1,
+     "sample_mean_mgL": 0.53,
+     "flagged": 42
+    },
+    "hourly_flagged": "25 of 92",
+    "net2_flagged": "28 of 35",
+    "chloramine_net3": {
+     "flagged": "24 of 92",
+     "violations": 16,
+     "junctions": 92,
+     "found": 13,
+     "unsampled_violations": 13,
+     "false_alarms": 7,
+     "sample_mean_mgL": 1.27,
+     "calibrated": "0.08 /d \u00b7 0.30 m/d"
+    },
+    "msx_fallback_net2": {
+     "flagged": "13 of 35",
+     "violations": 7,
+     "junctions": 35,
+     "found": 6,
+     "unsampled_violations": 6,
+     "false_alarms": 5,
+     "sample_mean_mgL": 1.06
+    },
+    "upload_flagged": "42 of 92",
+    "upload_grid_built_in_the_app": true,
+    "ky4_chloramine_refused": true,
+    "grid_edge_warnings": {
+     "default": 0,
+     "hourly": 0,
+     "net2": 0,
+     "chloramine_net3": 0,
+     "ky4_chloramine": 0,
+     "msx_fallback": 0,
+     "upload": 0
+    }
+   }
+  },
+  {
+   "name": "numbers_trace_to_outputs",
+   "group": "task14",
+   "pass": true,
+   "detail": {
+    "unexplained": 0,
+    "registry_ok": 147,
+    "registry_negative_controls_fail": 2,
+    "classified": {
+     "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
+     "citation": 21,
+     "code or path": 965,
+     "date": 66,
+     "identifier": 547,
+     "link target": 12,
+     "run cost (logs, df)": 6,
+     "seed range": 20,
+     "setting or literature value written in the code": 14,
+     "time of day": 46
+    },
+    "traced": {
+     "iteration-4 outputs": 188,
+     "file cited in its section": 3050,
+     "file cited in its paragraph": 4035,
+     "outputs": 5
+    },
+    "n_tokens": 7299,
+    "power_caught_of_tested": {
+     "decimal": [
+      757,
+      8469
+     ],
+     "integer": [
+      784,
+      5323
+     ]
+    }
+   }
+  },
+  {
+   "name": "no_dashes_in_iteration4_text",
+   "group": "task14",
+   "pass": true,
+   "detail": {
+    "iteration4_texts_checked": 21,
+    "older_files": {
+     "docs/pilot_protocol.md": [
+      21,
+      6
+     ],
+     "app.py": [
+      8,
+      1
+     ],
+     "docs/feature_dictionary.md": [
+      3,
+      1
+     ],
+     "README.md": [
+      27,
+      28
+     ]
     }
    }
   },

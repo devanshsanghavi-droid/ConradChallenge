@@ -6,3 +6,5 @@ scipy
 networkx
 matplotlib
 streamlit>=1.30
+# the saved checks only (python -m residualmap.checks): reads the app's PDF (iteration 4, task 14)
+pypdf

@@ -4130,6 +4130,407 @@
     "sample_mean_mgL": 0.53,
     "reveal_text": "True daily-minimum violations: **41 of 92** junctions. On the unsampled junctions the map found **36 of 36** (recall 100%) with 1 false alarms. Mean of your samples: 0.53 mg/L \u2014 which flags nothing."
    }
+  },
+  "post_task14": {
+   "entry_written": "2026-10-07 14:49",
+   "outputs_written_between": "2026-10-07 14:43:01 and 2026-10-07 14:49:59 (file times)",
+   "workdir": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/task14/repro",
+   "code": "git 1fcf39a plus local changes to 4 files",
+   "commands": {
+    "net3": [
+     "residualmap.experiment Net3 8",
+     "residualmap.experiment Net3 8 --structural=persistent"
+    ],
+    "net2": [
+     "residualmap.experiment Net2 8"
+    ],
+    "pilot": [
+     "residualmap.pilot --synthetic Net3"
+    ]
+   },
+   "runs": {
+    "residualmap.experiment Net3 8": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/task14/repro/net3",
+     "started": "2026-10-07 14:42:42",
+     "ended": "2026-10-07 14:45:18",
+     "seconds": 155.6,
+     "returncode": 0
+    },
+    "residualmap.experiment Net3 8 --structural=persistent": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/task14/repro/net3",
+     "started": "2026-10-07 14:45:18",
+     "ended": "2026-10-07 14:47:51",
+     "seconds": 152.7,
+     "returncode": 0
+    },
+    "residualmap.experiment Net2 8": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/task14/repro/net2",
+     "started": "2026-10-07 14:47:51",
+     "ended": "2026-10-07 14:49:57",
+     "seconds": 125.9,
+     "returncode": 0
+    },
+    "residualmap.pilot --synthetic Net3": {
+     "cwd": "/private/tmp/claude-502/-Users-devansh-Downloads-conradwater/078f7e10-1c77-4dd4-aba8-2ea4850803da/scratchpad/chem/build/task14/repro/pilot",
+     "started": "2026-10-07 14:49:57",
+     "ended": "2026-10-07 14:49:59",
+     "seconds": 2.0,
+     "returncode": 0
+    }
+   },
+   "all_runs_ok": true,
+   "not_written_by_run": [],
+   "note": "task 14, final, after the review fixes: app, capabilities.py, numbers.py, checks.py and requirements.txt edits; no module the experiments import was edited",
+   "vs_committed": {
+    "files": {
+     "curves_Net3.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "stress_test_Net3.png": {
+      "byte_identical": true
+     },
+     "summary_Net3.json": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/curves_time_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/day_vs_night_predicted_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/features_Net3_seed0.csv": {
+      "rows": 92,
+      "byte_identical": true,
+      "rows_identical": 92,
+      "rows_drifting": 0
+     },
+     "structural_persistent/map_Net3_n15.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/map_Net3_n8.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/reliability_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/results_Net3.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_routes_Net3.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "structural_persistent/results_time_Net3.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "structural_persistent/route_comparison_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/strategies_Net3.png": {
+      "byte_identical": true
+     },
+     "structural_persistent/summary_Net3.json": {
+      "byte_identical": true
+     },
+     "curves_Net2.png": {
+      "byte_identical": true
+     },
+     "curves_time_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_Net2.png": {
+      "byte_identical": true
+     },
+     "day_vs_night_predicted_Net2.png": {
+      "byte_identical": true
+     },
+     "features_Net2_seed0.csv": {
+      "rows": 35,
+      "byte_identical": true,
+      "rows_identical": 35,
+      "rows_drifting": 0
+     },
+     "map_Net2_n15.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n3.png": {
+      "byte_identical": true
+     },
+     "map_Net2_n8.png": {
+      "byte_identical": true
+     },
+     "reliability_Net2.png": {
+      "byte_identical": true
+     },
+     "results_Net2.csv": {
+      "rows": 1192,
+      "byte_identical": true,
+      "rows_identical": 1192,
+      "rows_drifting": 0
+     },
+     "results_routes_Net2.csv": {
+      "rows": 72,
+      "byte_identical": true,
+      "rows_identical": 72,
+      "rows_drifting": 0
+     },
+     "results_time_Net2.csv": {
+      "rows": 728,
+      "byte_identical": true,
+      "rows_identical": 728,
+      "rows_drifting": 0
+     },
+     "route_comparison_Net2.png": {
+      "byte_identical": true
+     },
+     "strategies_Net2.png": {
+      "byte_identical": true
+     },
+     "summary_Net2.json": {
+      "byte_identical": true
+     },
+     "pilot/predictions_Net3.csv": {
+      "rows": 39,
+      "byte_identical": true,
+      "rows_identical": 39,
+      "rows_drifting": 0
+     },
+     "pilot/synthetic_log_Net3.csv": {
+      "rows": 78,
+      "byte_identical": true,
+      "rows_identical": 78,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.csv": {
+      "rows": 9,
+      "byte_identical": true,
+      "rows_identical": 9,
+      "rows_drifting": 0
+     },
+     "pilot/validation_Net3.json": {
+      "byte_identical": true
+     }
+    },
+    "n_files": 50,
+    "n_byte_identical": 50,
+    "not_byte_identical": [],
+    "drifting_rows": [],
+    "not_compared_not_written_by_run": [],
+    "committed_outputs_not_regenerated": [
+     "outputs/chem/audit_Net2.csv",
+     "outputs/chem/audit_Net3.csv",
+     "outputs/chem/baseline_reproduction.json",
+     "outputs/chem/checks_report.json",
+     "outputs/chem/cost_of_first_order_Net2.png",
+     "outputs/chem/cost_of_first_order_Net3.png",
+     "outputs/chem/dose_step_Net3.png",
+     "outputs/chem/error_by_age_2ra_Net2.csv",
+     "outputs/chem/error_by_age_2ra_Net2.png",
+     "outputs/chem/error_by_age_2ra_Net3.csv",
+     "outputs/chem/error_by_age_2ra_Net3.png",
+     "outputs/chem/error_by_age_Net2.csv",
+     "outputs/chem/error_by_age_Net3.csv",
+     "outputs/chem/error_by_age_ky4.csv",
+     "outputs/chem/first_storm_Net2.png",
+     "outputs/chem/first_storm_Net3.png",
+     "outputs/chem/kb_by_month_Net2.png",
+     "outputs/chem/kb_by_month_Net3.png",
+     "outputs/chem/organics_Net2.csv",
+     "outputs/chem/organics_Net2.png",
+     "outputs/chem/organics_Net3.csv",
+     "outputs/chem/organics_Net3.png",
+     "outputs/chem/organics_seasonal_Net3.csv",
+     "outputs/chem/organics_windows_Net2.csv",
+     "outputs/chem/organics_windows_Net3.csv",
+     "outputs/chem/season2_Net2.csv",
+     "outputs/chem/season2_Net2.png",
+     "outputs/chem/season2_Net3.csv",
+     "outputs/chem/season2_Net3.png",
+     "outputs/chem/season2_windows_Net2.csv",
+     "outputs/chem/season2_windows_Net3.csv",
+     "outputs/chem/season_Net2.csv",
+     "outputs/chem/season_Net2.png",
+     "outputs/chem/season_Net3.csv",
+     "outputs/chem/season_Net3.png",
+     "outputs/chem/summary_audit_Net2.json",
+     "outputs/chem/summary_audit_Net3.json",
+     "outputs/chem/summary_organics_Net2.json",
+     "outputs/chem/summary_organics_Net3.json",
+     "outputs/chem/summary_organics_seasonal_Net3.json",
+     "outputs/chem/summary_season2_Net2.json",
+     "outputs/chem/summary_season2_Net3.json",
+     "outputs/chem/summary_season_Net2.json",
+     "outputs/chem/summary_season_Net3.json",
+     "outputs/chem/summer_forecast_Net2.png",
+     "outputs/chem/summer_forecast_Net3.png",
+     "outputs/chem/task10_mechanism_checks.json",
+     "outputs/chem/task10b_grid_edges_Net2.json",
+     "outputs/chem/task10b_grid_edges_Net3.json",
+     "outputs/chem/task11_review_Net2.json",
+     "outputs/chem/task11_review_Net3.json",
+     "outputs/chem/wall_posterior_Net2.png",
+     "outputs/chem/wall_posterior_Net3.png",
+     "outputs/chem/water_age_Net2.csv",
+     "outputs/chem/water_age_Net2.json",
+     "outputs/chem/water_age_Net2.png",
+     "outputs/chem/water_age_Net3.csv",
+     "outputs/chem/water_age_Net3.json",
+     "outputs/chem/water_age_Net3.png",
+     "outputs/chem/water_age_junctions_Net2.csv",
+     "outputs/chem/water_age_junctions_Net3.csv",
+     "outputs/chem/water_age_junctions_ky4.csv",
+     "outputs/chem/water_age_ky4.csv",
+     "outputs/chem/water_age_ky4.json",
+     "outputs/chem/water_age_ky4.png",
+     "outputs/chem_2ra/first_order/results_Net2.csv",
+     "outputs/chem_2ra/first_order/results_Net3.csv",
+     "outputs/chem_2ra/first_order/results_routes_Net2.csv",
+     "outputs/chem_2ra/first_order/results_routes_Net3.csv",
+     "outputs/chem_2ra/first_order/results_time_Net2.csv",
+     "outputs/chem_2ra/first_order/results_time_Net3.csv",
+     "outputs/chem_2ra/first_order/summary_Net2.json",
+     "outputs/chem_2ra/first_order/summary_Net3.json",
+     "outputs/chem_2ra/match96/results_Net2.csv",
+     "outputs/chem_2ra/match96/results_routes_Net2.csv",
+     "outputs/chem_2ra/match96/results_time_Net2.csv",
+     "outputs/chem_2ra/match96/summary_Net2.json",
+     "outputs/chem_2ra/near_threshold_Net2.csv",
+     "outputs/chem_2ra/near_threshold_Net3.csv",
+     "outputs/chem_2ra/results_Net2.csv",
+     "outputs/chem_2ra/results_Net3.csv",
+     "outputs/chem_2ra/results_full2r_Net2.csv",
+     "outputs/chem_2ra/results_lowkb_Net2.csv",
+     "outputs/chem_2ra/results_lowkb_Net3.csv",
+     "outputs/chem_2ra/results_routes_Net2.csv",
+     "outputs/chem_2ra/results_routes_Net3.csv",
+     "outputs/chem_2ra/results_time_Net2.csv",
+     "outputs/chem_2ra/results_time_Net3.csv",
+     "outputs/chem_2ra/scaling.json",
+     "outputs/chem_2ra/summary_Net2.json",
+     "outputs/chem_2ra/summary_Net3.json",
+     "outputs/chloramine/calibration_chloramine.json",
+     "outputs/chloramine/chloramine_mode_vs_free_grid_Net2.png",
+     "outputs/chloramine/chloramine_mode_vs_free_grid_Net3.png",
+     "outputs/chloramine/kb_prior_table.csv",
+     "outputs/chloramine/nitrification_stress_Net3.png",
+     "outputs/chloramine/results_time_Net2.csv",
+     "outputs/chloramine/results_time_Net3.csv",
+     "outputs/chloramine/summary_chloramine_Net2.json",
+     "outputs/chloramine/summary_chloramine_Net3.json",
+     "outputs/chloramine/truths_Net2.csv",
+     "outputs/chloramine/truths_Net3.csv",
+     "outputs/curves_ky4.png",
+     "outputs/curves_time_ky4.png",
+     "outputs/day_vs_night_ky4.png",
+     "outputs/day_vs_night_predicted_ky4.png",
+     "outputs/features_ky4_seed0.csv",
+     "outputs/map_ky4_n15.png",
+     "outputs/map_ky4_n3.png",
+     "outputs/map_ky4_n8.png",
+     "outputs/reliability_ky4.png",
+     "outputs/results_ky4.csv",
+     "outputs/results_routes_ky4.csv",
+     "outputs/results_time_ky4.csv",
+     "outputs/route_comparison_ky4.png",
+     "outputs/strategies_ky4.png",
+     "outputs/structural/curves_Net3.png",
+     "outputs/structural/curves_time_Net3.png",
+     "outputs/structural/day_vs_night_Net3.png",
+     "outputs/structural/day_vs_night_predicted_Net3.png",
+     "outputs/structural/features_Net3_seed0.csv",
+     "outputs/structural/map_Net3_n15.png",
+     "outputs/structural/map_Net3_n3.png",
+     "outputs/structural/map_Net3_n8.png",
+     "outputs/structural/reliability_Net3.png",
+     "outputs/structural/results_Net3.csv",
+     "outputs/structural/results_time_Net3.csv",
+     "outputs/structural/strategies_Net3.png",
+     "outputs/structural/summary_Net3.json",
+     "outputs/summary_ky4.json"
+    ]
+   },
+   "app_default_demo": {
+    "code_root": "/Users/devansh/Downloads/conradwater",
+    "run_at": "2026-10-07 14:50",
+    "matches_changelog": true,
+    "violations": 41,
+    "junctions": 92,
+    "found": 36,
+    "unsampled_violations": 36,
+    "false_alarms": 1,
+    "flagged": 42,
+    "flagged_label": "Junctions likely below 0.2 mg/L (daily minimum)",
+    "sample_mean_mgL": 0.53,
+    "reveal_text": "True daily-minimum violations: **41 of 92** junctions. On the unsampled junctions the map found **36 of 36** (recall 100%) with 1 false alarms. Mean of your samples: 0.53 mg/L \u2014 which flags nothing."
+   }
   }
  },
  "drifting_rows_pre_recorded": [],

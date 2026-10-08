@@ -147,6 +147,20 @@ residualmap/experiment.py  the sequential-sampling loops, metrics, routes, all f
 residualmap/pilot.py       hold-out validation on a real or synthetic grab log
 app.py                     the Streamlit app
 docs/pilot_protocol.md     the pilot protocol
+
+iteration 4 (tasks 8 to 14):
+residualmap/chemistry.py   Arrhenius factor, water viscosity and diffusivity, the assumed seasonal and TOC schedules, Chemistry conditions and cache_tag, the unit recipe for EPANET's nonlinear kinetics, default thresholds and their notes
+residualmap/age.py         water age at the grid's 9 hydraulic settings, the posterior-weighted age, the wall-versus-water loss split
+residualmap/experiment_chem.py  the water-age experiment (subcommand age)
+residualmap/seasonal.py    temperature banks, SeasonalSimGP24 (task 10), WallSeasonalSimGP24 (task 10b), the 12-month experiment; tested, not adopted
+residualmap/organics.py    the TOC bank, TocSimGP24 (M_TOC), the Clark-truth experiment; tested, not adopted
+residualmap/chloramine.py  the chloramine mode: EPA's chloramine model (Python port and MSX), the truths, the kb prior, the nitrification watch, the experiment
+residualmap/msx.py         the EPANET-MSX runner (library preload, temporary working directory, compiled reactions with a loud fallback) and the two-reactant truth
+residualmap/chemexp.py     the two-reactant audit (task 13): oracle, age deciles, dose step, the opt-in low-rate grid, the gated two-rate model
+residualmap/capabilities.py  what the model accounts for: the app's table, the PDF's chemistry lines and the grid-edge warning, every result number read from outputs/ (task 14)
+residualmap/numbers.py     every iteration-4 number in the README and the journal traced to outputs/ (task 14)
+residualmap/checks.py      the saved checks, the rerun-and-compare against the committed outputs, --numbers
+app.py                     iteration 4 adds the disinfectant choice, the water-age and loss panels, the nitrification watch, the capability table, the grid-edge warning and the PDF's chemistry lines
 ```
 
 ## Bug-risk and efficiency scores, for the next pass
@@ -156,24 +170,39 @@ Score 10 means "this decides the headline numbers, check every line"; 1 means co
 | score | feature | why it matters, what to check |
 |---|---|---|
 | 10 | `simgp.py::SimGP24.predict_daily_min` | Produces P(daily min < 0.2), the product's main number. **Second pass, done:** the block algebra was checked against `gp.predict(return_cov=True)` on 3 seeds x 2 sample sizes (max difference 1e-17), the sibling draw's mean and variance against `local_hydraulic_var` (exact), the grid-order assumption (now asserted by `check_grid_order`). No bug. One real fragility was found and fixed: about 5 of 24 eigenvalues per block sit below the 1e-6 floor, so their eigenvectors were arbitrary and any 1e-16 change upstream re-mixed the random draws. The draw now uses the Cholesky factor of the floored matrix (basis-independent; a 1e-15 perturbation moves results by 1e-13 instead of Monte-Carlo noise). The junction loop is batched (`_gp_blocks`), and draws went from 256 to 1024 (P(below) error about 0.004 on average against a 20k reference). |
+| 10 | `seasonal.py` bank block alignment and per-sample month scoring (iteration 4, tasks 10 and 10b) | Every temperature-bank number rests on each hypothesis block keeping the committed grid's member order and on each grab sample being scored at its own month's temperature. Saved checks: `seasonal_bank_block_order`, `seasonal_model_nests_simgp24`, `wall_bank_and_model_nest_m_and_m1b`. Not adopted, so no default number depends on it; it matters again the day a temperature model is revisited. |
+| 10 | `chemistry.py::cache_tag` (iteration 4) | Decides which cached grid a condition is served. A field left out of the hash serves a grid built under other physics. It hashes `CHEM_CACHE_VERSION`, the grid's axes, `FLOOR`, the hours, the quality step and run length, and the condition; the threshold, an unset wall E/R and an unset phi are left out on purpose. Bump `CHEM_CACHE_VERSION` whenever a condition's physics changes. Saved checks: `cache_tags_and_names`, `wall_condition_canonical_forms`. |
 | 9 | `simgp.py::grid_loglik`, `grid_weights`, `grid_dose_weights` | Every weight in the model. **Second pass, done:** checked against a brute-force joint posterior on a small problem for both the Gaussian and Student-t families (max difference 4e-16, weights sum to 1). The dose sign convention (member k at dose d predicts Z_k + offs_d, scored as Z_k against z_obs - offs_d) is now written in the docstring. No bug. |
 | 9 | `simgp.py::posterior_moments` (was two copies in `SimGP._calibrate`, `SimGP24.fit`, `fit_prior`) | **Second pass, done:** the three copies of the expanded-moment formulas are one helper; the pointless `w * wo / max(w, 1e-300)` factor is gone. Checked against a brute-force mean and variance over all (member, dose) pairs (1e-16) and the snapshot model's predictions reproduce the committed results file exactly. No bug. |
+| 9 | `simulate.py::build_scenario` chemistry draws (iteration 4) | The committed draw order must not move; the chemistry truths take their own draws from `default_rng(20_000 + seed)` (free chlorine) or `default_rng(40_000 + seed)` (chloramine), always in a fixed order, and the chloramine and two-reactant truths consume the committed draws in their committed order. Saved checks: `neutral_chemistry_is_bit_identical`, `chloramine_truth_draws_twin_and_cleanup`, `two_reactant_truth_draws_and_refusals`. |
+| 9 | `chemistry.py` unit recipe for EPANET's nonlinear kinetics (iteration 4) | Without it, order-2 kinetics in the repo's legacy units are wrong by orders of magnitude (task 8, finding 3). Sources at dose/1000 kg/m3, every initial quality 0, a tight quality tolerance, results scaled back. Saved checks: `chain_kinetics_match_closed_forms`, `chain_legacy_units_break_order2`. |
+| 9 | `msx.py` units, sources and the temporary working directory (iteration 4) | MSX's own unit conventions, SETPOINT sources at reservoirs, per-pipe parameters, the result-column relabel for WNTR 1.5, the Reynolds-number viscosity correction (task 13), and `os.chdir`, which is process-wide: one MSX run at a time per process, and the app runs it in a separate process. Saved checks: `msx_port_matches_batch_port`, `msx_first_order_matches_epanet`, `first_order_msx_wall_matches_epanet_at_temperatures`, `msx_falls_back_to_uncompiled`. |
+| 9 | `pilot.py` 12-month `month_seed` (iteration 4) | The committed six-month formula repeats operating months across seeds when stretched to twelve; the seasonal path uses its own formula, distinct for any seed up to 100 months, and the committed log stays draw for draw. Saved check: `pilot_plant_log_path`. |
 | 8 | `simgp.py::local_hydraulic_var` | The reshape `Z.reshape(nd, n_hyd, ...)` assumes `itertools.product` order with the two hydraulic axes last and fastest. **Second pass:** `check_grid_order` now raises if that order is broken, in both models. Still open: `Zr.var(axis=1)` does not depend on the samples and is recomputed on every fit (0.1 s on ky4). |
 | 8 | `experiment.py::_metrics`, `_coverage_levels`, `_metrics_time` | Every reported number flows through these. Conventions to check: recall and precision default to 1.0 when there is nothing to find (inflates averages on Net2's snapshot, where 0 to 5 junctions are low); coverage is computed in mg/L space; `_metrics_time` needs a `p_below` column and `lo50/hi50` etc. only if present. |
 | 8 | `simulate.py::build_scenario`, `nominal_scenario`, `month_seed` | The truth generator. The rng draw order (bulk kb, then per pipe wall and roughness, then global demand, per-node demand, dose) must stay byte-identical or every committed number changes; `month_seed` splits the draws across two generators. Structural noise is applied before the truth run. Check that `nominal_scenario` never sees anything from the truth. |
 | 8 | `app.py` | User-facing. Check: a minimum residual other than 0.2 uses a normal approximation on ln(daily min) for P(below); the `data_editor` key is a string built from the sidebar state (a hack to reset rows); the PDF is regenerated on every rerun (about 1 s); `st.cache_resource` returns shared mutable objects (`sc`, `X`); uploaded files are named by content hash; `frac_by_hour` uses the median only. |
+| 8 | threshold threading (iteration 4: `SimGP24(threshold=...)`, `experiment.run_scenario_time`, `_metrics_time`, the acquisition, `route.plan_route`) | A threshold other than 0.2 must reach every P(below), flag, recall, route and PDF number. Task 8 found four app places stuck at 0.2 (fixed in task 9); task 12 threaded it through the experiment. Saved checks: `threshold_and_monte_carlo_p_below`, `route_reason_default_unchanged_age_opt_in`, `not_testable_is_never_one`. |
+| 8 | chloramine grid ranges and `LIK_SD_CA` (iteration 4: `simgp.GRIDS['chloramine']`, `DOSES_CA`) | Chosen so the truth's range sits inside the grid with margin (unlike the free grid's 0.10 per day floor), with the likelihood scale set by a rule on unscored seeds; a guard keeps the chloramine grid and a chloramine condition together. A new truth or a real system outside these ranges shows as edge mass. Saved checks: `chloramine_model_prior_and_nesting`, `chloramine_built_and_kept_separate`. |
+| 8 | `pilot.py::load_log` species guard (iteration 4) | A grab log carries `free_chlorine_mgL` or `total_chlorine_mgL`, never both, and must match `--disinfectant`; anything else is refused with the column to drop. Saved check: `pilot_log_species_never_mixed`. |
 | 7 | `simgp.py::simulator_grid_24h` | Parallel EPANET runs with `ProcessPoolExecutor` (spawn on macOS) and a temp-file prefix per run. Cache file name carries grid name and dose but not `GRIDS` contents: editing the grids without deleting `outputs/cache/*.pkl` loads stale members. Efficiency: the pickle (62 MB on ky4) is re-read every time a `SimGP`/`SimGP24` is constructed, dozens of times per seed. An in-process cache keyed by path would be the single biggest speed-up. |
 | 7 | `simgp.py::SimGP24.__init__`, `_design`, `predict_hours` | Standardisation uses the full (junction, hour) grid, not the samples. `predict_hours` sets `self.z_sd_acq_` as a side effect that `acquire_time` and `plan_route` rely on; if anything calls them before `predict_hours`, it fails. Kernel bounds: the hour-varying inputs (columns 0, -2, -1) get a 1.0 floor. Efficiency: `Xall_` (24J x 8) rebuilt per instance. |
 | 7 | `route.py::plan_route` | Greedy pick with repulsion `exp(-d/ell)`, hour capacity `ceil(K/len(hours))`, `exclude` list, reason strings that truncate in the PDF. Depends on `model.z_sd_acq_`. Check the fallback when all hours are at capacity (cannot happen with the current cap, but there is no guard). |
 | 7 | `simulate.py::simulate_nominal_chlorine` | The wall coefficient is computed from the nominal roughness before the roughness multiplier is applied (matches the truth). The demand multiplier also scales negative-demand inflow junctions (Net2's source flow), which is consistent but worth a conscious decision. `file_prefix` must be unique per parallel run. |
+| 7 | `app.py` disinfectant switch, cache key, worker guard and MSX fallback (iteration 4) | The switch changes the grid, doses, likelihood scale, prior, threshold, labels, PDF lines and demo truth; `prepare`'s cache key is (file, dose, disinfectant, chemistry tag). `workers_skip_this_app` swaps `sys.modules['__main__']` while a process pool starts; the swap is process-wide, so a second browser session starting a run at that moment could be affected. The MSX fallback catches any exception from the demo truth, so a real bug on the MSX path shows as the reduced-truth warning with its message, not as an error; the failure is cached per network, dose and scenario for the life of the server process, so a fixed MSX needs a restart. The reduced truth and the free-chlorine demo truth write EPANET's temporary files to the app's working directory, shared by concurrent sessions. Saved checks: `app_chloramine_mode`, `app_task14_runs`. |
 | 6 | `experiment.py::run_scenario_time` | One rng shared across the four strategies, so the seed samples are the same but later draws differ by strategy order. Two hourly DataFrames are rebuilt at every step. The time-blind baseline reuses `SimGP` with `lik="t"`. Snapshots for the figure are taken at `TIME_MAIN` only. |
 | 6 | `experiment.py::run_routes`, `route.py` baselines | `synthetic` evaluation of routes uses its own rng (3000 + seed). `demand_route` ranks by base demand including negative inflow (harmless). `recall_min_all` scores flags over all junctions. |
 | 6 | `simulate.py::apply_structural_noise`, `closable_pipes` | Bridges are computed on the merged link graph; a pipe with a parallel link counts as closable; connectivity is re-checked only when the pipe is the sole link. Tank level is clipped to 5% above the minimum. Rare edge case: a network with no closable pipe falls through silently. |
 | 6 | `pilot.py` | Month strings sort lexicographically (fine for `YYYY-MM`). `seen_tap` is by junction, so a rotating tap that repeats a junction counts as seen. Weighted means in `main`. No handling of two taps mapped to one junction, or of duplicate readings on one day. |
 | 6 | `surrogate.py::acquire`, `acquire_time` | Uses `z_sd_acq` when present, otherwise `z_sd`; `acquire_time` checks `len(hourly) > 2` for the reducible sd. Straddle score `1.96*sd - abs(mu - ln 0.2)`. |
+| 6 | `chloramine.py::watch_flags`, the nitrification watch (iteration 4) | A rule with literature thresholds, not a model: P(daily-minimum total chlorine below 0.4 mg/L) above 0.5, water at 15 C or warmer, age in the oldest quarter. Its catch rate in the stress sweep is a property of task 12's own stress model. Its labels must keep saying 'not validated'. |
+| 6 | `age.py::loss_split` (iteration 4) | Four EPANET runs of the calibrated member; exact along a single path, approximate where flows mix; the reference is the member's own no-decay run (task 9, finding 7). Saved check: `loss_split_exact_on_plug_flow_chain`. |
+| 6 | `capabilities.py` (iteration 4, task 14) | The app's table reads its result numbers from `outputs/` at run time; a renamed key raises, and the app then shows a note instead of the table. Its adoption words follow the outputs' adoption flags. Its sentences join numbers from different conditions (sample sizes, sampling rules, truths), so each number must carry its own condition in the text, as the review found for the 15-sample floor mass. Saved check: `capabilities_table_reads_outputs`. |
 | 5 | `experiment.py::main`, `__main__` | CLI flags parsed by string matching (`--structural`, `--structural=persistent`); output dir switching; the `__main__` block re-reads the routes CSV from a hand-built path instead of using the returned frame. `NET_TRUTH` is applied only through `main`, not through `build_scenario` defaults. |
+| 5 | `checks.py` (iteration 4) | Plain asserts; a full run writes `checks_report.json` (run-invariant) and `checks_run.json` (git-ignored); the hygiene check watches git status and `outputs/cache`. The task-14 app test moves an earlier upload of Net3.inp and its grid aside, requires a fresh grid, deletes its own and puts the earlier ones back; the names check is skipped without `RESIDUALMAP_NAMES_CSV` and is kept out of the committed report (`RUN_LOG_ONLY`). |
 | 4 | plotting functions | Hard-coded style dictionaries keyed by model and strategy names; headline titles pick `TIME_MAIN` and `n == n_max`; `plot_reliability` reads `summary_*.json` for the stress title. Fonts sized for video. |
 | 4 | `simgp.py::SimGP24.fit_prior`, `SimGP.predict_prior` | Uniform weights and no GP; `predict_hours` handles `gp is None`. |
+| 4 | `numbers.py` (iteration 4, task 14) | The scan shows a number exists in `outputs/`, not that it came from the right key (its power is low, on integers too); the registry is the exact check (each entry: a file, a key or a rule over a file, a format and the words around the number), for task 14's own text only. A blanking pattern that takes digits must stay guarded on both sides, or it hides part of a decimal (the review found 11). New iteration-4 text needs registry entries for its headline numbers, and an untraced literature value needs an `ALLOW` entry with its reason. |
 | 3 | `features.py` (`source_nodes` in path features), `surrogate.py::PhysicsGP` clip | Small, low risk. |
 
 ### Efficiency hotspots, highest gain first
@@ -216,6 +245,16 @@ Measured on ky4 in the second pass: `SimGP24.__init__` 0.02 s (the 62 MB pickle 
 .venv/bin/python -m residualmap.experiment ky4 2                      # ~25 min the first time
 .venv/bin/python -m residualmap.pilot --synthetic Net3
 .venv/bin/streamlit run app.py
+
+# iteration 4
+.venv/bin/python -m residualmap.checks                            # the saved checks (--quick: the fast ones); writes outputs/chem/checks_report.json
+.venv/bin/python -m residualmap.checks --reproduce <scratch dir> --label <name>   # rerun the committed experiments and compare
+.venv/bin/python -m residualmap.numbers                           # every iteration-4 number in the README and the journal traces to outputs/
+.venv/bin/python -m residualmap.experiment_chem age Net3 8        # task 9 (also Net2 8, ky4 2)
+.venv/bin/python -m residualmap.seasonal Net3 16 --workers 6      # task 10 (also Net2 8); --wall for task 10b
+.venv/bin/python -m residualmap.organics Net3 16 --workers 6      # task 11 (also Net2 8)
+.venv/bin/python -m residualmap.experiment Net3 --disinfectant=chloramine --workers 6   # task 12 (also Net2)
+.venv/bin/python -m residualmap.chemexp audit Net3 8 --workers 4  # task 13 (after the experiment runs with --chemistry; see task 13)
 ```
 
 ## Iteration 4, chemistry (tasks 8 to 14)
@@ -226,7 +265,7 @@ Started 6 October 2026. The file keeps its name because the README links it; thi
 
 **Sources.** Paper Lantern was not available in this session, so there is no Paper Lantern attribution. The literature behind the chemistry was found by web search during planning and is cited inline where it is used (in the code docstrings and in these sections).
 
-**The manager's four points: where they stand.** This table is the starting point; the task sections below fill it in, and task 14 adds the measured numbers.
+**The manager's four points: where they stand.** This table is the record task by task; the task sections below give the detail, and 'Capabilities after iteration 4' at the end (task 14) answers the four points in one line each, with the numbers, followed by the 'Iteration 4 summary'.
 
 | point | before iteration 4 | what iteration 4 adds | what it is tested against (simulated) |
 |---|---|---|---|
@@ -915,7 +954,7 @@ Bars (the plan's, made exact):
    - The conflation figure's map panels show scenario 300, chosen in the code before the run. On that scenario at 8 random samples the free settings happen to have the lower RMSE (0.13 against 0.20 mg/L) and find all 17 low junctions with 8 false alarms, where the chloramine mode finds 10 with 2. Pooled, the order is the reverse.
 3. The pH and Cl2:N prior (model (c) against (b)) mainly keeps the bulk-rate posterior off the grid's edges. At 15 samples on Net3 its bulk-rate edge mass is 0.03 and 0.02 under the random and straddle rules, against the uniform prior's 0.18 and 0.19. The two models are otherwise about equal: pooled over n and rules, RMSE 0.167 against 0.163 mg/L and recall 0.893 against 0.873 on Net3, and 0.108 against 0.105 and 0.764 against 0.775 on Net2.
 4. The sampling rule matters for the band, not for the bars. Under the straddle rule the chloramine mode's 90% band holds the truth 0.726 of the time at 8 samples and 0.784 at 15 on Net3 (0.91 and 0.94 on Net2). Its RMSE rises from 8 to 15 straddle samples (0.184 to 0.202 mg/L on Net3, 0.119 to 0.138 on Net2), while random samples bring it down to 0.113 on Net3. The straddle rule samples the junctions nearest the threshold, so the ones left unsampled are scored on a different and harder set. At 15 straddle samples 79 low junction-days are left on Net3, against 115 at 15 random samples. The same effect was recorded for free chlorine (README: daily-minimum coverage 0.84 with the straddle-on-daily-minimum rule). At 15 straddle samples on Net3 it puts the free-chlorine settings ahead (finding 2).
-5. The low-pH stress (pH 7.0 to 7.5, Net3 seeds 308 to 311; no bar). The mode's coverage and recall hold: RMSE 0.121 to 0.155 mg/L, random-rule coverage 0.91 to 0.97, recall 0.92 to 0.98. But there the pH and Cl2:N prior costs accuracy, which the first write-up did not say: under the random rule (c)'s RMSE is 10 to 15% above the uniform prior's (b) at every n (0.121, 0.155 and 0.126 against 0.108, 0.135 and 0.115 mg/L at n = 3, 8 and 15), and so is its RMS ln error (0.243, 0.331 and 0.264 against 0.196, 0.264 and 0.248); why was not examined. The posterior's typical bulk rate there is 0.09 to 0.17 per day (`mean_post_kb_geo`), and at 8 random samples 0.37 of (c)'s posterior sits on the grid's top value, 0.32 per day (0.32 of (b)'s). That value was added before the run so the stress range would sit inside the grid (addendum 3); the plan's top of 0.16 would have been an edge for these seeds.
+5. The low-pH stress (pH 7.0 to 7.5, Net3 seeds 308 to 311; no bar). The mode's coverage and recall hold: RMSE 0.121 to 0.155 mg/L, random-rule coverage 0.91 to 0.97, recall 0.92 to 0.98. But there the pH and Cl2:N prior costs accuracy, which the first write-up did not say: under the random rule (c)'s RMSE is 10 to 14% above the uniform prior's (b) at every n (0.121, 0.155 and 0.126 against 0.108, 0.135 and 0.115 mg/L at n = 3, 8 and 15), and so is its RMS ln error (0.243, 0.331 and 0.264 against 0.196, 0.264 and 0.248); why was not examined. The posterior's typical bulk rate there is 0.09 to 0.17 per day (`mean_post_kb_geo`), and at 8 random samples 0.37 of (c)'s posterior sits on the grid's top value, 0.32 per day (0.32 of (b)'s). That value was added before the run so the stress range would sit inside the grid (addendum 3); the plan's top of 0.16 would have been an edge for these seeds.
 6. What first-order kinetics cost against EPA's mechanistic chemistry: little in this setting, but not nothing (rows for n = 3 and Net2 at 3 and 15 added after the review). On Net3 the two are about equal at 8 and 15 random samples and the MSX truth costs 9% at 3; on Net2 it costs 7 to 10% at every random n. Model (b) on the MSX truth against (b) on its first-order twin (same draws, kb the batch port's apparent rate, key `first_order_cost`) gives the following.
 
    | network, rule, samples | RMSE on MSX / on twin (mg/L) | coverage90 on MSX / on twin |
@@ -1033,7 +1072,7 @@ The conflation figure for Net2 is `outputs/chloramine/chloramine_mode_vs_free_gr
   - the conflation figure's single-scenario panels show the free settings ahead on scenario 300;
   - added after the review: at 15 straddle samples on Net3 the free-chlorine settings beat the mode on RMSE (0.175 against 0.202 mg/L), 90% coverage (0.844 against 0.784) and recall (0.991 against 0.899), with 40 false alarms against 16 and on different unsampled sets, and on RMSE at the same cell of the low-pH stress seeds (0.122 against 0.142) (finding 2);
   - added after the review: Net2's random-sample coverage is too wide at 3 samples (0.980) as well as too narrow at 15 (finding 1);
-  - added after the review: at low pH the pH and Cl2:N prior makes the mode 10 to 15% worse in RMSE than the uniform prior under the random rule (finding 5);
+  - added after the review: at low pH the pH and Cl2:N prior makes the mode 10 to 14% worse in RMSE than the uniform prior under the random rule (finding 5);
   - added after the review: the prior was centred on the truth's exact pH and Cl2:N (no logging error), and so is the app demo's;
   - added after the review: what first-order kinetics cost is 7 to 10% of RMSE on Net2 at every random n, not "about the same" everywhere (finding 6).
 - Against the plan and the process:
@@ -1224,3 +1263,229 @@ The same two figures for Net2 are `outputs/chem/cost_of_first_order_Net2.png` an
 - (f) Whether a seasonal cost of first order for B0 alone is wanted. This task read addendum 2 as dropping the 2ra_warm truth, the ladder and the decomposition with the seasonal claims (corrections after the block); a B0-only run on a warming two-reactant truth is possible with the runner as it stands, but it has no pre-registered bar left to judge it.
 
 How to run: `.venv/bin/python -m residualmap.chemexp scaling`, then `.venv/bin/python -m residualmap.experiment Net3 8 --chemistry=first_order`, `... Net3 8 --chemistry=2ra`, the same for Net2 and `Net2 8 --chemistry=2ra --match=96` (about 3 minutes each; fresh seeds 400 to 407; outputs to `outputs/chem_2ra/`, figures not kept), then `.venv/bin/python -m residualmap.chemexp audit Net3 8 --workers 4` and `audit Net2 8` (about a minute each; the low-bulk-rate grids go to `outputs/cache/`), `.venv/bin/python -m residualmap.chemexp full2r Net2 8 --workers 4` (the gated model, about 30 s), `.venv/bin/python -m residualmap.chemexp near Net3 8` and `near Net2 8` (the near-threshold counts, added after the review, about 10 s each), and `.venv/bin/python -m residualmap.chemexp summarise Net3` and `summarise Net2` (summaries and figures; `replot` redraws the figures from the committed summary). Runs on other seeds need `--seed0` and a scratch `--outdir` (experiment) or `--root` (chemexp). EPANET-MSX needs Homebrew's libomp and, for compiled reactions, the Xcode command-line tools.
+
+### Task 14, the app's capability table, the PDF's chemistry lines, the journal's summary and the numbers script
+
+**Asked:** close the iteration for a reader (plan task 14, narrowed by addenda 2 and 3 and the lead's brief). In the app: a 'What this model accounts for' table with one row per point the general manager raised (water age, organics and chlorine demand, chlorine type, temperature), each saying what is modelled and what was tested and not adopted; PDF lines for the disinfectant, the measured species, the threshold and its source, and 'simulation only', with no kb20 or temperature field, because no temperature model was adopted, saying instead that the seasons are absorbed by refitting. The plan's monthly temperature and TOC inputs and its 'next month's temperature' outlook went with the temperature models (addendum 2). In this journal: this section, a capabilities table answering the four points from `outputs/`, an iteration-4 summary, code-map lines, bug-risk rows and how-to-run lines. Elsewhere: a top-level summary in the README, the CHANGELOG, the pilot protocol, the feature dictionary, and a script that checks every iteration-4 number in the README and this journal against `outputs/`. The plan's seven headless app runs, with its two outlook runs replaced (below). Defaults byte-identical, the app's default demo unchanged, no em or en dashes, no real utility named.
+
+**Built:**
+- `residualmap/capabilities.py`, new.
+  - `SOURCES` names the file and JSON key of every result number the app's table quotes, and `numbers()` reads them. It also derives a few: the audit cells within 10%, the low junction-days found (recall times the low count), the range of task 10b's held-out ratios and the world at its low end, the count of task 10b's stop triggers, the junction counts, and the adoption flags.
+  - `accounts_for()` returns the four rows; `report_lines()` returns the PDF's chemistry lines; `threshold_source()` gives the default's note or 'set by you'; `grid_edge_warning()` writes the app's grid-edge warning. In chloramine mode the PDF's season line says that this month's water temperature is used only by the nitrification watch and that no seasonal chloramine test has been run. The default notes are 'a common operating minimum' for 0.2 mg/L free chlorine and 'a common utility operating target' for 0.5 mg/L total chlorine, each 'not a California rule (California requires a detectable residual)'.
+  - The wording follows the plan's rule: 'accounts for' only where there is a term and a test, 'absorbed into the calibrated decay rates' where there is not, and 'not modelled' for nitrification as a process, blending and pH.
+  - The adoption words come from the outputs (task 10b's `adoption`, task 11's `adoption`, task 12's `experimental`), so a rerun that changed an outcome would change the table. Every result number in the table is read from `outputs/`; settings and bars (the 0.85 bar, the 5% starting-water rule, the 0.10 per day floor) are fixed text.
+  - The temperature and organics rows name the assumptions behind their numbers: the assumed temperature and TOC schedules, the assumed wall response and constants of the simulated truths, and which of task 10b's worlds gives the low end of its range.
+- `app.py`:
+  - the table, under 'What this model accounts for', with a caption that every test is a simulation; if `outputs/` cannot be read, the app says so instead of failing;
+  - four chemistry lines in the PDF header: the disinfectant and measured species (in chloramine mode also the prior's pH and Cl2:N and the nitrification-watch count); the minimum residual and its source; how the seasons are handled; 'Validated in simulation only'. They are wrapped, and the header is taller;
+  - help text on the threshold: the default's note, plus Texas as an example (0.2 mg/L free chlorine, or 0.5 mg/L total chlorine in chloraminated systems, 30 TAC 290.110);
+  - a grid-edge warning (`capabilities.grid_edge_warning`) when more than half of the calibration sits on the lowest or highest bulk or wall decay rate of the grid. For free chlorine at the bulk floor it points to tasks 10b, 11 and 13 and the low-rate grid;
+  - a fallback for the chloramine demo truth: if EPANET-MSX cannot run, the demo uses task 12's first-order twin (EPANET first-order decay at the rate EPA's chemistry gives for the water, on the same hidden draws). A warning says so, and says this flatters the model. The failure is cached like a result, so MSX is tried once per network, dose and scenario in a server process, not on every widget change, and the hidden truth cannot switch between the two within a session;
+  - `prepare()`'s in-memory cache key carries the chloramine grid's `chemistry.cache_tag`;
+  - `workers_skip_this_app()`, a fix for a fault this task's upload test found (finding 1).
+- `residualmap/numbers.py`, new (`python -m residualmap.numbers`, or `python -m residualmap.checks --numbers`): a registry of task 14's headline numbers, each tied to a file and key, and a scan of every iteration-4 number in the README and this journal (finding 3).
+- `residualmap/checks.py`: six new checks in a `task14` group, and a way for a check to be skipped with a reason (`SkipCheck`, recorded as skipped, never as a pass):
+  - `capabilities_table_reads_outputs`;
+  - `grid_edge_warning_text`, the warning on the real free-chlorine and chloramine grids with made-up posteriors (silent below half of the calibration on an edge, the rate named above it);
+  - `app_task14_runs`, the headless app runs;
+  - `numbers_trace_to_outputs`;
+  - `no_dashes_in_iteration4_text`;
+  - `no_listed_names_in_tracked_files`. It reads a private list of names from a CSV kept outside the repository (`RESIDUALMAP_NAMES_CSV`) and fails if any tracked text file names one. The one exception is the public provenance of EPA's Net3 example in `experiment.NET_DESC`, which also appears in committed figure titles and was left as it is. Without the variable the check is skipped, and it records counts only, never a name. Its result goes to the git-ignored run log only (`RUN_LOG_ONLY`), so the committed report is the same with or without the list; a failure still fails the run.
+- Docs:
+  - in this journal: this section, 'Capabilities after iteration 4', 'Iteration 4 summary', the iteration-4 lines in the code map, the bug-risk rows (marked 'iteration 4') and the how-to-run lines;
+  - the README: 'Iteration 4 in one page', the limitations, the app section, the run lines and the layout;
+  - the CHANGELOG;
+  - the pilot protocol: section 1 asks for the plant's monthly water temperature and TOC with the reason; section 3 lists the new table and PDF lines; section 5 gains an organics bullet and a note on chloraminated pilot candidates; the checklist asks for the temperature and TOC logs;
+  - the feature dictionary: a section on the chemistry settings.
+- Not built, on purpose:
+  - the plan's monthly temperature and TOC inputs in the app, its kb20 and kb(T) PDF lines and its outlook: no temperature or TOC model was adopted;
+  - the optional `temp_C` column in `docs/example_grab_log.csv`: the plant log already carries the monthly temperature, and nothing adopted would read a per-sample one;
+  - any change to `route.py`: its reasons already use the threshold.
+
+**Found:**
+1. The app could not build a grid inside itself, a fault from iteration 3 that this task's upload test exposed.
+   - The cause: process pools start their workers with multiprocessing's spawn method, which re-runs the main module's file in each worker. Under Streamlit the main module is `app.py`.
+   - What happened: every worker of the grid build re-ran the whole app (the default Net3 demo) before its job. The parallel copies collided on EPANET's temporary files in the shared working directory, and the build died with `BrokenProcessPool`.
+   - When it bites: an uploaded `.inp`, or any network whose grid is not yet cached (ky4 at the default dose, a fresh machine).
+   - The chloramine demo truth, a pool of one worker, ran the app once before each MSX run and did not fail.
+   - The fix: while a pool starts, `sys.modules['__main__']` is an empty stand-in, so workers import only `residualmap`. With it, the upload test builds its fresh 675-run grid inside the app.
+   - Rechecked by running a copy of the app with the fix removed and an empty grid cache: the default Net3 demo stopped with `BrokenProcessPool`. The same copy with the fix built the grid inside the app and flagged the default 42 of 92 junctions.
+   - No committed number used this path: the experiments run from the command line, where the main module is the experiment.
+2. The seven app runs, by widget label (`app_task14_runs` in `outputs/chem/checks_report.json`).
+   - The free chlorine default demo is unchanged and carries the table and the PDF lines.
+   - The chloramine demo on Net3 runs EPA's chemistry in EPANET-MSX, calibrates on the chloramine grid, flags junctions at 0.5 mg/L total chlorine, and on the reveal scores them against the hidden truth.
+   - The upload of the same Net3 file gives the same map as the example network. The check moves any earlier upload of that file and its cached grid aside first and requires the run to create the grid's cache file, so it always exercises the fix in finding 1.
+   - ky4 with the chloramine demo is refused with its message before any simulation.
+   - With EPANET-MSX made to fail, the chloramine demo falls back to the reduced truth and says so.
+   - The plan's runs (3) and (5), the outlook's direction and the outlook disabled on ky4, went with the outlook, and were replaced by the ky4 refusal and the MSX fallback.
+   - No grid-edge warning appeared in these runs.
+3. What the numbers script can and cannot show.
+   - It reads every number in the iteration-4 parts of the README and this journal, the CHANGELOG excluded.
+   - It looks each one up at its printed precision: first among the committed output files its paragraph cites, then its section's, then all of `outputs/chem`, `outputs/chem_2ra` and `outputs/chloramine`, then all of `outputs/`.
+   - A number found in none of them must be a time, a date, a citation, an identifier, a run cost, a count derived from a stored rate, a value written in the code, or an allowlisted literature value with its reason (one, Blokker's E/R, in task 10's section). None is unexplained.
+   - The spans blanked as dates, identifiers, times, citations and seed ranges are guarded on both sides, so they never take part of a decimal; a blanked span that touches a digit is reported as unexplained. Before the review they had no right-hand guard: 'July' or 'model' followed by a decimal took its integer part, and the rest was never read, so 11 numbers in the text were not checked (for example the 0.949 after 'April to July'). With the guard, a wrong digit put in any of those places is caught.
+   - Its limit: the outputs hold over a million values, so a printed three-digit decimal usually matches some value by chance, even inside the files its paragraph cites. Changing the last printed digit of a traced decimal by one would be caught only about one time in ten, and of a traced integer about one time in seven, since an integer is matched at plus or minus 0.5 and an 'X of Y' count is accepted when X/Y is a stored rate (the script prints the exact shares). So the scan shows a number exists in `outputs/`, not that it came from the right key.
+   - The registry is the exact check: each headline number of task 14's own text (the capabilities table, the summary's key numbers and its list of regressions, the README's one-page section) is tied to one file, one key or one rule over a file, one format and the words around it, and all of them match. Two wrong entries (another network's value, a coarser format) are run as controls and fail, as they should.
+   - The scan leaves its own entry in `checks_report.json` out of the values it searches. Without that, its counts fed back into the next run, and a full run on an unchanged tree changed the committed report (seen on this task's first full run). It still searches the rest of the report, so after a change to any other check's result the first full run settles the scan's counts and the next full run leaves the report unchanged.
+4. The capability table's wording rule held without exceptions: water age and chlorine type have a term and a test; organics and temperature are 'absorbed into the calibrated decay rates', with what was tested and not adopted stated beside it. Gas chlorine and hypochlorite are not modelled separately: both give the same free chlorine, and they differ mainly through pH, which is absorbed into the calibrated rates.
+5. No utility on the private list is named in any tracked text file except the provenance string above, which the lead asked to keep; the check found it on 1 line of `residualmap/experiment.py`. One other real utility is named in a tracked file: iteration 3's prompt (`CLAUDE_CODE_PROMPT.md`) names a pilot target that is not on the list. That file is Devansh's own prompt, so it was left as it is and flagged for him.
+
+**After the review** (three reviewers; each issue was checked against the files before it was fixed):
+- Water age, the one major issue: the capabilities row quoted the daily-maximum coverage (0.791, 0.779, 0.811) beside the daily-mean lower-bound counts. For the daily-maximum ages it is scored on, the counts are 87 of 92, 29 of 35 and 799 of 959, so that coverage is measured mostly on lower bounds. The journal row, the README's one-page row and the app's row now say so, with the converged-only coverage beside it in this journal.
+- The free-chlorine settings' 0.60 of the posterior on their lowest rate is a 15-sample value (pooled over both sampling rules), but the app's sentence tied it to 8 random samples. The app, this journal and the README now say 'fitted to 15 samples', and the 8-sample false alarms have their own clause.
+- The TOC adoption words now follow task 11's own adoption flag on both networks, not its first-storm bar alone (they read the same today).
+- The temperature and organics rows name the assumptions behind their numbers (Built, above), here, in the README and in the app.
+- The numbers scan's blanking patterns took the integer part of 11 decimals next to a month name, a word such as 'model', or a colon, so those numbers were never read (finding 3). They are guarded now, a blanked span that touches a digit fails the scan, and the scan's power on integers is measured beside its power on decimals.
+- The registry now covers the numbers in the summary's list of regressions too (0.710, up to 53%, about 0.07 mg/L, 10 to 14%, 7 to 10%, 2 of 8 seeds, among others), and the README's full list, with a rule over a file where the text quotes a range or a share. It found one rounding: task 12's low-pH prior cost was quoted as 10 to 15%, but its largest excess rounds to 14%, so it now reads 10 to 14% in the task 12 section, the summary, the README and task 12's CHANGELOG entry.
+- The README's list of regressions left out items that were only in this journal (seen-tap coverage under the pilot band, the 160 h cut, the 60 s MSX quality step and others). It now has every item of the summary's list, task by task, and its 'Unchanged' line says which default numbers were rerun, as do the summary's key-numbers row for task 14 and its closing line (ky4 and the initial-level structural variant were not rerun).
+- The upload run now always builds its grid (above), and the EPANET-MSX failure is cached (above). The reduced truth's docstring said it ran EPANET in a temporary directory; it writes EPANET's temporary files to the app's working directory, as the free-chlorine demo truth does, and now says so.
+- The names check's result goes to the run log only, so a full run without the private list no longer changes the committed report. `pypdf` is in `requirements.txt`, and without it the app check still requires the PDF and skips only its PDF-text assertions, which the run log records (`pdf_text_checked`), instead of failing.
+- Smaller: the grid-edge warning no longer says the map 'tends to read low' at the floor as if that were established (it says today's map was biased low in those simulations, cause not settled); the table's note no longer names `outputs/chem_2ra`, which it does not read, and says every result number (not settings or bars) comes from `outputs/`; the app's docstring says chloramine mode asks for the water temperature for the nitrification watch; the PDF title has no em dashes.
+
+**Numbers** (simulated; `outputs/chem/checks_report.json`, `outputs/chem/baseline_reproduction.json`):
+
+| check | result | bar |
+|---|---|---|
+| the saved checks, full run | 69 of 69 pass, the six task-14 checks among them: 68 in the committed report, and the names check (run with the private list set) in the git-ignored run log | all pass |
+| committed outputs after the edits (label `post_task14`) | 50 of 50 files byte-identical | all |
+| app default demo: flagged / violations / unsampled found / false alarms / sample mean | 42 of 92 / 41 / 36 of 36 / 1 / 0.53 mg/L | unchanged |
+| the table's four rows, its numbers equal to their outputs, every 'tested' cell saying simulation | yes | all |
+| the PDF's chemistry lines in the default demo and in chloramine mode | present; no kb20 or temperature field | present |
+| grid-edge warning on the real grids, made-up posteriors | silent below half on an edge; names the rate above it | as described |
+| grid-edge warnings in the seven app runs | 0 | none expected |
+| chloramine demo on Net3: flagged at 0.5 mg/L total chlorine; violations; unsampled found; false alarms | 24 of 92; 16; 13 of 13; 7 | runs, own grid, total chlorine labels |
+| EPANET-MSX made to fail, Net2: reduced-truth warning; flagged | shown; 13 of 35 | shown |
+| upload of Net3.inp (fresh grid built in the app): flagged | 42 of 92, the same as the example network | runs |
+| ky4 with the chloramine demo | refused before any simulation | refused |
+| numbers script: unexplained numbers; blanked spans touching a digit; registry entries matching their file and key | 0; 0; 147 of 147 | 0; 0; all |
+| numbers scan's power: a one-unit change in the last digit of a traced decimal; of a traced integer | caught about one time in ten; about one time in seven | none (recorded) |
+| em and en dashes in iteration-4 text; added to older files | 0; 0 | 0 |
+| listed names in tracked text files outside the provenance string | 0 | 0 |
+
+**Regressions, recorded not hidden:**
+- None in the default numbers. After the edits, the four committed reruns write all 50 files byte-identical to the committed outputs (label `post_task14` in `outputs/chem/baseline_reproduction.json`; no module they import was edited), and the app's default demo is unchanged. ky4 and the initial-level structural variant were not rerun.
+- Behaviour changes outside the default numbers: the PDF header is taller and carries four more lines; the threshold inputs have help text; a grid-edge warning can appear; a failing MSX demo truth now falls back instead of stopping the app; the app builds grids for new networks instead of crashing (finding 1).
+- Against the plan:
+  - The app has no temperature or TOC input, no kb20 or kb(T) line and no outlook (addendum 2, the lead's brief). The plan's runs (3) and (5) were replaced.
+  - The optional `temp_C` grab-log column was not added.
+  - The journal keeps its 'Iteration 4, chemistry (tasks 8 to 14)' header; the plan's '(October 2026)' header was not added, because the numbers script and the README find the section by that name.
+  - The plan asked that every digit be found in `outputs/`. Times, dates, citations, identifiers, run costs, code settings and one literature value are classified instead, and counted by the script.
+  - The scan's power is low (finding 3), so it is not proof of provenance; the registry covers task 14's own text only (the capabilities table, the summary and the README's one-page section), not the task sections of tasks 8 to 13.
+  - Two of the plan's doc audits were not automated: that the word 'simulated' appears with every chemistry claim (checked only for the app table's 'tested' cells, which must say simulation), and that no scratch probe number is quoted. The scratch figures the plan names were searched for by hand in the README, the CHANGELOG and the iteration-4 journal, and none is quoted; the scan cannot catch a scratch number that happens to equal some output value.
+  - The plan's 'pilot protocol: a note on the named pilot target' became a note on chloraminated pilot candidates, without a name (decision 7).
+- Two checks lean on things beyond the code: the PDF check reads the PDF with `pypdf` (added to `requirements.txt` after the review; it was only in `.venv`; without it only the PDF-text assertions are skipped, and the run log says so), and the names check needs the private CSV and is skipped without it. Its result is kept in the git-ignored run log (`outputs/chem/checks_run.json`), not in the committed report, so a full run with or without the CSV leaves the report unchanged; the run still fails if the names check fails.
+
+How to run: `.venv/bin/python -m residualmap.numbers` (about 2 s; `--list` prints every number that is not traced to a file, with its class), and `.venv/bin/python -m residualmap.checks`. The task-14 checks are part of the full run; `app_task14_runs` takes about a minute, and `no_listed_names_in_tracked_files` runs only with `RESIDUALMAP_NAMES_CSV` set.
+
+### Capabilities after iteration 4
+
+The manager's four points, answered line by line. Every number is simulated, from the file named, and nothing here has been validated on a real system.
+
+| point | what the model does now | how it was tested (simulated) | the number | what it does not do |
+|---|---|---|---|---|
+| water age | accounts for it: EPANET moves the water through every pipe and tank of the operator's file hour by hour, so age is inside every prediction; since task 9 the app shows the age map with its range across demand and roughness errors, and splits each junction's chlorine loss between the water and the pipe walls (adopted) | against the simulated truth's own water age and loss split, Net3 and Net2 8 seeds, ky4 2 (task 9) | the range holds the true daily-maximum age at 0.791, 0.779 and 0.811 of junctions (Net3, Net2, ky4), so it is a range, not a 90% band; the file's daily-mean age is off by 5.82, 5.62 and 8.11 h RMSE; the calibrated wall share is off by 0.064 per junction on Net3 (`outputs/chem/water_age_<net>.json`) | the ages come from a 7-day run, so they are lower bounds wherever the run's starting water is still more than 5% of a junction's water. For the daily-maximum ages the coverage is scored on, that is at their oldest hour 87 of 92 junctions on Net3, 29 of 35 on Net2 and 799 of 959 on ky4 (on the day's average 19, 28 and 745), so the coverage is measured mostly on lower bounds; where neither the file's nor the truth's daily-maximum age is one, the range holds the truth at 0.975 on Net3 (40 junction-seeds), 0.500 on Net2 (48) and 0.870 on ky4 (262); a longer warm-up is not built |
+| water temperature | absorbed into the calibrated decay rates, refitted from the last three months of samples, so the model follows the seasons with a lag; temperature is not an input | two temperature-aware models on 12 simulated months, fitted in one season and asked for another (tasks 10 and 10b), against an assumed coastal temperature schedule (10 to 20 C) and an assumed wall response in the truth: task 10's weak wall, an assumption, and in task 10b also a constructed world where the wall follows the water's temperature response | task 10: July-to-September map from January-to-March samples 0.137 against today's 0.101 mg/L on Net3 (`summary_season_Net3.json`); task 10b: held-out readings 0.774 to 0.916 of today's RMSE (the low end in the constructed world), but its stop rule triggered in 3 of 4 network and wall-response cases (`summary_season2_<net>.json`); tested, not adopted | the deciding unknown is how real pipe walls respond to temperature; a year of real grab samples with monthly plant temperatures would settle it |
+| organics (TOC) that impart chlorine demand | absorbed into the calibrated bulk decay rate; TOC is not an input | a TOC-aware model on 12 simulated months at a fixed 20 C, against chlorine-organics chemistry first order cannot represent, with an assumed TOC schedule (the first storm is an assumed November doubling) and assumed Clark constants in the truth (task 11); today's model against two-reactant chlorine-organics chemistry, with the Greenvale constants from one water via a secondary source (task 13) | task 11, Net3: held-out readings 0.988 of today's RMSE, but the first-storm map 0.938 against a 0.85 bar, and the stop rule triggered (`summary_organics_Net3.json`); tested, not adopted. Task 13: within 10% of the first-order truth in 15 of 16 cells; Net3's oldest tenth of junctions 0.076 mg/L too low (`summary_audit_<net>.json`) | TOC is not an input; part of the TOC model's gain came from bulk rates below today's grid floor of 0.10 per day, and a grid with lower rates is a candidate default, not adopted |
+| free chlorine or chloramine | accounts for it: two separate modes, never mixed; chloramine reads total chlorine with its own decay ranges, dose axis, likelihood scale, prior from the plant's pH and Cl2:N, a 0.5 mg/L default threshold and a nitrification watch (adopted as a separate mode, task 12) | against EPA's chloramine chemistry in EPANET-MSX with this task's own assumed wall term, Net3 and Net2, fresh seeds (task 12) | Net3, 8 straddle samples: recall 0.890 (97 of 109 low junction-days); random-sample 90% coverage 0.896 (Net3) and 0.887 (Net2); free-chlorine settings on the same network, fitted to 15 samples: 0.60 of the posterior on their lowest rate; at 8 random samples, 94 false alarms against the mode's 37 (`summary_chloramine_<net>.json`) | under the straddle rule its band is too narrow (0.726 at 8 samples, Net3); breakpoint where chloraminated and chlorinated water blend, and nitrification itself, are not modelled; no seasonal chloramine test |
+
+Related chemistry, for completeness (no new numbers; the task sections hold them):
+
+| item | status after iteration 4 |
+|---|---|
+| chlorine form (gas or hypochlorite) | not modelled separately: both give the same free chlorine (HOCl and OCl-), they differ mainly through pH, and the effect is absorbed into the calibrated rates (Liu, Reckhow and Li 2014 model pH explicitly) |
+| old-pipe wall decay | accounts for it: the old-pipe factor on the grid, and since task 9 the loss split; tested against the simulated truth (task 9) |
+| plant dose | accounts for it: a dose axis, exact for first order; task 13's dose step shows the shortcut's direction under two-reactant chemistry (conservative going up, optimistic going down) |
+| nitrification | a watch list with literature thresholds in chloramine mode, not validated; not modelled as a process (task 12) |
+| blending and breakpoint | not modelled |
+| warming in the pipes | only inside task 10's simulated truth; the temperature models that would use it were not adopted |
+| pH | free chlorine: not modelled, absorbed into the calibrated rates; chloramine: the prior on the bulk rate from the plant's logged pH and Cl2:N (task 12) |
+
+### Iteration 4 summary
+
+**What was asked.** A water-district general manager asked whether the model accounts for water age, water temperature, organics that impart chlorine demand, and the type of disinfectant. Before this iteration the honest answer was: water age yes, exactly, through EPANET, but not shown; temperature and organics only through decay rates refitted from the last three months of samples; free chlorine only. Iteration 4 (tasks 8 to 14) made each point explicit and tested it in simulation, against hidden chemistry the model does not assume, with bars written down before the scored runs.
+
+**What was adopted.**
+- Water age shown, with its range and with each junction's chlorine loss split between the water and the walls (task 9). The ages are marked as lower bounds where the 7-day run has not replaced its starting water.
+- A separate chloramine mode (task 12). It met its pre-registered bars where they apply, so it is not labelled experimental. Its recorded weaknesses are in the list of regressions below.
+- The chemistry plumbing and the saved checks (task 8).
+- This task's table, PDF lines, numbers script and the app fix (task 14).
+
+**What was tested and not adopted.**
+- Temperature, two ways (task 10 assumed the wall's temperature response, task 10b learned it). Both stopped at their pre-registered stop rules. The deciding unknown is the real wall response. Today the model absorbs the seasons by refitting on the last three months.
+- Organics as a logged TOC input (task 11). It stopped at its stop rule, and part of its gain came from the bulk-rate grid floor.
+- The gated two-rate model of task 13, rejected for losing more than 10% on the first-order truth.
+- The low-bulk-rate grid of task 13: it met its readings and is a candidate default, awaiting Devansh's decision.
+- The two-reactant audit itself (task 13) changed nothing in the model: it measures what the first-order shortcut costs against chemistry it does not assume.
+
+**Key numbers** (all simulated):
+
+| task | what | number | file |
+|---|---|---|---|
+| 9 | the file's daily-mean water age against the truth's, RMSE | 5.82 h (Net3), 5.62 h (Net2), 8.11 h (ky4) | `outputs/chem/water_age_<net>.json` |
+| 9 | the 9-setting range holds the true daily-maximum age | 0.791, 0.779, 0.811 of junctions | `outputs/chem/water_age_<net>.json` |
+| 10 | held-out readings, temperature model / today's RMSE | 0.974 (Net3, interval 0.937 to 1.013), 1.007 (Net2) | `outputs/chem/summary_season_<net>.json` |
+| 10 | July-to-September map from January-to-March samples, Net3 (assumed schedule and wall response): RMSE; false alarms | 0.137 against 0.101 mg/L; 554 against 18 | `outputs/chem/summary_season_Net3.json` |
+| 10b | held-out readings, learned-wall model / today's RMSE (assumed schedule and wall response; the low end is the constructed steep-wall world); stop rule | 0.774 to 0.916; triggered in 3 of 4 cases | `outputs/chem/summary_season2_<net>.json` |
+| 11 | Net3 first-storm map, TOC model / today's RMSE (bar 0.85; assumed TOC schedule and truth constants); recall; false alarms | 0.938 (interval 0.874 to 1.016); 0.917 against 0.861; 38 against 27 | `outputs/chem/summary_organics_Net3.json` |
+| 11 | the stop trigger on Net3: low held-out readings flagged, TOC model / today's | 44 against 49 of 61 | `outputs/chem/summary_organics_Net3.json` |
+| 12 | chloramine mode, Net3, 8 straddle samples: recall | 0.890 (97 of 109) | `outputs/chloramine/summary_chloramine_Net3.json` |
+| 12 | random-sample 90% coverage (bar 0.85 to 0.97) | 0.896 (Net3), 0.887 (Net2) | `outputs/chloramine/summary_chloramine_<net>.json` |
+| 12 | free-chlorine settings on the chloraminated network, fitted to 15 samples: posterior on their lowest rate | 0.60 (Net3), 0.96 (Net2) | `outputs/chloramine/summary_chloramine_<net>.json` |
+| 13 | the one material cell (Net2, 15 straddle samples), RMSE two-reactant / first-order truth | 1.102 (interval 0.838 to 1.463) | `outputs/chem/summary_audit_Net2.json` |
+| 13 | Net3's oldest tenth of junctions, map bias, two-reactant / first-order truth (bar 0.05 mg/L) | -0.076 / -0.031 mg/L | `outputs/chem/summary_audit_Net3.json` |
+| 13 | Net3 false alarms at 8 random samples, two-reactant / first-order truth | 65 / 32 | `outputs/chem/summary_audit_Net3.json` |
+| 14 | the four committed reruns reproduced (ky4 and the initial-level structural variant not rerun); app default demo | 50 of 50 byte-identical; 42 of 92 flagged, 36 of 36 found, 1 false alarm | `outputs/chem/baseline_reproduction.json` |
+
+**Regressions and missed bars, all of them in one list** (each task section has the detail):
+- Task 9:
+  - The water-age range is not a 90% band on any network, and its daily-maximum coverage is measured mostly on lower bounds (87 of 92, 29 of 35 and 799 of 959 junctions at their oldest hour).
+  - The age weighted by the samples' posterior was worse than the file's own age on 2 of 8 seeds on Net3 and on Net2.
+  - The calibrated wall share is biased low on Net2 and ky4, and was off by up to 0.265 in one Net2 scenario.
+  - The plan's 160 h cut misses most unconverged ages, and the plan's loss-split formula was changed to a no-decay reference.
+  - Every 7-day run carries a start-up transient (below).
+- Task 10:
+  - The stop rule triggered on both networks.
+  - Bars missed: A4 on Net3; A2, A3 and A5 on Net2.
+  - False alarms rose by more than 10% in every warming class with seasons in the truth, and far more out of season.
+  - Seen-tap reading coverage is under the pilot band on both networks.
+- Task 10b:
+  - The stop rule triggered in 3 of the 4 network and world cases.
+  - The robustness bar R1 was missed in every case.
+  - Also missed: A2 on Net3 in both worlds, A4 on Net3 in the weak-wall world, A5 on Net2 in both worlds.
+  - False alarms rose by more than 10% in every warming class and every out-of-season test, and seen-tap coverage is under the pilot band on Net2 in the steep-wall world.
+  - On Net3, against the 15 C control, the wall posterior moved toward the weak wall but not toward the steep one.
+- Task 11:
+  - The stop rule triggered: one robust pair on Net3, three within count noise on Net2.
+  - The first-storm bar was missed, and the December map was worse than today's.
+  - The dose-axis bar failed on Net3, as it would for today's model.
+  - Part of the gain came from the grid floor, not the TOC.
+  - False alarms rose by more than 10% in the November and December classes, and the TOC model's seen-tap coverage is just under the pilot band on Net3 and under it on Net2.
+- Task 12:
+  - Under the straddle rule the chloramine band is too narrow.
+  - At 15 straddle samples on Net3 the free-chlorine settings had the lower RMSE.
+  - Net2's random-sample coverage is in its band only at 8 samples.
+  - The prior used the simulated plant's exact pH and Cl2:N.
+  - The maps are biased low.
+  - The single-species MSX check met its bar only at a 60 s quality step.
+  - At low pH the pH and Cl2:N prior made the mode 10 to 14% worse in RMSE than a uniform prior under the random rule.
+  - First-order kinetics cost 7 to 10% of RMSE on Net2 against the mechanistic truth at every random sample size.
+- Task 13:
+  - The materiality rule fired on one cell inside seed noise.
+  - The two-rate model was rejected.
+  - Today's model doubled false alarms on Net3 and under-predicted Net3's oldest water past the bar, on the raw bias.
+  - Net2's recall at 15 random samples was a measurable 0.936 times the first-order truth's.
+  - The low-rate grid loses some recall on Net3's first-order truth, and its most probable bulk rate sits at its own new floor in up to 53% of Net2's fits.
+  - Today's 90% band holds the oldest tenth's truth at 0.710 on Net3 under the two-reactant truth.
+  - At 15 demo samples on Net3 today's map is biased low by about 0.07 mg/L at the nominal dose under both truths, mostly from two seeds (the dose step).
+  - The seasonal part was not run, on this task's reading of addendum 2.
+- Task 14:
+  - The numbers scan's power is low, about one time in ten.
+  - The plan's temperature and TOC inputs and its outlook were not built.
+- Not one of these moved a default number that was rerun: every task ended with the four committed reruns (Net3, Net3 under the persistent stress test, Net2, the synthetic pilot) writing their files byte-identical to the committed outputs (`outputs/chem/baseline_reproduction.json`). ky4 and the initial-level structural variant were not rerun.
+
+**Open decisions for Devansh** (nothing below was done):
+1. The low-bulk-rate default grid (task 13). It met its pre-registered readings, and would remove the 0.10 per day floor that today's fit sits on in most Net2 and second-order-truth fits. It trades some recall for fewer false alarms on Net3's first-order truth. Adopting it would move every committed number.
+2. The 7-day warm-up transient (task 9). Every run starts the file's tanks and pipes with no chlorine and with water of age 0, so the ages at most Net2 and ky4 junctions are lower bounds, and absolute counts of low junctions there partly reflect the start-up. A longer warm-up, or tanks started at source quality, is the proposed fix. It would move every committed Net2 and ky4 number.
+3. Real seasonal data. A year of grab samples with the plant's monthly water temperature and TOC is what would settle the wall's temperature response, which decided tasks 10 and 10b, and would replace the assumed schedules.
+
+Also open, from task 13's list: a second-order grid with a simulated dose axis for the oldest water; where the low bias of today's map comes from; whether the materiality rule should need its interval to clear the bar; and whether a seasonal cost of first order for today's model alone is wanted.

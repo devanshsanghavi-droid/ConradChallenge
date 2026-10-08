@@ -17,14 +17,24 @@ chlorine)" switches to the chloramine mode: total chlorine readings, the chloram
 and prior (residualmap/chloramine.py), a 0.5 mg/L total chlorine default threshold (a common utility operating target,
 not a California rule), a nitrification watch (literature thresholds, not validated) and, in demo mode, a hidden truth
 from EPA's chloramine chemistry in EPANET-MSX.  Free and total chlorine are never mixed.
+
+Iteration 4, task 14: a 'What this model accounts for' table (water age, organics and chlorine demand, chlorine type,
+temperature; every number read from outputs/ through residualmap/capabilities.py), a warning when the calibration sits
+on the edge of the decay grid, a labelled fallback for the chloramine demo truth when EPANET-MSX cannot run, and PDF
+lines for the disinfectant, the measured species, the threshold and its source, how the seasons are handled, and
+'validated in simulation only'.  No temperature or TOC input to the decay model: both were tested in simulation and
+not adopted (chloramine mode asks for this month's water temperature for the nitrification watch only).
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
 import os
+import sys
 import textwrap
+import types
 import warnings
 
 import matplotlib
@@ -37,9 +47,11 @@ import wntr
 from scipy.stats import norm
 
 from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, loss_split, oldest_water
+from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
+from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
 from residualmap.features import build_features
 from residualmap.route import plan_route
-from residualmap.simgp import DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, simulator_grid_24h
+from residualmap.simgp import DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_edge_mass, simulator_grid_24h
 from residualmap.simulate import LIB, build_scenario, hidden_chem_draws, nominal_scenario, source_nodes
 from residualmap import chloramine as CA
 
@@ -51,6 +63,9 @@ CACHE_DIR = os.path.join(APP_ROOT, "outputs", "cache")
 CA_RESULTS = os.path.join(APP_ROOT, "outputs", "chloramine", "summary_chloramine_{}.json")
 DISINFECTANTS = ["Free chlorine", "Chloramine (total chlorine)"]
 PDF_WHY_CHARS = 84     # characters per line of the PDF route table's 'why' column
+PDF_CHEM_CHARS = 225   # characters per line of the PDF header's chemistry lines
+TEXAS_EXAMPLE = {False: "Texas, for example, requires 0.2 mg/L free chlorine (30 TAC 290.110).",
+                 True: "Texas, for example, requires 0.5 mg/L total chlorine in chloraminated systems (30 TAC 290.110)."}
 EXAMPLES = {"Net3 (EPANET example, 92 junctions)": "Net3", "Net2 (EPANET example, tank-fed, 35 junctions)": "Net2",
             "ky4 (KYPIPE dataset, 959 junctions; first run takes about 15 min)": "ky4"}
 
@@ -84,11 +99,14 @@ with st.sidebar:
         dose = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
                                help="Total chlorine (chloramine) at the source. The model treats it as uncertain and lets "
                                     "the fast organic demand lower it (an effective dose of 0.65 to 1.10 times this).")
-        threshold = st.number_input("Minimum residual, total chlorine (mg/L)", 0.05, 2.0, 0.5, 0.05, help=CA.THRESHOLD_NOTE)
+        threshold = st.number_input("Minimum residual, total chlorine (mg/L)", 0.05, 2.0, 0.5, 0.05,
+                                    help=f"Default {CA.THRESHOLD_NOTE}. {TEXAS_EXAMPLE[True]} Set your own target here.")
     else:
         dose = st.number_input("Chlorine dose leaving the plant (mg/L)", 0.2, 4.0, 1.2, 0.1,
                                help="Free chlorine at the source. The model treats it as ±10% uncertain.")
-        threshold = st.number_input("Minimum residual (mg/L)", 0.05, 1.0, 0.2, 0.05)
+        threshold = st.number_input("Minimum residual (mg/L)", 0.05, 1.0, 0.2, 0.05,
+                                    help=f"Default {THRESHOLD_NOTE[FREE_CHLORINE]}. {TEXAS_EXAMPLE[False]} Set your own "
+                                         f"target here.")
 
     st.header("2. Your samples")
     demo = st.toggle("Demo: simulate a hidden truth and draw samples from it", value=True,
@@ -116,16 +134,35 @@ with st.sidebar:
 
 
 # ----------------------------------------------------------------------------- heavy lifting, cached
+@contextlib.contextmanager
+def workers_skip_this_app():
+    """Process pools (the grid build, the chloramine demo truth) start their workers with multiprocessing's spawn method,
+    which re-runs the main module's file in every worker before its job.  Under Streamlit the main module is this app,
+    so each worker reran the whole app in bare mode first, and the grid build's parallel workers collided on EPANET's
+    temporary files and crashed (a fresh grid for an uploaded .inp failed this way; found by task 14's AppTest of the
+    upload path).  While a pool starts, the main module is an empty stand-in, so workers import only residualmap.  The
+    swap is process-wide, like Streamlit's own install of each script run as __main__."""
+    main = sys.modules.get("__main__")
+    sys.modules["__main__"] = types.ModuleType("__main__")
+    try:
+        yield
+    finally:
+        sys.modules["__main__"] = main
+
+
 @st.cache_resource(show_spinner=False)
-def prepare(path: str, dose: float, chloramine: bool = False):
+def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = ""):
     """Nominal model, physics features and the simulator grid (cached on disk too): the 675-run free-chlorine grid, or
-    the chloramine mode's 1440-run grid under its own cache tag."""
+    the chloramine mode's 1440-run grid under its own cache tag.  The in-memory cache key is (file, dose, disinfectant,
+    chemistry tag): chem_tag is the chloramine grid's chemistry.cache_tag ('' for free chlorine), so a change to the
+    chloramine grid's definition or physics version is never served a grid from before it."""
     sc = nominal_scenario(path, sample_hour=14, source_dose=dose)
     X = build_features(sc)
-    if chloramine:
-        simulator_grid_24h(sc, CACHE_DIR, "chloramine", cond=CA.ca_condition())
-    else:
-        simulator_grid_24h(sc, CACHE_DIR, "full")
+    with workers_skip_this_app():
+        if chloramine:
+            simulator_grid_24h(sc, CACHE_DIR, "chloramine", cond=CA.ca_condition())
+        else:
+            simulator_grid_24h(sc, CACHE_DIR, "full")
     return sc, X
 
 
@@ -169,9 +206,29 @@ def demo_truth_ca(path: str, dose: float, seed: int):
     """A hidden chloramine truth: EPA's chloramine chemistry in EPANET-MSX (about 15 s on Net3 or Net2 with compiled
     reactions, minutes without a C compiler), with the wall rate the task-12 experiment set for the example networks
     (0.20 m/day elsewhere).  It runs in a separate process: MSX changes the working directory, which is process-wide,
-    and this app serves every browser session from threads of one process."""
+    and this app serves every browser session from threads of one process.  Returns (truth, None), or (None, the error)
+    when EPANET-MSX cannot run here (no OpenMP runtime, a broken MSX library, a failed worker).  The failure is cached
+    like a result, so MSX is tried once per network, dose and scenario in this server process: a widget change does
+    not start a new worker each time, and the demo's hidden truth cannot switch between the MSX and the reduced truth
+    within a session."""
     kw = CA.KW_REF.get(os.path.basename(path), 0.20)
-    return CA.truth_in_subprocess(path, seed, kw, dose=dose)
+    try:
+        with workers_skip_this_app():
+            return CA.truth_in_subprocess(path, seed, kw, dose=dose), None
+    except Exception as e:  # noqa: BLE001
+        return None, f"{type(e).__name__}: {str(e)[:240]}"
+
+
+@st.cache_resource(show_spinner=False)
+def demo_truth_ca_reduced(path: str, dose: float, seed: int):
+    """The fallback when EPANET-MSX cannot run here (no OpenMP runtime, a broken library): the same hidden network and
+    draws with the reduced truth, EPANET first-order decay at the rate EPA's chemistry gives for this water (task 12's
+    first-order twin, chloramine.truth_scenario(kinetics='first')).  It runs in this process and never imports
+    EPANET-MSX's library; like demo_truth and prepare, it writes EPANET's temp.inp, .rpt and .bin to the app's working
+    directory (no change of working directory).  It shares the model's own kinetics, so the demo's scores flatter the
+    model, and the app says so."""
+    kw = CA.KW_REF.get(os.path.basename(path), 0.20)
+    return CA.truth_scenario(path, seed, kw, kinetics="first", dose=dose)
 
 
 def chloramine_status() -> dict | None:
@@ -203,7 +260,8 @@ if ca and demo and os.path.basename(net_path) == "ky4":
 n_runs = int(np.prod([len(a) for a in GRIDS["chloramine" if ca else "full"]]))
 with st.spinner(f"Running {n_runs} EPANET simulations of your model over the decay and hydraulic-mismatch grid "
                 f"(once per network; cached afterwards)…"):
-    sc, X = prepare(net_path, float(dose), True) if ca else prepare(net_path, float(dose))
+    sc, X = (prepare(net_path, float(dose), True, cache_tag(CA.ca_condition(), "chloramine")) if ca else
+             prepare(net_path, float(dose)))
 with st.spinner("Running 10 EPANET water-age simulations of your model (demand and roughness settings; once per network)…"):
     band = water_age(net_path, sc)
 junctions = list(sc.junctions)
@@ -223,7 +281,15 @@ if demo:
         how_long = ("about 15 s" if compiler_available() else
                     "several minutes: no C compiler was found, so the reactions run uncompiled")
         with st.spinner(f"Simulating a hidden chloraminated network with EPA's chloramine chemistry in EPANET-MSX ({how_long})…"):
-            tr = demo_truth_ca(net_path, float(dose), int(demo_seed))
+            tr, msx_error = demo_truth_ca(net_path, float(dose), int(demo_seed))
+        if msx_error:
+            with st.spinner("EPANET-MSX could not run here: simulating the reduced chloramine truth with EPANET instead…"):
+                tr = demo_truth_ca_reduced(net_path, float(dose), int(demo_seed))
+            st.warning(f"Reduced demo truth. EPA's chloramine chemistry could not run here in EPANET-MSX "
+                       f"({msx_error}). The hidden truth is its reduced form instead: EPANET "
+                       f"first-order decay at the rate EPA's chemistry gives for this water, on the same hidden network "
+                       f"(task 12's first-order twin). It has the model's own kinetics, so the demo's scores flatter the "
+                       f"model.")
     else:
         tr = demo_truth(net_path, float(dose), int(demo_seed), demo_kb, demo_kw)
     rng = np.random.default_rng(int(demo_seed))
@@ -287,6 +353,20 @@ if model.map_params_ is not None:
     c4.metric("Calibrated decay (bulk / wall)", f"{kb:{KB_FMT}} /d · {kw:.2f} m/d", f"old-pipe factor γ={g:.1f}, demand ×{dm:.2f}, dose ×{model.map_dose_:.2f}")
 else:
     c4.metric("Calibrated decay", "no samples yet", "map = your model's physics alone")
+
+
+def edge_warning(m) -> str | None:
+    """capabilities.grid_edge_warning for the fitted model: a plain warning when more than half of the calibration
+    (capabilities.EDGE_WARN) sits on the lowest or highest bulk or wall decay rate of the grid (simgp.grid_edge_mass).
+    None with no samples."""
+    if m.map_params_ is None:
+        return None
+    return grid_edge_warning(grid_edge_mass(m.W_, m.params, m.doses), m.params, ca)
+
+
+edge_msg = edge_warning(model)
+if edge_msg:
+    st.warning(edge_msg)
 
 
 # ----------------------------------------------------------------------------- the four panels
@@ -433,18 +513,38 @@ with right:
             st.pyplot(fig, width='stretch')
 
 
+# ----------------------------------------------------------------------------- what the model accounts for
+st.subheader("What this model accounts for")
+try:
+    st.table(accounts_for(APP_ROOT).set_index("point"))
+    st.caption(ACCOUNTS_FOR_NOTE)
+except (OSError, KeyError, IndexError, ValueError, TypeError) as e:     # outputs/ missing or changed on this machine
+    st.info(f"The table of what this model accounts for is read from the committed results in outputs/, which could "
+            f"not be read here ({type(e).__name__}). The README and docs/iteration3_journal.md carry the same answer.")
+
+
 # ----------------------------------------------------------------------------- one-page PDF
+def pdf_chem_lines() -> list[str]:
+    """The chemistry lines of the PDF header (capabilities.report_lines): disinfectant and measured species, the
+    threshold and its source, how the seasons are handled, and 'validated in simulation only'."""
+    if ca:
+        return report_lines(True, float(threshold), float(ph_log), float(cl2n_log), int(watch.sum()))
+    return report_lines(False, float(threshold))
+
+
 def pdf_bytes() -> bytes:
     fig = plt.figure(figsize=(16.5, 11.7))  # A3 landscape-ish, prints fine on A4
-    gs = fig.add_gridspec(3, 4, height_ratios=[0.35, 1.5, 1.1])
+    gs = fig.add_gridspec(3, 4, height_ratios=[0.62, 1.5, 1.1])
     ax = fig.add_subplot(gs[0, :]); ax.axis("off")
     name = os.path.basename(net_path)
-    ax.text(0, 0.9, f"ResidualMap — monthly chlorine report — {name}", fontsize=18, fontweight="bold", va="top")
+    ax.text(0, 0.97, f"ResidualMap: monthly chlorine report, {name}", fontsize=18, fontweight="bold", va="top")
     calib = (f"calibrated decay: bulk {model.map_params_[0]:{KB_FMT}} /day, wall {model.map_params_[1]:.2f} m/day, old-pipe factor {model.map_params_[2]:.1f}; "
              f"demand ×{model.map_params_[3]:.2f}, roughness ×{model.map_params_[4]:.2f}, dose ×{model.map_dose_:.2f}") if model.map_params_ is not None else "no samples yet: map from the model's physics alone"
-    ax.text(0, 0.45, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
+    ax.text(0, 0.74, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
                      f"{int((pmin['p_below'] > 0.5).sum())} of {len(junctions)} junctions likely below the minimum at their daily minimum · "
                      f"worst hour {worst:02d}:00\n{calib}\n{oldest_line}", fontsize=10.5, va="top")
+    chem = "\n".join(w for line in pdf_chem_lines() for w in textwrap.wrap(line, PDF_CHEM_CHARS))
+    ax.text(0, 0.36, chem, fontsize=9.5, va="top", color="0.15")
     axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
     top = max(1.2, float(dose))
     network_panel(axes[0], med, f"Chlorine — {label} (mg/L)", "viridis", (0, top), list(S.junction), [f"{h}h" for h in S.hour])

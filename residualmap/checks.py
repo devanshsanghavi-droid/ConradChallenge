@@ -1,9 +1,17 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
 
-    python -m residualmap.checks            # every check, about 400 s on this machine (63 checks, after task 13)
+    python -m residualmap.checks            # every check, about 530 s on this machine (69 checks after task 14: 68 in
+                                            # the committed report, plus the names check, skipped without the variable)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 24 s)
+    RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
+
+Task 14's app check reads the app's PDF with pypdf (in requirements.txt); without pypdf it still requires the PDF
+and skips only its PDF-text assertions, which the run log records (pdf_text_checked).  Its names check reads a private
+list kept outside the repository (RESIDUALMAP_NAMES_CSV) and is skipped without it; its result goes to the git-ignored
+run log only (RUN_LOG_ONLY), so the committed report is the same whether or not the list is on this machine, and a full
+run with or without the variable leaves it unchanged.  A names-check failure still fails the run.
 
 Plain asserts on purpose (pytest is not in .venv).  Exits non-zero if any check fails.  A full run writes
 outputs/chem/checks_report.json, which holds only results that do not change from run to run (no dates, timings
@@ -67,6 +75,11 @@ CACHE_BEFORE: dict | None = None    # outputs/cache snapshot taken by run_checks
 
 # ----------------------------------------------------------------------------- tiny harness
 CHECKS: list[tuple[str, str, bool, callable]] = []
+
+
+class SkipCheck(Exception):
+    """Raised by a check that cannot run here (task 14: a private input that is not on this machine); recorded as
+    skipped with its reason, like a --quick skip, never as a pass."""
 
 
 def check(group: str, quick: bool = True):
@@ -2463,6 +2476,422 @@ def app_water_age_panels():
     return res
 
 
+# ----------------------------------------------------------------------------- task 14: app, capabilities, docs, numbers
+DASH = ("—", "–")       # em dash, en dash
+# (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
+DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
+                        "README.md": (27, 28)}
+ACCOUNTS_ROWS = ["Water age", "Organics and chlorine demand", "Chlorine type", "Temperature"]
+NAMES_ENV = "RESIDUALMAP_NAMES_CSV"   # a CSV kept outside the repository with an 'org' column (and optionally
+                                      # 'system_name', 'type'): names that must not appear in any tracked text file
+# checks recorded in outputs/chem/checks_run.json (git-ignored) only, never in the committed report, with the reason
+RUN_LOG_ONLY = {"no_listed_names_in_tracked_files":
+                f"reads a private list kept outside the repository ({NAMES_ENV}) and is skipped without it, so its result "
+                f"is in outputs/chem/checks_run.json only; a failure still fails the run"}
+
+
+def _norm_ws(s: str) -> str:
+    return " ".join(s.split())
+
+
+@check("task14")
+def capabilities_table_reads_outputs():
+    """The app's 'What this model accounts for' table (capabilities.accounts_for): the manager's four points in order,
+    every source in capabilities.SOURCES resolves, the numbers it prints are the outputs' values at the printed
+    precision, every 'tested' cell says simulation, the adoption words follow the outputs (temperature and organics
+    tested and not adopted; chloramine labelled experimental exactly when task 12's summaries say so), and no cell has
+    an em or en dash.  The PDF's chemistry lines (capabilities.report_lines) name the disinfectant, the measured
+    species, the threshold and its source, say the seasons are absorbed by refitting and 'Validated in simulation
+    only', and carry no kb20 or temperature field (no temperature model was adopted)."""
+    from .capabilities import COLUMNS, SOURCES, accounts_for, numbers, report_lines, resolve
+    for name in SOURCES:
+        resolve(name)
+    n = numbers()
+    t = accounts_for()
+    assert list(t.columns) == list(COLUMNS) and list(t["point"]) == ACCOUNTS_ROWS, (list(t.columns), list(t["point"]))
+    cells = [c for c in t.values.ravel()]
+    assert not any(d in c for c in cells for d in DASH), "dash in the table"
+    assert all("simulat" in c for c in t["tested, in simulation only"]), "a tested cell does not say simulation"
+    row = {r["point"]: r for _, r in t.iterrows()}
+    printed = {"Water age": [f"{n['age_cov_max_Net3']:.3f}", f"{n['age_cov_max_Net2']:.3f}", f"{n['age_cov_max_ky4']:.3f}",
+                             f"{n['wall_share_mae_Net3']:.3f}",
+                             *(f"{n[f'age_lb_max_{k}']} of {k}'s {n[f'age_n_junctions_{k}']}" for k in ("Net3", "Net2", "ky4"))],
+               "Organics and chlorine demand": [f"{n['toc_readings_ratio_Net3']:.3f}", f"{n['toc_first_storm_ratio_Net3']:.3f}",
+                                                f"{n['audit_n_within']} of {n['audit_n_cells']}",
+                                                f"{abs(n['audit_oldest_bias_Net3']):.3f}"],
+               "Chlorine type": [f"{n['ca_found_straddle8_Net3']} of {int(n['ca_low_straddle8_Net3'])}",
+                                 f"{n['ca_cov90_random_Net3']:.3f}", f"{n['ca_cov90_random_Net2']:.3f}",
+                                 f"fitted to 15 samples, put {n['ca_free_floor_mass_Net3']:.2f} of their posterior",
+                                 f"at 8 random samples they raised {int(n['ca_false_alarms_free_Net3'])} false alarms",
+                                 f"{n['ca_cov90_straddle8_Net3']:.3f}"],
+               "Temperature": [f"{n['temp_m_julsep_rmse_Net3']:.3f}", f"{n['temp_b0_julsep_rmse_Net3']:.3f}",
+                               f"{n['temp_m2_ratio_min']:.3f} to {n['temp_m2_ratio_max']:.3f}",
+                               f"{n['temp_m2_n_stop']} of the 4"]}
+    assert (n["age_n_junctions_Net3"], n["age_n_junctions_Net2"], n["age_n_junctions_ky4"]) == (92, 35, 959)
+    for point, strs in printed.items():
+        text = " ".join(row[point][c] for c in COLUMNS[1:])
+        for s in strs:
+            assert s in text, (point, s)
+    assert not n["temp_adopted"] and row["Temperature"][COLUMNS[3]].startswith("Tested, not adopted")
+    assert not n["toc_adopted"] and row["Organics and chlorine demand"][COLUMNS[3]].startswith("Tested, not adopted")
+    assert n["toc_adopted"] == (n["toc_adopted_Net3"] and n["toc_adopted_Net2"]), "TOC adoption follows task 11's own flag"
+    # the assumptions behind the temperature and organics numbers are named where the numbers are
+    assert "assumed temperature schedule" in row["Temperature"][COLUMNS[2]], "temperature assumptions"
+    assert "assumed TOC schedule" in row["Organics and chlorine demand"][COLUMNS[2]], "TOC assumptions"
+    assert n["temp_m_stop_Net3"] and n["temp_m_stop_Net2"], "task 10's stop rule is what the table reports"
+    assert ("experimental" in row["Chlorine type"][COLUMNS[1]]) == n["ca_experimental"]
+    lines = {"free": report_lines(False, 0.2), "chloramine": report_lines(True, 0.5, 8.0, 4.5, 3),
+             "custom": report_lines(False, 0.3)}
+    for k, ls in lines.items():
+        txt = " ".join(ls)
+        assert not any(d in txt for d in DASH), k
+        assert "Validated in simulation only" in txt and "absorbed into the decay rates" in txt, k
+        assert "kb20" not in txt and "kb(T)" not in txt and "temperature this month" not in txt.lower(), k
+    assert "Measured species: free chlorine" in lines["free"][0] and "not a California rule" in lines["free"][1]
+    assert "Measured species: TOTAL chlorine" in lines["chloramine"][0] and "not a California rule" in lines["chloramine"][1]
+    assert "nitrification watch: 3 junctions" in lines["chloramine"][0]
+    assert "used only by the nitrification watch" in lines["chloramine"][2] and "No seasonal chloramine" in lines["chloramine"][2]
+    assert "tested in simulation and not adopted" in lines["free"][2]
+    assert "set by you" in lines["custom"][1] and "detectable residual" in lines["custom"][1]
+    return {"rows": list(t["point"]), "numbers": {k: v for k, v in n.items() if not isinstance(v, (list, dict))},
+            "pdf_lines_free": lines["free"]}
+
+
+@check("task14")
+def grid_edge_warning_text():
+    """capabilities.grid_edge_warning, the app's grid-edge warning, on the real grids with made-up posteriors: silent
+    when no edge of the bulk or wall axis holds more than half of the calibration (uniform weights; 0.49 on the edge);
+    on the free-chlorine grid with all the weight on the bulk floor it names the rate (0.1 per day) and adds the
+    simulations' floor note; on the chloramine grid with the weight on the highest wall rate it names that rate and has
+    no floor note; no em or en dash."""
+    import itertools
+    from .capabilities import EDGE_WARN, grid_edge_warning
+    from .simgp import GRIDS, grid_edge_mass
+    out = {}
+    for grid, axis, side in (("full", 0, "low"), ("chloramine", 1, "high")):
+        params = list(itertools.product(*GRIDS[grid]))
+        P = np.asarray(params, dtype=float)
+        edge_v = P[:, axis].min() if side == "low" else P[:, axis].max()
+        uniform = np.full(len(params), 1.0 / len(params))
+        assert grid_edge_warning(grid_edge_mass(uniform, params), params, grid == "chloramine") is None, grid
+        on = (P[:, axis] == edge_v).astype(float)
+        under = EDGE_WARN - 0.01          # just under the trigger on that edge
+        near = under * on / on.sum() + (1 - under) * (1 - on) / (1 - on).sum()
+        assert abs(grid_edge_mass(near, params)[f"{'kb' if axis == 0 else 'kw'}_{side}"] - under) < 1e-12
+        assert grid_edge_warning(grid_edge_mass(near, params), params, grid == "chloramine") is None, grid
+        msg = grid_edge_warning(grid_edge_mass(on / on.sum(), params), params, grid == "chloramine")
+        assert msg and msg.startswith("Grid edge: 100% of the calibration") and not any(d in msg for d in DASH), msg
+        out[grid] = msg
+    assert "lowest bulk decay rate the grid allows (0.1 per day)" in out["full"] and "floor of 0.10 per day" in out["full"]
+    assert "highest wall decay rate the grid allows (1 m/day)" in out["chloramine"] and "floor" not in out["chloramine"]
+    return out
+
+
+APP_T14_SCRIPT = r'''
+import io, json, sys, time, warnings
+warnings.filterwarnings("ignore")
+import streamlit.runtime.memory_media_file_storage as mm
+PDF = {}
+_orig = mm.MemoryMediaFileStorage.load_and_get_id
+def _rec(self, path_or_data, mimetype, kind, filename=None):
+    if mimetype == "application/pdf":
+        PDF["last"] = path_or_data
+    return _orig(self, path_or_data, mimetype, kind, filename)
+mm.MemoryMediaFileStorage.load_and_get_id = _rec
+try:      # reads the PDF's text; without pypdf the check still requires a PDF and skips only its text assertions
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
+from streamlit.testing.v1 import AppTest
+app, inp = sys.argv[1], sys.argv[2]
+T = 900
+
+def state(at, t0):
+    assert not at.exception, [e.value for e in at.exception]
+    acc = [t.value for t in at.table if list(t.value.columns) == ["in the model", "tested, in simulation only",
+                                                                  "not done, or tested and not adopted"]]
+    metric = [m for m in at.metric if m.label.startswith("Junctions likely below")]
+    calib = [m for m in at.metric if m.label.startswith("Calibrated decay")]
+    raw = PDF.pop("last", None)
+    pdf = PdfReader(io.BytesIO(raw)).pages[0].extract_text() if raw is not None and PdfReader is not None else None
+    return {"seconds": round(time.time() - t0, 1),
+            "flagged_label": metric[0].label if metric else None, "flagged": metric[0].value if metric else None,
+            "calib_value": calib[0].value if calib else None,
+            "subheaders": [s.value for s in at.subheader], "warnings": [w.value for w in at.warning],
+            "errors": [e.value for e in at.error], "info": [i.value for i in at.info],
+            "captions": [c.value for c in at.caption], "accounts_rows": list(acc[0].index) if acc else None,
+            "pdf_made": raw is not None, "pdf": pdf,
+            "reveal": [m.value for m in at.markdown if "True daily-minimum violations" in m.value]}
+
+def fresh():
+    PDF.clear()
+    return AppTest.from_file(app, default_timeout=T).run()
+
+def reveal(at):
+    [t for t in at.toggle if t.label.startswith("Show the true daily-minimum map")][0].set_value(True)
+    PDF.clear()
+    return at.run()
+
+def pick(at, label, prefix):
+    if label == "selectbox":
+        at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith(prefix)][0])
+    else:
+        [r for r in at.radio if r.label == label][0].set_value(prefix)
+
+res = {}
+t0 = time.time(); at = reveal(fresh()); res["default"] = state(at, t0)              # (1) free chlorine default demo
+t0 = time.time(); pick(at, "Show", "03:00"); PDF.clear(); at.run(); res["hourly"] = state(at, t0)   # (7) hourly view
+t0 = time.time(); at = fresh(); pick(at, "selectbox", "Net2"); PDF.clear(); at.run(); res["net2"] = state(at, t0)  # (4)
+t0 = time.time(); at = fresh(); pick(at, "Disinfectant", "Chloramine (total chlorine)"); at.run()   # (2) chloramine, Net3
+at = reveal(at); res["chloramine_net3"] = state(at, t0)
+t0 = time.time(); at = fresh(); pick(at, "Disinfectant", "Chloramine (total chlorine)"); pick(at, "selectbox", "ky4")
+PDF.clear(); at.run(); res["ky4_chloramine"] = state(at, t0)                         # (5) ky4: refused before any run
+import residualmap.chloramine as CA                                                 # (8) EPANET-MSX unavailable
+def _no_msx(*a, **k):
+    raise RuntimeError("EPANET-MSX needs Homebrew's OpenMP runtime, which is missing (simulated by this check)")
+_keep, CA.truth_in_subprocess = CA.truth_in_subprocess, _no_msx
+try:
+    t0 = time.time(); at = fresh(); pick(at, "selectbox", "Net2"); pick(at, "Disinfectant", "Chloramine (total chlorine)")
+    at.run(); at = reveal(at); res["msx_fallback"] = state(at, t0)
+finally:
+    CA.truth_in_subprocess = _keep
+t0 = time.time(); at = fresh(); pick(at, "Model", "Upload my .inp"); at.run()      # (6) the upload path, Net3.inp
+at.file_uploader[0].set_value(("Net3.inp", open(inp, "rb").read(), "application/octet-stream")); PDF.clear(); at.run()
+res["upload"] = state(at, t0)
+print("APP_T14_JSON " + json.dumps({"pypdf": PdfReader is not None, "runs": res}))
+'''
+
+
+def _reveal_counts(txt: str) -> dict:
+    m = re.search(r"\*\*(\d+) of (\d+)\*\* junctions.*found \*\*(\d+) of (\d+)\*\*.*with (\d+) false alarms", txt)
+    out = dict(zip(("violations", "junctions", "found", "unsampled_violations", "false_alarms"), map(int, m.groups())))
+    out["sample_mean_mgL"] = float(re.search(r"Mean of your samples: ([0-9.]+) mg/L", txt).group(1))
+    return out
+
+
+@check("task14", quick=False)
+def app_task14_runs():
+    """Headless AppTest by widget label of task 14's app (the plan's seven runs, with its two temperature-outlook runs,
+    dropped with the temperature models, replaced by the ky4 chloramine refusal and the EPANET-MSX fallback):
+    (1) the free chlorine default demo (Net3, scenario 0, 8 samples): 42 of 92 flagged; 41 violations, 36 of 36 found,
+        1 false alarm, sample mean 0.53 mg/L; the 'What this model accounts for' table with its four rows; the PDF's
+        chemistry lines (free chlorine, its threshold note, the seasons absorbed by refitting, 'Validated in
+        simulation only') and no kb20 field;
+    (2) the chloramine demo on Net3 (EPA's chemistry in EPANET-MSX): the 0.5 mg/L total chlorine label, the TOTAL
+        chlorine banner and sample-table caption, a calibrated bulk rate from the chloramine grid, the PDF's chloramine
+        lines, no reduced-truth warning;
+    (4) Net2, free chlorine; (5) ky4 with the chloramine demo: refused with its message before any simulation;
+    (6) the upload path with Net3.inp: a fresh grid built inside the app (finding 1 of task 14; the grid's cache file
+        must be created by the run) and the same map as the example network; (7) the hourly view; (8) EPANET-MSX
+        unavailable (simulated): the reduced chloramine truth, labelled.  An earlier upload of the same Net3.inp and its
+        cached grids (from a crashed run, or from Devansh uploading the file) are moved aside first, so the upload run
+        always builds its grid, and put back afterwards; the run's own copy and grid are deleted.  Every run that renders
+    the page must produce a PDF; its text is read with pypdf, and without pypdf only the PDF-text assertions are skipped,
+    which the run log records (pdf_text_checked), so the committed report does not depend on it."""
+    import hashlib
+    from .capabilities import report_lines
+    from .chemistry import THRESHOLD_NOTE
+    from .simgp import GRIDS, KB_GRID
+    from .simulate import LIB
+    inp = os.path.join(LIB, "Net3.inp")
+    up_name = f"{hashlib.sha1(open(inp, 'rb').read()).hexdigest()[:8]}_Net3.inp"    # app.py's name for the upload
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    had_dir = os.path.isdir(up_dir)
+    mine = lambda d: [f for f in (os.listdir(d) if os.path.isdir(d) else []) if f == up_name or f"_{up_name}" in f]
+    aside = tempfile.mkdtemp(prefix="rm_t14_aside_")
+    moved = [(d, f) for d in (up_dir, CACHE) for f in mine(d)]
+    built = []
+    try:
+        for d, f in moved:
+            os.makedirs(os.path.join(aside, os.path.basename(d)), exist_ok=True)
+            shutil.move(os.path.join(d, f), os.path.join(aside, os.path.basename(d), f))
+        try:
+            r = subprocess.run([PY, "-c", APP_T14_SCRIPT, os.path.join(REPO, "app.py"), inp],
+                               cwd=os.getcwd(), capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+        finally:  # the upload test's copy of Net3.inp and its grid (outputs/app_uploads and outputs/cache, git-ignored)
+            built = mine(CACHE)
+            for d in (up_dir, CACHE):
+                for f in mine(d):
+                    os.remove(os.path.join(d, f))
+            if not had_dir and os.path.isdir(up_dir) and not os.listdir(up_dir):
+                os.rmdir(up_dir)
+    finally:      # put back what was there before
+        for d, f in moved:
+            os.makedirs(d, exist_ok=True)
+            shutil.move(os.path.join(aside, os.path.basename(d), f), os.path.join(d, f))
+        shutil.rmtree(aside, ignore_errors=True)
+    line = [x for x in r.stdout.splitlines() if x.startswith("APP_T14_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    payload = json.loads(line[-1][len("APP_T14_JSON "):])
+    res, pdf_text = payload["runs"], payload["pypdf"]
+    if not pdf_text:
+        print("      app_task14_runs: pypdf is not installed, so the PDF-text assertions were skipped "
+              "(pip install pypdf; requirements.txt lists it)", flush=True)
+    d = res["default"]
+    got = {**_reveal_counts(d["reveal"][0]), "flagged": int(d["flagged"].split()[0])}
+    assert got == APP_DEMO, got
+    assert d["flagged_label"] == "Junctions likely below 0.2 mg/L (daily minimum)"
+    for k in ("default", "hourly", "net2", "chloramine_net3", "msx_fallback", "upload"):
+        assert res[k]["accounts_rows"] == ACCOUNTS_ROWS, (k, res[k]["accounts_rows"])
+        assert "What this model accounts for" in res[k]["subheaders"], k
+        assert res[k]["pdf_made"], k
+        assert res[k]["pdf"] or not pdf_text, k
+    if pdf_text:
+        pdf = _norm_ws(d["pdf"])
+        for ln in report_lines(False, 0.2):
+            assert _norm_ws(ln) in pdf, ln
+        assert "kb20" not in pdf and THRESHOLD_NOTE["free_chlorine"] in pdf
+    assert res["hourly"]["flagged_label"] == "Junctions likely below 0.2 mg/L (03:00)", res["hourly"]["flagged_label"]
+    assert res["net2"]["flagged_label"] == "Junctions likely below 0.2 mg/L (daily minimum)"
+    c = res["chloramine_net3"]
+    assert c["flagged_label"] == "Junctions likely below 0.5 mg/L (daily minimum)", c["flagged_label"]
+    assert any(i.startswith("Chloramine mode") and "TOTAL chlorine" in i for i in c["info"]), c["info"]
+    assert any("TOTAL chlorine reading" in x for x in c["captions"])
+    kb = float(c["calib_value"].split()[0])
+    assert kb in GRIDS["chloramine"][0] and kb not in KB_GRID, kb
+    if pdf_text:
+        cpdf = _norm_ws(c["pdf"])
+        assert "Disinfectant: chloramine. Measured species: TOTAL chlorine" in cpdf and THRESHOLD_NOTE["chloramine"] in cpdf
+        assert "Validated in simulation only" in cpdf and "kb20" not in cpdf
+    assert not any(w.startswith("Reduced demo truth") for w in c["warnings"]), c["warnings"]
+    k4 = res["ky4_chloramine"]
+    assert any("offered on Net3 and Net2 only" in e for e in k4["errors"]) and k4["accounts_rows"] is None, k4["errors"]
+    fb = res["msx_fallback"]
+    assert any(w.startswith("Reduced demo truth") and "flatter" in w for w in fb["warnings"]), fb["warnings"]
+    assert fb["reveal"] and fb["flagged_label"] == "Junctions likely below 0.5 mg/L (daily minimum)"
+    u = res["upload"]
+    assert f"grid24_full_{up_name}.pkl" in built, ("the upload run built no grid", built)
+    assert u["flagged"] == d["flagged"] and u["calib_value"] == d["calib_value"], (u["flagged"], d["flagged"])
+    assert any("has not been tested against a simulated truth for this file" in x for x in u["captions"])
+    out = {"default": got, "hourly_flagged": res["hourly"]["flagged"], "net2_flagged": res["net2"]["flagged"],
+           "chloramine_net3": {"flagged": c["flagged"], **_reveal_counts(c["reveal"][0]), "calibrated": c["calib_value"]},
+           "msx_fallback_net2": {"flagged": fb["flagged"], **_reveal_counts(fb["reveal"][0])},
+           "upload_flagged": u["flagged"], "upload_grid_built_in_the_app": True, "ky4_chloramine_refused": True,
+           "grid_edge_warnings": {k: sum(w.startswith("Grid edge") for w in v["warnings"]) for k, v in res.items()},
+           "_volatile": {"pdf_text_checked": pdf_text, **{f"{k}_seconds": v["seconds"] for k, v in res.items()}}}
+    return out
+
+
+@check("task14")
+def numbers_trace_to_outputs():
+    """python -m residualmap.numbers: every number in the iteration-4 parts of the README and the journal is found in a
+    committed output file or classified (time, date, citation, identifier, run cost, derived count, value written in
+    the code, or an allowlisted literature value); none is unexplained; every task-14 headline number in the registry
+    is its file's value at its key, printed in its section with the words around it; two wrong entries (another
+    network's value, a coarser format) fail; every source of the app's table resolves.  The scan's power (how often a
+    one-unit change in the last printed digit would be caught) is recorded, not barred."""
+    from . import numbers as N
+    res = N.scan()
+    N.check_registry(res)
+    bad = [m for ok, e, m in res.registry if not ok]
+    assert res.sources_ok, res.sources_error
+    assert not res.unexplained, res.unexplained[:10]
+    assert not bad and len(res.registry) > 0, bad[:10]
+    # the registry can fail: Net2's value at the place where the README prints Net3's, and a value one digit off
+    keep = N.REGISTRY[:]
+    try:
+        N.REGISTRY[:] = [("README", N.ONE, "age at {} (Net3)", "age_cov_max_Net2", ".3f"),
+                         ("README", N.ONE, "age at {} (Net3)", "age_cov_max_Net3", ".2f")]
+        neg = N.Result()
+        N.check_registry(neg)
+    finally:
+        N.REGISTRY[:] = keep
+    assert [ok for ok, _, _ in neg.registry] == [False, False], neg.registry
+    return {"unexplained": 0, "registry_ok": len(res.registry), "registry_negative_controls_fail": 2,
+            "classified": {k: len(v) for k, v in sorted(res.classified.items())},
+            "traced": res.traced, "n_tokens": res.n_tokens,
+            "power_caught_of_tested": {k: list(v) for k, v in res.power.items()}}
+
+
+def _it4_texts() -> dict:
+    """The iteration-4 texts task 14 holds to 'no em or en dashes': the journal from 'Iteration 4, chemistry' on, the
+    README's iteration-4 sections (numbers.sections()), the CHANGELOG's iteration-4 entries and capabilities.py."""
+    from . import numbers as N
+    out = {f"{s.doc}: {s.title[:50]}": s.text for s in N.sections()}
+    ch = open(os.path.join(REPO, "CHANGELOG.md")).read()
+    out["CHANGELOG iteration 4"] = ch[:ch.index("## 2026-09-21")]
+    out["residualmap/capabilities.py"] = open(os.path.join(REPO, "residualmap", "capabilities.py")).read()
+    return out
+
+
+@check("task14")
+def no_dashes_in_iteration4_text():
+    """No em or en dash in any iteration-4 text (journal, README sections, CHANGELOG entries, capabilities.py), and task
+    14 adds none to the files whose older parts have them (pilot protocol, app.py, feature dictionary, README)."""
+    bad = {k: [t.count(d) for d in DASH] for k, t in _it4_texts().items() if any(d in t for d in DASH)}
+    assert not bad, bad
+    now = {}
+    for f, (em, en) in DASHES_BEFORE_TASK14.items():
+        t = open(os.path.join(REPO, f)).read()
+        now[f] = (t.count(DASH[0]), t.count(DASH[1]))
+        assert now[f][0] <= em and now[f][1] <= en, (f, now[f], (em, en))
+    return {"iteration4_texts_checked": len(_it4_texts()), "older_files": now}
+
+
+@check("task14")
+def no_listed_names_in_tracked_files():
+    """No tracked text file names an organisation on a private list kept outside the repository (the CSV named by
+    RESIDUALMAP_NAMES_CSV, column 'org' and, when present, 'system_name'; rows with a 'type' column other than
+    'utility' are left out).  A name matches as a whole sequence of words, case and punctuation ignored, with any
+    parenthetical dropped; its leading words before the first generic word ('water', 'district', 'county', ...) are
+    matched too when there are at least two of them.  The one allowed match is the public provenance of EPA's Net3
+    example in experiment.NET_DESC, which reaches committed figure titles and is left as it is.  Without the variable
+    the check is skipped: the list is never committed, and only counts are recorded, never a name."""
+    import csv
+    path = os.environ.get(NAMES_ENV)
+    if not path or not os.path.exists(path):
+        raise SkipCheck(f"{NAMES_ENV} not set")
+    generic = set("water district county community services service mutual company co inc city town village of the and "
+                  "public utility utilities municipal irrigation authority department dept system systems association "
+                  "assn corp corporation cwd csd mwd pud wd ccsd ud mwc wsd sd improvement assessment area zone no rural "
+                  "cooperative coop board works ca california llc".split())
+    words = lambda s: re.findall(r"[a-z0-9]+", s.lower())
+    names = set()
+    with open(path, newline="") as fh:
+        for row in csv.DictReader(fh):
+            if row.get("type") not in (None, "", "utility"):
+                continue
+            for k in ("org", "system_name"):
+                w = words(re.sub(r"\(.*?\)", " ", row.get(k) or ""))
+                if w:
+                    names.add(tuple(w))
+                    stem = []
+                    for x in w:
+                        if x in generic:
+                            break
+                        stem.append(x)
+                    if len(stem) >= 2:
+                        names.add(tuple(stem))
+    lengths: dict[str, set] = {}
+    for n in names:
+        lengths.setdefault(n[0], set()).add(len(n))
+    files = subprocess.run(["git", "-C", REPO, "ls-files"], capture_output=True, text=True).stdout.split()
+    files += [f for f in subprocess.run(["git", "-C", REPO, "ls-files", "--others", "--exclude-standard"],
+                                        capture_output=True, text=True).stdout.split() if f.startswith("residualmap/")]
+    allowed, unexpected, n_files = 0, [], 0
+    for f in files:
+        if f.endswith((".png", ".pkl", ".pdf", ".bin", ".jpg")):
+            continue
+        try:
+            lines = open(os.path.join(REPO, f), encoding="utf-8").read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        n_files += 1
+        for i, ln in enumerate(lines):
+            w = words(ln)
+            hit = any(tuple(w[a:a + k]) in names for a in range(len(w)) if w[a] in lengths for k in lengths[w[a]])
+            if hit:
+                provenance = f == "residualmap/experiment.py" and any("NET_DESC" in x for x in lines[max(0, i - 3):i + 1])
+                if provenance:
+                    allowed += 1
+                else:
+                    unexpected.append(f"{f}:{i + 1}")
+    assert not unexpected, unexpected
+    return {"names_checked": len(names), "text_files_scanned": n_files, "allowed_provenance_lines": allowed,
+            "unexpected": 0}
+
+
 # ----------------------------------------------------------------------------- runner
 def run_checks(quick: bool) -> tuple[dict, dict]:
     """Returns (report, run_log): the report holds only results that do not change from run to run; the run log
@@ -2480,6 +2909,10 @@ def run_checks(quick: bool) -> tuple[dict, dict]:
             t0 = time.time()
             try:
                 detail, ok, err = fn(), True, None
+            except SkipCheck as e:
+                results.append({"name": name, "group": group, "pass": None, "skipped": str(e)})
+                print(f"SKIP  {group:16s} {name}  ({e})", flush=True)
+                continue
             except Exception as e:  # noqa: BLE001
                 detail, ok, err = None, False, f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=3)}"
             vol = detail.pop("_volatile", {}) if isinstance(detail, dict) else {}
@@ -2505,18 +2938,25 @@ def run_checks(quick: bool) -> tuple[dict, dict]:
     import wntr
     import sklearn
     import scipy
-    counts = {"all_pass": all(r["pass"] is not False for r in results),
-              "n_pass": sum(r["pass"] is True for r in results), "n_fail": sum(r["pass"] is False for r in results),
-              "n_skipped": sum(r["pass"] is None for r in results)}
+
+    def counts(rs):
+        return {"all_pass": all(r["pass"] is not False for r in rs),
+                "n_pass": sum(r["pass"] is True for r in rs), "n_fail": sum(r["pass"] is False for r in rs),
+                "n_skipped": sum(r["pass"] is None for r in rs)}
+    # a check whose result depends on a private input outside the repository goes to the run log only, so the
+    # committed report is the same whether or not that input is on this machine (task 14's review)
+    in_report = [r for r in results if r["name"] not in RUN_LOG_ONLY]
     gen = "python -m residualmap.checks" + (" --quick" if quick else "")
     report = {"generated_by": gen,
               "about": "Run-invariant results only; the date, timings and free disk of each run are in "
                        "outputs/chem/checks_run.json (git-ignored).",
               "environment": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__,
                               "scipy": scipy.__version__, "sklearn": sklearn.__version__, "wntr": wntr.__version__},
-              **counts, "checks": results}
+              **counts(in_report),
+              "run_log_only": {name: why for name, why in RUN_LOG_ONLY.items()},
+              "checks": in_report}
     run_log = {"generated_by": gen, "date": time.strftime("%Y-%m-%d %H:%M"), "seconds": round(time.time() - t_all, 1),
-               **counts, "timing": timing, "results": results}
+               **counts(results), "timing": timing, "results": results}
     return report, run_log
 
 
@@ -2704,7 +3144,12 @@ def main():
                                                       "(default: this repo)")
     ap.add_argument("--no-app", action="store_true", help="do not run the app's default demo")
     ap.add_argument("--note", default=None, help="free text stored with the entry (how the rerun was made)")
+    ap.add_argument("--numbers", action="store_true", help="only run python -m residualmap.numbers: every iteration-4 "
+                                                           "number in the README and journal traces to outputs/")
     a = ap.parse_args()
+    if a.numbers:
+        from .numbers import main as numbers_main
+        return numbers_main([])
     if a.reproduce or a.compare:
         workdir = os.path.abspath(a.reproduce or a.compare)
         runs, not_written = reproduce(workdir) if a.reproduce else (None, [])
@@ -2760,7 +3205,11 @@ def main():
     dest = RUN_LOG if a.quick else REPORT
     print(f"\n{report['n_pass']} passed, {report['n_fail']} failed, {report['n_skipped']} skipped in {run_log['seconds']} s "
           f"-> {os.path.relpath(dest, REPO)}" + ("" if a.quick else f" ({'changed' if run_log['report_changed'] else 'unchanged'})"))
-    return 0 if report["all_pass"] else 1
+    for r in run_log["results"]:
+        if r["name"] in RUN_LOG_ONLY:
+            state = {True: "passed", False: "FAILED", None: f"skipped ({r.get('skipped')})"}[r["pass"]]
+            print(f"{r['name']} (run log only, {os.path.relpath(RUN_LOG, REPO)}): {state}")
+    return 0 if report["all_pass"] and run_log["all_pass"] else 1
 
 
 if __name__ == "__main__":
