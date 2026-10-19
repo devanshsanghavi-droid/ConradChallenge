@@ -1,0 +1,119 @@
+{
+ "about": "The run cost's time estimate (importers.estimate_seconds: one timed 7-day run times the runs, over an assumed effective speedup of 4) against fresh grid builds of 675 runs, in seconds. Timed, so it varies from run to run and no check reruns it; written by python -m residualmap.intake_exp timing. The pre-registered bar (run_cost_gate, task 15b): Net3's estimate within a factor of 2 of the fresh grid time. Its scored run missed; the repeats below are characterizations after the stop, not rescorings.",
+ "written": "2026-10-18 22:23",
+ "cpu_count": 12,
+ "workers": 11,
+ "effective_speedup_assumed": 4.0,
+ "scored_run": {
+  "what": "run_cost_gate's pre-registered scored run, in the task-15b check run on 18 October 2026, before the decision to keep the timing out of the saved check",
+  "network": "Net3",
+  "seconds_per_run": 0.032,
+  "runs": 675,
+  "effective_speedup_assumed": 4.0,
+  "estimate_s": 5.4,
+  "fresh_grid_s": 11.34,
+  "fresh_from": "fresh_grid_equals_cached_grid, earlier in the same check run",
+  "ratio": 2.1,
+  "bar": "estimate within a factor of 2 of the fresh grid time (ratio 0.5 to 2.0)",
+  "passed": false
+ },
+ "review_full_run": {
+  "what": "the review's full run of the saved checks on the built tree, 18 October 2026 (its run log)",
+  "network": "Net3",
+  "seconds_per_run": 0.03,
+  "runs": 675,
+  "estimate_s": 5.06,
+  "fresh_grid_s": 9.02,
+  "ratio": 1.783,
+  "passed_the_bar": true,
+  "counts_as": "a characterization after the stop, not a rescoring"
+ },
+ "feasibility_review": {
+  "what": "the plan's feasibility review, 18 October 2026, on this machine (11 workers): one grid of 675 runs and one 7-day run of each network; the effective speedup is 675 times the run over the grid time (the private plan, section 'Feasibility review')",
+  "Net3": {
+   "runs": 675,
+   "grid_s": 11.8,
+   "seconds_per_run": 0.041,
+   "effective_speedup": 2.3
+  },
+  "ky10": {
+   "runs": 675,
+   "grid_s": 242.0,
+   "seconds_per_run": 1.77,
+   "effective_speedup": 4.9
+  }
+ },
+ "standalone_builds": {
+  "what": "the implementer's standalone fresh builds of Net3's 675-run grid, 18 October 2026, outside any check run; two build logs, kept outside the repository with the build's other scratch files",
+  "fresh_grid_s": [
+   10.15,
+   11.31,
+   9.35,
+   9.66,
+   9.74
+  ],
+  "fresh_grid_s_min": 9.35,
+  "fresh_grid_s_max": 11.31,
+  "counts_as": "characterizations, not scored"
+ },
+ "net3_repeats": [
+  {
+   "seconds_per_run": 0.041,
+   "estimate_s": 6.92,
+   "fresh_grid_s": 9.94,
+   "ratio": 1.437,
+   "effective_speedup": 2.78,
+   "within_factor_2": true
+  },
+  {
+   "seconds_per_run": 0.0353,
+   "estimate_s": 5.95,
+   "fresh_grid_s": 10.36,
+   "ratio": 1.74,
+   "effective_speedup": 2.3,
+   "within_factor_2": true
+  },
+  {
+   "seconds_per_run": 0.0351,
+   "estimate_s": 5.93,
+   "fresh_grid_s": 10.46,
+   "ratio": 1.765,
+   "effective_speedup": 2.27,
+   "within_factor_2": true
+  },
+  {
+   "seconds_per_run": 0.0332,
+   "estimate_s": 5.6,
+   "fresh_grid_s": 10.08,
+   "ratio": 1.8,
+   "effective_speedup": 2.22,
+   "within_factor_2": true
+  },
+  {
+   "seconds_per_run": 0.0333,
+   "estimate_s": 5.62,
+   "fresh_grid_s": 10.34,
+   "ratio": 1.838,
+   "effective_speedup": 2.18,
+   "within_factor_2": true
+  }
+ ],
+ "net3_repeats_summary": {
+  "n": 5,
+  "ratio_min": 1.437,
+  "ratio_max": 1.838,
+  "within_factor_2": 5,
+  "fresh_grid_s_min": 9.94,
+  "fresh_grid_s_max": 10.46,
+  "effective_speedup_min": 2.18,
+  "effective_speedup_max": 2.78
+ },
+ "ky10": {
+  "seconds_per_run": 1.801,
+  "estimate_s": 303.92,
+  "fresh_grid_s": 194.73,
+  "ratio": 0.641,
+  "effective_speedup": 6.24,
+  "within_factor_2": true
+ }
+}

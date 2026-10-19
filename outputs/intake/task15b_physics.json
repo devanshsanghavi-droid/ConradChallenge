@@ -1,0 +1,671 @@
+{
+ "about": "Task 15b's checks of an imported model's physics, on files built by residualmap/fixtures.py from WNTR's bundled public networks and on those networks themselves (converter self-consistency on public models, not real utility files). Written by python -m residualmap.intake_exp record; the task15b checks rerun each part and compare.",
+ "reaction_orders": {
+  "ky10": {
+   "orders_fixed": {
+    "bulk": "0",
+    "tank": "0",
+    "wall": "0"
+   },
+   "fixes": [
+    "Set the reaction order to 1, as the decay model assumes (first order), where the file had bulk 0 and tank 0 and wall 0. An order of 0 is another law (a fixed amount lost per day), so the decay rates would not mean what they say, and the bulk rate can have no effect at all."
+   ],
+   "mean_original": {
+    "0.2": 0.5748,
+    "0.8": 0.5748
+   },
+   "mean_fixed": {
+    "0.2": 0.5714,
+    "0.8": 0.4561
+   },
+   "original_same_at_both": true,
+   "fixed_difference": 0.1152
+  },
+  "Net6": {
+   "orders_fixed": {
+    "bulk": "0.0",
+    "tank": "0.0",
+    "wall": "0"
+   },
+   "junctions": 3323,
+   "large": true,
+   "size_warning": true
+  }
+ },
+ "bulk_lines": {
+  "ok": true,
+  "fixes": [
+   "Cleared the BULK lines of 10 pipes (20, 40, 50, 60, 101, 103 and 4 more) and the TANK lines of 1 tank (1): a per-pipe or per-tank bulk rate overrides the one the model calibrates, so those pipes and tanks would ignore it. The calibrated bulk rate now applies to every pipe and tank.",
+   "Set LIMITING POTENTIAL to 0, where the file had 0.5: with a limiting potential the bulk decay is not first order in the chlorine."
+  ],
+  "bulk_lines": 10,
+  "tank_lines": 1,
+  "limiting_potential_fixed": "0.5",
+  "member": {
+   "kb": 0.4,
+   "kw": 0.7,
+   "gamma": 1.0
+  },
+  "junction_hours": 2208,
+  "max_diff_prepared_vs_net3": 0.0,
+  "max_diff_original_vs_net3": 0.1909
+ },
+ "headloss": {
+  "dw": {
+   "ok": true,
+   "headloss_in_copy": "H-W",
+   "old_pipe_row_source": "derived",
+   "gate": {
+    "pipes": 117,
+    "c_min": 110.0043,
+    "c_max": 153.7597,
+    "age_change_median_h": 0.0447,
+    "age_change_p95_h": 1.1313,
+    "passes": true
+   },
+   "pipes": 117,
+   "pipes_scored": 114,
+   "max_c_error": 0.331,
+   "within_tolerance": 114,
+   "pipes_reported_not_scored": [
+    {
+     "pipe": "20",
+     "c_net3": 199.0,
+     "c_recovered": 153.76,
+     "below": 45.24
+    },
+    {
+     "pipe": "40",
+     "c_net3": 199.0,
+     "c_recovered": 153.76,
+     "below": 45.24
+    },
+    {
+     "pipe": "50",
+     "c_net3": 199.0,
+     "c_recovered": 153.76,
+     "below": 45.24
+    }
+   ],
+   "max_below_unmatched": 45.24
+  },
+  "cm": {
+   "blocked": true,
+   "message": [
+    "The file uses the Chezy-Manning headloss formula. The wall decay reads each pipe's roughness as a Hazen-Williams C, and a Manning n has no such reading, so the decay rates would not mean what they say. Export the model with Hazen-Williams, or ask your modeller."
+   ]
+  },
+  "dw_uniform": {
+   "ok": true,
+   "file_roughness_values": 1,
+   "converted_c_values": 68,
+   "uniform_c": true,
+   "grid": "full_fixed_gamma",
+   "gate": {
+    "pipes": 117,
+    "c_min": 125.1257,
+    "c_max": 143.3137,
+    "age_change_median_h": 0.0641,
+    "age_change_p95_h": 2.4698,
+    "passes": true
+   },
+   "row": "not identifiable from one roughness value: every pipe has the Darcy-Weisbach roughness 0.26 mm in your file, so the C values of the converted copy (125.126 to 143.314) differ only by each pipe's diameter and velocity, not by its age, and the factor would read them as age; it is held at 0 (the free-chlorine grid with the factor held at 0 has 225 runs)"
+  },
+  "dw_plastic": {
+   "ok": true,
+   "roughness_mm": [
+    0.0015,
+    0.0024
+   ],
+   "file_roughness_values": 2,
+   "uniform_c": false,
+   "grid": "full",
+   "row": "learned from the 78 C values the conversion gives (147.72 to 156.218), from your file's 2 roughness values"
+  }
+ },
+ "clock": {
+  "Net2": {
+   "start_clock_h": 8.0,
+   "sources_overridden": [
+    "1"
+   ],
+   "source_flagged": true,
+   "multi_day_patterns": [
+    [
+     "1",
+     55.0
+    ],
+    [
+     "2",
+     55.0
+    ],
+    [
+     "3",
+     55.0
+    ]
+   ],
+   "model_hours_warning": true
+  },
+  "net3_clock6": {
+   "start_clock_h": 6.0,
+   "ok": true,
+   "model_hours_warning": true
+  },
+  "Net3": {
+   "start_clock_h": 0.0,
+   "model_hours_warning": false
+  },
+  "net3_weekly_pattern": {
+   "weekly_patterns": [
+    "1"
+   ],
+   "weekday_warning": true,
+   "ok": true
+  },
+  "near_midnight": {
+   "net3_clock_235950.inp": {
+    "ok": true,
+    "start_clock_h": 23.997222,
+    "row": "0 h (00:00)",
+    "model_hours_warning": false
+   },
+   "net3_clock_000020.inp": {
+    "ok": true,
+    "start_clock_h": 0.005556,
+    "row": "0 h (00:00)",
+    "model_hours_warning": false
+   }
+  },
+  "rounding": {
+   "23:59:50": {
+    "row": "0 h (00:00)",
+    "model_hours_warning": false,
+    "warning_says": null,
+    "warning_offset": null
+   },
+   "0:00:20": {
+    "row": "0 h (00:00)",
+    "model_hours_warning": false,
+    "warning_says": null,
+    "warning_offset": null
+   },
+   "5:59:59": {
+    "row": "6 h (06:00)",
+    "model_hours_warning": true,
+    "warning_says": "The model starts at 06:00 (START CLOCKTIME)",
+    "warning_offset": "Add 6 h"
+   },
+   "6:30": {
+    "row": "6.5 h (06:30)",
+    "model_hours_warning": true,
+    "warning_says": "The model starts at 06:30 (START CLOCKTIME)",
+    "warning_offset": "Add 6.5 h"
+   }
+  }
+ },
+ "prv": {
+  "ky10": {
+   "pressure_valves": {
+    "PRV": 5
+   },
+   "zero_elevation_junctions": [
+    "J-16"
+   ],
+   "flagged": true,
+   "elevations_needed_at": 10,
+   "ok": true
+  },
+  "Net6": {
+   "pressure_valves": {
+    "PRV": 2
+   },
+   "zero_elevation_junctions": [
+    "JUNCTION-3215",
+    "JUNCTION-3216",
+    "JUNCTION-3322"
+   ],
+   "flagged": true,
+   "elevations_needed_at": 4,
+   "ok": true
+  },
+  "Net3": {
+   "pressure_valves": {},
+   "zero_elevation_junctions": [
+    "60",
+    "601",
+    "61",
+    "120",
+    "261",
+    "263",
+    "265",
+    "269"
+   ],
+   "flagged": false,
+   "elevations_needed_at": 0,
+   "ok": true
+  },
+  "ky10_const_elev": {
+   "blocked": true,
+   "constant_elevation": true,
+   "quotes_evidence": true,
+   "fixes": 1,
+   "fixes_heading": "**Fixes that would be applied** (no copy is kept while a problem stops the run; your file is not changed):"
+  }
+ },
+ "coordinates": {
+  "Net3": {
+   "status": "schematic",
+   "units": "unknown",
+   "pipes_measured": 117,
+   "ratio_p5": 0.0028,
+   "ratio_median": 0.0045,
+   "ratio_p95": 0.0189,
+   "spread": 6.71
+  },
+  "Net2": {
+   "status": "schematic",
+   "units": "unknown",
+   "pipes_measured": 40,
+   "ratio_p5": 0.0163,
+   "ratio_median": 0.0227,
+   "ratio_p95": 0.0381,
+   "spread": 2.33
+  },
+  "Net6": {
+   "status": "schematic",
+   "units": "unknown",
+   "pipes_measured": 3829,
+   "ratio_p5": 0.0036,
+   "ratio_median": 0.0143,
+   "ratio_p95": 0.0466,
+   "spread": 13.03
+  },
+  "ky4": {
+   "status": "to scale",
+   "units": "feet",
+   "pipes_measured": 1156,
+   "ratio_p5": 3.272,
+   "ratio_median": 3.2809,
+   "ratio_p95": 3.2909,
+   "spread": 1.01
+  },
+  "ky10": {
+   "status": "to scale",
+   "units": "feet",
+   "pipes_measured": 1043,
+   "ratio_p5": 3.2702,
+   "ratio_median": 3.2808,
+   "ratio_p95": 3.2943,
+   "spread": 1.01
+  },
+  "net3_no_coords": {
+   "status": "no coordinates",
+   "pipes_measured": 0
+  }
+ },
+ "structure": {
+  "net3_no_controls.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [
+    "10",
+    "335"
+   ],
+   "pump_warning": true,
+   "zero_total_demand": false,
+   "parts": [
+    97
+   ],
+   "connector_pipes": 0,
+   "connector_tags": 0,
+   "connector_row": false
+  },
+  "net3_speed_pattern_pumps.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [],
+   "pump_warning": false,
+   "zero_total_demand": false,
+   "parts": [
+    97
+   ],
+   "connector_pipes": 0,
+   "connector_tags": 0,
+   "connector_row": false
+  },
+  "net3_zero_demand.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [],
+   "pump_warning": false,
+   "zero_total_demand": true,
+   "parts": [
+    97
+   ],
+   "connector_pipes": 0,
+   "connector_tags": 0,
+   "connector_row": false
+  },
+  "net3_two_parts.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [],
+   "pump_warning": false,
+   "zero_total_demand": false,
+   "parts": [
+    97,
+    2
+   ],
+   "connector_pipes": 0,
+   "connector_tags": 0,
+   "connector_row": false
+  },
+  "net3_no_source.inp": {
+   "ok": false,
+   "blocking": [
+    "No reservoir, inflow junction or tank found: the model needs a place where water enters."
+   ],
+   "pumps_without_controls": null,
+   "pump_warning": false,
+   "zero_total_demand": null,
+   "parts": null,
+   "connector_pipes": null,
+   "connector_tags": null,
+   "connector_row": false
+  },
+  "watergems_export_like.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [],
+   "pump_warning": false,
+   "zero_total_demand": false,
+   "parts": [
+    99
+   ],
+   "connector_pipes": 2,
+   "connector_tags": 2,
+   "connector_row": true
+  },
+  "net3_rule_premise.inp": {
+   "ok": true,
+   "blocking": [],
+   "pumps_without_controls": [
+    "10",
+    "335"
+   ],
+   "pump_warning": true,
+   "zero_total_demand": false,
+   "parts": [
+    97
+   ],
+   "connector_pipes": 0,
+   "connector_tags": 0,
+   "connector_row": false
+  },
+  "Net6": {
+   "connector_pipes": 1,
+   "connector_tags": 0,
+   "connector_row": false
+  }
+ },
+ "uniform_c": {
+  "Net1": {
+   "uniform_c": true,
+   "c_values": 1,
+   "grid": "full_fixed_gamma",
+   "runs_per_dose": 225,
+   "row": "not identifiable from one C value: every pipe has C 100, so ",
+   "row_says_held_at_0": true
+  },
+  "Net1_chloramine": {
+   "uniform_c": true,
+   "grid": "chloramine",
+   "runs_per_dose": 1440,
+   "row_says_held_at_0": false,
+   "row_says_chloramine_grid_varies_it": true
+  },
+  "Net1_export_like": {
+   "ok": true,
+   "connector_pipes": 1,
+   "connector_tags": 1,
+   "connector_row": true,
+   "uniform_c": true,
+   "c_values": 1,
+   "grid": "full_fixed_gamma",
+   "row": "not identifiable from one C value: every pipe has C 100 (the export's 1 connector pipe left out), so"
+  },
+  "fixed_gamma_members": 225,
+  "gamma_values": [
+   0.0
+  ],
+  "members_bit_identical_to_full_gamma0": 225,
+  "full_gamma0_members": 225,
+  "axes": [
+   5,
+   5,
+   1,
+   3,
+   3
+  ],
+  "same_order_as_full": true,
+  "committed_networks_c_values": {
+   "Net3": 5,
+   "Net2": 2,
+   "ky4": 2
+  }
+ },
+ "run_cost": {
+  "Net6": {
+   "junctions": 3323,
+   "large": true,
+   "hard_warning": true,
+   "grid_file_mb": 215.3
+  },
+  "mock": {
+   "junctions": 10000,
+   "disinfectant": "chloramine",
+   "runs": 1440,
+   "workers": 11,
+   "grid_file_mb": 1382.4,
+   "temp_files_mb": 1089.7,
+   "gate": {
+    "3": {
+     "accepted": false,
+     "message_says_floor": true
+    },
+    "6": {
+     "accepted": true,
+     "message_says_floor": false
+    }
+   }
+  },
+  "kb_per_junction": {
+   "free_chlorine": 64.8,
+   "chloramine": 138.2
+  },
+  "temp_files_one_run": {
+   "ky4": {
+    "junctions": 959,
+    "mb": 9.5
+   },
+   "ky10": {
+    "junctions": 920,
+    "mb": 9.2
+   },
+   "Net6": {
+    "junctions": 3323,
+    "mb": 31.6
+   }
+  },
+  "temp_mb_per_junction_used": 9.906
+ },
+ "leftovers": {
+  "swmm_after_64kb": {
+   "first_64kb_alone": "epanet_inp",
+   "kind": "swmm_inp",
+   "not_a_model": true,
+   "swmm_advice": true,
+   "first_swmm_section_at": 84133
+  },
+  "zip_model_as_txt": {
+   "kind": "epanet_inp_zip",
+   "members": [
+    "zone_model.txt"
+   ],
+   "ok": true,
+   "prepared": "b91fcf19_zone_model.inp",
+   "same_network_as_net3": true
+  },
+  "utf8_stray_cp1252": {
+   "decoded_as": "utf-8 mixed with 1 stray byte read as cp1252 (Windows Western European)",
+   "ok": true,
+   "mixed_warning": true,
+   "accented_ids_kept": true,
+   "decoded_as_cp1252_throughout": "raises UnboundLocalError"
+  },
+  "cp1252_with_utf8_pairs": {
+   "decoded_as": "cp1252 (Windows Western European)",
+   "ok": true,
+   "bytes_not_utf8": 9,
+   "valid_utf8_pairs": 4,
+   "same_as_cp1252_throughout": true,
+   "ids_kept": true,
+   "mixed_warning": false
+  },
+  "encoding_controls": {
+   "net3_cp1252_one_pair_id.inp": {
+    "must_decode_as": "cp1252",
+    "decoded_as": "cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": false,
+    "valid_utf8_chars": 3,
+    "bytes_not_utf8": 1
+   },
+   "net3_cp1252_dash_ids.inp": {
+    "must_decode_as": "cp1252",
+    "decoded_as": "cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": false,
+    "valid_utf8_chars": 18,
+    "bytes_not_utf8": 2
+   },
+   "utf8_more_stray_than_accents.inp": {
+    "must_decode_as": "mixed",
+    "decoded_as": "utf-8 mixed with 4 stray bytes read as cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": true,
+    "valid_utf8_chars": 7,
+    "bytes_not_utf8": 4
+   },
+   "utf8_one_id_six_stray.inp": {
+    "must_decode_as": "mixed",
+    "decoded_as": "utf-8 mixed with 6 stray bytes read as cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": true,
+    "valid_utf8_chars": 3,
+    "bytes_not_utf8": 6
+   },
+   "utf8_pasted_block.inp": {
+    "must_decode_as": "mixed",
+    "decoded_as": "utf-8 mixed with 21 stray bytes read as cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": true,
+    "valid_utf8_chars": 7,
+    "bytes_not_utf8": 21
+   },
+   "utf8_pasted_chance_pair.inp": {
+    "must_decode_as": "mixed",
+    "decoded_as": "utf-8 mixed with 3 stray bytes read as cp1252 (Windows Western European)",
+    "ok": true,
+    "ids_kept": true,
+    "mixed_warning": true,
+    "valid_utf8_chars": 22,
+    "bytes_not_utf8": 1,
+    "pasted_comment_kept": true
+   }
+  },
+  "encoding_fuzz": {
+   "seed": 11,
+   "files_per_kind": 150,
+   "ids_changed": {
+    "cp1252_throughout": 0,
+    "utf8_with_stray": 0
+   },
+   "ids_changed_task15_rule": {
+    "cp1252_throughout": 0,
+    "utf8_with_stray": 150
+   },
+   "ids_changed_first_fix_rule": {
+    "cp1252_throughout": 1,
+    "utf8_with_stray": 12
+   }
+  },
+  "stale_copy": {
+   "before": [
+    "284c4ddf_net3_cm.inp",
+    "other_model.inp"
+   ],
+   "blocked": true,
+   "after": [
+    "other_model.inp"
+   ],
+   "stale_removed": true,
+   "other_file_kept": true
+  }
+ },
+ "route": {
+  "junctions": 9,
+  "cases": {
+   "K6_8_sampled": {
+    "rows": 1,
+    "columns": [
+     "junction",
+     "hour",
+     "p_below",
+     "score",
+     "reason",
+     "water_age_h",
+     "why"
+    ],
+    "junctions": [
+     "32"
+    ]
+   },
+   "K6_9_sampled": {
+    "rows": 0,
+    "columns": [
+     "junction",
+     "hour",
+     "p_below",
+     "score",
+     "reason",
+     "water_age_h",
+     "why"
+    ],
+    "junctions": []
+   },
+   "K3_none_sampled": {
+    "rows": 3,
+    "columns": [
+     "junction",
+     "hour",
+     "p_below",
+     "score",
+     "reason",
+     "water_age_h",
+     "why"
+    ],
+    "junctions": [
+     "12",
+     "13",
+     "11"
+    ]
+   }
+  }
+ }
+}

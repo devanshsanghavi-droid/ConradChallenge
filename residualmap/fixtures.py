@@ -33,6 +33,7 @@ import argparse
 import functools
 import io
 import json
+import math
 import os
 import sqlite3
 import struct
@@ -872,6 +873,459 @@ def net1_nul_padded() -> bytes:
     return _lib("Net1").rstrip() + b"\r\n" + b"\x00" * 200
 
 
+# ----------------------------------------------------------------------------- task 15b: physics settings
+# Each file below is Net3 (or ky10) with one physics setting changed, written by these helpers, which share no code
+# with residualmap.importers (its reaction, headloss and structure checks are what they test).
+def _section_edit(text: str, section: str, fn) -> str:
+    """Apply fn(tokens, line) to every data line of one section of an LF text: it returns the new line, the same
+    line, or None to drop it.  Sections are matched by their header as Net3 and ky10 write them."""
+    out, sec = [], None
+    for ln in text.split("\n"):
+        s = ln.split(";", 1)[0].strip()
+        if s.startswith("["):
+            sec = s.upper()
+            out.append(ln)
+            continue
+        if sec == f"[{section}]" and s:
+            new = fn(s.split(), ln)
+            if new is not None:
+                out.append(new)
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+def _section_ids(text: str, section: str) -> list[str]:
+    ids = []
+    _section_edit(text, section, lambda tok, ln: ids.append(tok[0]) or ln)
+    return ids
+
+
+def _crlf(text: str) -> bytes:
+    return text.replace("\n", "\r\n").encode("utf-8")
+
+
+BULK_PIPES = 10                        # pipes given their own BULK line in net3_bulk_lines.inp
+
+
+def net3_bulk_lines() -> bytes:
+    """Net3 with per-pipe BULK lines on its first BULK_PIPES pipes, a per-tank TANK line on tank 1 and LIMITING
+    POTENTIAL 0.5 (critique 9a): WNTR reads them, and those pipes and the tank would ignore the bulk rate the grid
+    sets, while the limiting potential changes the first-order law."""
+    t = _net3_text_lf()
+    lines = [f" Bulk            \t{p:<16}\t-0.9" for p in _section_ids(t, "PIPES")[:BULK_PIPES]]
+    t = _insert_after_header(t, "REACTIONS", "\n".join(lines + [" Tank            \t1               \t-0.3"]))
+    assert " Limiting Potential    \t0.0" in t
+    return _crlf(t.replace(" Limiting Potential    \t0.0", " Limiting Potential    \t0.5"))
+
+
+FX_G, FX_NU_FT2S = 9.81, 1.1e-5         # the fixture's own constants: m/s2, and EPANET's water viscosity at 20 C (ft2/s)
+DW_TINY_MFT = 0.001                    # millifeet, for a pipe no positive roughness can match (WNTR refuses 0)
+
+
+@functools.lru_cache(maxsize=1)
+def _net3_reference_velocity() -> dict:
+    """Net3's own reference velocity per pipe (m/s): the median |V| over the last day of a 7-day run, at least 0.3."""
+    import numpy as np
+    import wntr
+    wn = _wn("Net3")
+    t = wn.options.time
+    t.duration, t.hydraulic_timestep, t.report_timestep = 7 * 86400, 3600, 3600
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        v = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "v")).link["velocity"]
+    v = v[(v.index >= 6 * 86400) & (v.index < 7 * 86400)]
+    return {pn: max(float(np.median(np.abs(v[pn].values))), 0.3) for pn in wn.pipe_name_list}
+
+
+@functools.lru_cache(maxsize=1)
+def net3_dw_roughness() -> tuple[dict, tuple]:
+    """({pipe: Darcy-Weisbach roughness in millifeet}, pipes no positive roughness can match): the inverse of the stated
+    formula at Net3's own reference velocities.  The target friction factor is the one whose Darcy-Weisbach headloss
+    equals Net3's Hazen-Williams headloss there, f = 10.67 Q^1.852 (2 g D) / (C^1.852 D^4.8704 V^2), and Swamee-Jain
+    is inverted for the roughness, e = 3.7 D (10^(-1 / (2 sqrt f)) - 5.74 / Re^0.9).  A pipe smoother than a smooth
+    pipe at its velocity (Net3's C 199 pipes) gets DW_TINY_MFT."""
+    wn = _wn("Net3")
+    v_ref = _net3_reference_velocity()
+    nu = FX_NU_FT2S * 0.3048 ** 2 * float(wn.options.hydraulic.viscosity)
+    out, tiny = {}, []
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        D, C, V = float(p.diameter), float(p.roughness), v_ref[pn]
+        q = V * math.pi * D * D / 4
+        f = 10.67 * q ** 1.852 * 2 * FX_G * D / (C ** 1.852 * D ** 4.8704 * V * V)
+        e = 3.7 * D * (10 ** (-1 / (2 * math.sqrt(f))) - 5.74 / (V * D / nu) ** 0.9)
+        if e <= 0:
+            tiny.append(pn)
+            out[pn] = DW_TINY_MFT
+        else:
+            out[pn] = e / 0.3048 * 1000
+    return out, tuple(tiny)
+
+
+def _set_token(tok: list[str], ln: str, k: int, value: str) -> str:
+    tok = list(tok)
+    tok[k] = value
+    return " " + "\t".join(tok) + ("\t;" + ln.split(";", 1)[1] if ";" in ln else "")
+
+
+def net3_dw() -> bytes:
+    """Net3 converted to Darcy-Weisbach by the inverse of the stated formula at Net3's own reference velocities
+    (net3_dw_roughness), so a converter that recovers each C at the reference velocity it measures on this file should
+    give Net3's C back, except for the pipes no positive roughness matches."""
+    rough, _ = net3_dw_roughness()
+    t = _net3_text_lf()
+    assert " Headloss           \tH-W" in t
+    t = t.replace(" Headloss           \tH-W", " Headloss           \tD-W")
+    t = _section_edit(t, "PIPES", lambda tok, ln: _set_token(tok, ln, 5, f"{rough[tok[0]]:.6g}"))
+    return _crlf(t)
+
+
+def net3_cm() -> bytes:
+    """Net3 with its headloss formula set to Chezy-Manning (its C values left as they are): always blocked."""
+    return _crlf(_net3_text_lf().replace(" Headloss           \tH-W", " Headloss           \tC-M"))
+
+
+def net3_clock6() -> bytes:
+    """Net3 starting at 6 am (START CLOCKTIME)."""
+    t = _net3_text_lf()
+    assert " Start ClockTime    \t12 am" in t
+    return _crlf(t.replace(" Start ClockTime    \t12 am", " Start ClockTime    \t6 am"))
+
+
+WEEK_DAY_FACTORS = (1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.8)   # net3_weekly_pattern.inp: a lighter weekend
+
+
+def net3_weekly_pattern() -> bytes:
+    """Net3 with its default demand pattern 1 (24 hourly steps) made weekly: 168 hourly steps, the day's shape times
+    WEEK_DAY_FACTORS."""
+    t = _net3_text_lf()
+    day = []
+    _section_edit(t, "PATTERNS", lambda tok, ln: day.extend(tok[1:]) if tok[0] == "1" else None)
+    assert len(day) == 24
+    week = [f"{float(m) * k:.4g}" for k in WEEK_DAY_FACTORS for m in day]
+    t = _section_edit(t, "PATTERNS", lambda tok, ln: None if tok[0] == "1" else ln)
+    lines = [" 1               \t" + "\t".join(week[i:i + 6]) for i in range(0, len(week), 6)]
+    return _crlf(_insert_after_header(t, "PATTERNS", "\n".join(lines)))
+
+
+def ky10_const_elev() -> bytes:
+    """ky10 with every junction at one elevation, the mean of its junctions' (a skeleton made from a drawing has no
+    elevations): ky10 has five PRVs, so this must block."""
+    t = _lib("ky10").decode("utf-8").replace("\r\n", "\n")
+    elev = []
+    _section_edit(t, "JUNCTIONS", lambda tok, ln: elev.append(float(tok[1])) or ln)
+    mean = f"{sum(elev) / len(elev):.2f}"
+    return _crlf(_section_edit(t, "JUNCTIONS", lambda tok, ln: _set_token(tok, ln, 1, mean)))
+
+
+def net3_no_coords() -> bytes:
+    """Net3 without its [COORDINATES] and [VERTICES] lines."""
+    t = _section_edit(_net3_text_lf(), "COORDINATES", lambda tok, ln: None)
+    return _crlf(_section_edit(t, "VERTICES", lambda tok, ln: None))
+
+
+def net3_no_controls() -> bytes:
+    """Net3 with its 18 controls removed: pump 335 then runs all the time and pump 10 stays closed."""
+    return _crlf(_section_edit(_net3_text_lf(), "CONTROLS", lambda tok, ln: None))
+
+
+def net3_speed_pattern_pumps() -> bytes:
+    """Net3 with its controls removed and each pump given a speed pattern instead (PATTERN in [PUMPS]; pump 10 open
+    from 01:00 to 15:00, pump 335 always): a pump with a speed pattern is controlled, and must not be flagged."""
+    t = _section_edit(_net3_text_lf(), "CONTROLS", lambda tok, ln: None)
+    t = _section_edit(t, "STATUS", lambda tok, ln: None)
+    pats = {"10": "SPD10", "335": "SPD335"}
+    t = _section_edit(t, "PUMPS", lambda tok, ln: " " + "\t".join(tok + ["PATTERN", pats[tok[0]]]))
+    on10 = ["0"] + ["1"] * 14 + ["0"] * 9
+    lines = [f" SPD10           \t" + "\t".join(on10[i:i + 6]) for i in range(0, 24, 6)] + [" SPD335          \t1"]
+    return _crlf(_insert_after_header(t, "PATTERNS", "\n".join(lines)))
+
+
+def net3_zero_demand() -> bytes:
+    """Net3 with every junction's base demand set to 0."""
+    return _crlf(_section_edit(_net3_text_lf(), "JUNCTIONS", lambda tok, ln: _set_token(tok, ln, 2, "0")))
+
+
+def net3_two_parts() -> bytes:
+    """Net3 plus a second part no pipe joins to it: reservoir RX, pipe PX and junction JX (which runs: RX is its
+    entry point)."""
+    t = _insert_after_header(_net3_text_lf(), "RESERVOIRS", " RX              \t200         \t                \t;")
+    t = _insert_after_header(t, "JUNCTIONS", " JX              \t100         \t10          \t                \t;")
+    t = _insert_after_header(t, "PIPES", " PX              \tRX              \tJX              \t1000        \t12"
+                                         "          \t100         \t0           \tOpen  \t;")
+    t = _insert_after_header(t, "COORDINATES", " RX              \t1.00            \t1.00")
+    return _crlf(_insert_after_header(t, "COORDINATES", " JX              \t2.00            \t1.00"))
+
+
+def net3_no_source() -> bytes:
+    """Net3 with its reservoirs and tanks written as junctions: no reservoir, no tank and no negative demand, so no
+    place where water enters (blocked)."""
+    t = _net3_text_lf()
+    moved = []
+    t = _section_edit(t, "RESERVOIRS", lambda tok, ln: moved.append((tok[0], tok[1])))
+    t = _section_edit(t, "TANKS", lambda tok, ln: moved.append((tok[0], tok[1])))
+    return _crlf(_insert_after_header(t, "JUNCTIONS", "\n".join(f" {i:<16}\t{e:<12}\t0" for i, e in moved)))
+
+
+def watergems_export_like() -> bytes:
+    """Net3 as a WaterGEMS EPANET export writes a pump: each pump's suction end moved to a new junction joined to the
+    old one by a connector pipe of 1 ft and 99 in, tagged AddedForINPConversion in [TAGS]."""
+    t = _net3_text_lf()
+    pumps = {}
+    _section_edit(t, "PUMPS", lambda tok, ln: pumps.__setitem__(tok[0], (tok[1], tok[2])) or ln)
+    xy, elev = {}, {}
+    _section_edit(t, "COORDINATES", lambda tok, ln: xy.__setitem__(tok[0], (tok[1], tok[2])) or ln)
+    _section_edit(t, "JUNCTIONS", lambda tok, ln: elev.__setitem__(tok[0], tok[1]) or ln)
+    t = _section_edit(t, "PUMPS", lambda tok, ln: _set_token(tok, ln, 1, f"{tok[0]}_CN"))
+    for p, (a, b) in pumps.items():
+        t = _insert_after_header(t, "JUNCTIONS", f" {p}_CN{'':<10}\t{elev.get(a, elev[b])}\t0")
+        t = _insert_after_header(t, "PIPES", f" {p}_CP{'':<10}\t{a:<16}\t{p}_CN{'':<10}\t1\t99\t130\t0\tOpen\t;")
+        t = _insert_after_header(t, "COORDINATES", f" {p}_CN{'':<10}\t{xy[a][0]}\t{xy[a][1]}")
+        t = _insert_after_header(t, "TAGS", f" LINK {p}_CP{'':<10}\tAddedForINPConversion")
+    return _crlf(t)
+
+
+# ----------------------------------------------------------------------------- task 15's leftovers, fixed in task 15b
+SWMM_JUNCTIONS = 3000                  # junction lines before the first SWMM-only section, past the first 64 KB
+
+
+def swmm_after_64kb() -> bytes:
+    """A SWMM model whose first 64 KB holds only headers EPANET also uses ([TITLE], [OPTIONS], [JUNCTIONS]) and whose
+    SWMM-only sections ([OUTFALLS], [CONDUITS], [XSECTIONS]) come after: typed as EPANET by task 15, then blocked
+    with WNTR's syntax error instead of the SWMM advice."""
+    rows = "".join(f"J{i:<8d} {100 + i % 50:<8.2f} 10 0 0 0\n" for i in range(SWMM_JUNCTIONS))
+    return ("[TITLE]\nstorm sewer model\n\n[OPTIONS]\nFLOW_UNITS CFS\nINFILTRATION HORTON\n\n[JUNCTIONS]\n"
+            ";Name Elev MaxDepth InitDepth SurDepth Aponded\n" + rows + "\n[OUTFALLS]\nO1 90 FREE NO\n\n[CONDUITS]\n"
+            "C1 J0 O1 400 0.01 0 0 0 0\n\n[XSECTIONS]\nC1 CIRCULAR 1 0 0 0 1\n\n[END]\n").encode("ascii")
+
+
+def zip_model_as_txt() -> bytes:
+    """An emailed zip whose one member is Net3 renamed zone_model.txt: typed by task 15 as a zip with nothing
+    recognised, because zips were typed by their member names only."""
+    return _zip([("zone_model.txt", _net3())])
+
+
+ACCENTED_RENAMES = (("10", "Válvula_10"), ("15", "Presión_Á"), ("20", "Bóveda_à1"), ("35", "Niño_35"))
+
+
+def utf8_stray_cp1252() -> bytes:
+    """Net3 in UTF-8 with four accented junction IDs (ACCENTED_RENAMES) and one stray cp1252 byte, a degree sign
+    pasted into the title: task 15 decoded the whole file as cp1252, so each accent became two characters (the 0xA0
+    of 'à' a no-break space WNTR splits on) and WNTR could not read it."""
+    t = _net3_text_lf()
+    for old, new in ACCENTED_RENAMES:
+        t = _rename_node(t, old, new)
+    b = _crlf(t.replace("[TITLE]\n", "[TITLE]\nZona norte, 50 °F\n", 1))
+    return b.replace("°".encode("utf-8"), b"\xb0")
+
+
+# ----------------------------------------------------------------------------- task 15b's review cases
+DW_UNIFORM_MFT = 0.26 / 0.3048         # 0.26 mm in millifeet: one Darcy-Weisbach roughness on every pipe
+
+
+def net3_dw_uniform() -> bytes:
+    """Net3 in Darcy-Weisbach with one roughness on every pipe (0.26 mm, the plan's example), the Darcy-Weisbach form
+    of Net1's one C value (the review's case): the converted copy's C values differ by diameter and velocity only, so
+    the old-pipe factor cannot be learned from them and the file must get the fixed-gamma grid."""
+    t = _net3_text_lf()
+    assert " Headloss           \tH-W" in t
+    t = t.replace(" Headloss           \tH-W", " Headloss           \tD-W")
+    return _crlf(_section_edit(t, "PIPES", lambda tok, ln: _set_token(tok, ln, 5, f"{DW_UNIFORM_MFT:.6g}")))
+
+
+def net3_rule_premise() -> bytes:
+    """Net3 with its controls removed and one rule that reads pump 10's status and sets pipe 20 (the review's case):
+    pump 10 starts closed and nothing opens it, so it must be flagged with pump 335."""
+    t = _section_edit(_net3_text_lf(), "CONTROLS", lambda tok, ln: None)
+    return _crlf(_insert_after_header(t, "RULES", "RULE 1\nIF PUMP 10 STATUS IS OPEN\nTHEN PIPE 20 STATUS IS OPEN"))
+
+
+CP1252_PAIR_RENAMES = (("10", "ÉCOLE_10"), ("15", "CITÉ’15"))
+
+
+def net3_cp1252_pair() -> bytes:
+    """Net3 saved in cp1252 throughout (the review's case), with a title and an ID in which an accented capital is
+    followed by a curly quote: 'É' then '”' or '’' are the bytes C9 94 and C9 92, valid two-byte UTF-8 by chance, so a
+    test that took any valid UTF-8 pair as proof of UTF-8 read the file as UTF-8 with stray bytes and changed the ID.
+    It has 4 such pairs and 9 bytes that are not UTF-8: it must decode as cp1252 throughout, with its IDs kept."""
+    t = _net3_text_lf().replace("[TITLE]\n", "[TITLE]\nQuartier “CITÉ” près de l’école, 10°C\n", 1)
+    for old, new in CP1252_PAIR_RENAMES:
+        t = _rename_node(t, old, new)
+    return t.replace("\n", "\r\n").encode("cp1252")
+
+
+# ----------------------------------------------------------------------------- task 15b's second review cases
+ONE_PAIR_ID = "CITÉ’15"                                  # the review's ID: É then a curly apostrophe, bytes C9 92
+EN_DASH = "\u2013"            # written as an escape: the iteration-5 files hold no dash character (R4)
+DASH_IDS = tuple((j, f"CITÉ{EN_DASH}{j}") for j in ("15", "20", "35", "40", "50"))   # É then an en dash, bytes C9 96
+
+
+def net3_cp1252_one_pair_id() -> bytes:
+    """Net3 in cp1252 throughout with one junction renamed CITÉ’15 and a title with one degree sign (the second
+    review's file): the chance pair is written wherever the ID is (its junction line, the pipe ends, the coordinates),
+    3 times against 1 stray byte, so a rule that counted occurrences read it as UTF-8 and changed the ID."""
+    t = _net3_text_lf().replace("[TITLE]\n", "[TITLE]\nZone 10°C\n", 1)
+    return _rename_node(t, "15", ONE_PAIR_ID).replace("\n", "\r\n").encode("cp1252")
+
+
+def net3_cp1252_dash_ids() -> bytes:
+    """Net3 in cp1252 throughout with five IDs 'CITÉ', an en dash and the number, and a title 'Réseau 10°C': 18 valid
+    UTF-8 pairs by chance against 2 stray bytes (the second review's case A)."""
+    t = _net3_text_lf().replace("[TITLE]\n", "[TITLE]\nRéseau 10°C\n", 1)
+    for old, new in DASH_IDS:
+        t = _rename_node(t, old, new)
+    return t.replace("\n", "\r\n").encode("cp1252")
+
+
+MORE_STRAY_RENAMES = (("15", "Presión_15"), ("20", "Bóveda_20"))
+PASTED_CP1252 = "“Zona norte” l’agua 50°F"                 # 4 bytes that are not UTF-8 once saved in cp1252
+
+
+def utf8_more_stray_than_accents() -> bytes:
+    """Net3 in UTF-8 with two accented IDs and a comment pasted in cp1252 with 4 stray bytes, more than the accented
+    letters (the second review's case C): it must read as UTF-8 with the 4 bytes as cp1252."""
+    t = _net3_text_lf()
+    for old, new in MORE_STRAY_RENAMES:
+        t = _rename_node(t, old, new)
+    b = t.replace("[TITLE]\n", "[TITLE]\n;PASTE\n", 1).replace("\n", "\r\n").encode("utf-8")
+    return b.replace(b";PASTE", b";" + PASTED_CP1252.encode("cp1252"))
+
+
+ONE_CAPITAL_ID = ("35", "CÔTE_35")                         # Ô in UTF-8 is C3 94: 'Ã”' in cp1252, plausible both ways
+
+
+def utf8_one_id_six_stray() -> bytes:
+    """Net3 in UTF-8 with one ID whose only accent is a capital (CÔTE_35) and six stray cp1252 bytes in the title:
+    the stray bytes outnumber the ID's occurrences, which read the file as cp1252 throughout and changed the ID
+    before the second review (12 of the review's 150 such files did)."""
+    t = _rename_node(_net3_text_lf(), *ONE_CAPITAL_ID)
+    b = t.replace("[TITLE]\n", "[TITLE]\nZone @@\n", 1).replace("\n", "\r\n").encode("utf-8")
+    return b.replace(b"@@", "°’“”°’".encode("cp1252"))
+
+
+PASTED_BLOCK_RENAMES = (("15", "Bóveda_15"), ("20", "Señal_20"))
+PASTED_BLOCK = ("Réseau “Nord”, 10°C", "Château d’eau, 50 °F", "Débit 12 m³/h", f"Presión {EN_DASH} 40 psi", "pH 7,5 ± 0,2",
+                "cloración 1,2 mg/L", "Bombeo “Peña”", "Zona de presión norte", "l’eau traitée", "Été 2024")
+
+
+def utf8_pasted_block() -> bytes:
+    """Net3 in UTF-8 with two IDs with a lowercase accent and a block of ten comment lines pasted in cp1252: the stray
+    bytes sit on more lines than the IDs, but a lowercase accented letter in UTF-8 ('ó' is C3 B3, 'Ã³' in cp1252) is
+    not a pair a cp1252 file makes, so the file reads as UTF-8 with those lines as cp1252."""
+    t = _net3_text_lf()
+    for old, new in PASTED_BLOCK_RENAMES:
+        t = _rename_node(t, old, new)
+    b = t.replace("[TITLE]\n", "[TITLE]\n;PASTE\n", 1).replace("\n", "\r\n").encode("utf-8")
+    return b.replace(b";PASTE", "\r\n".join(";" + ln for ln in PASTED_BLOCK).encode("cp1252"))
+
+
+PASTED_PAIR = "Quartier CITÉ’S, 10°C"                     # a chance pair (C9 92) inside a pasted cp1252 comment
+
+
+def utf8_pasted_chance_pair() -> bytes:
+    """Net3 in UTF-8 with the four accented IDs of utf8_stray_cp1252 and a comment pasted in cp1252 that holds a pair
+    valid in UTF-8 by chance ('É’'): the file reads as UTF-8, and the pair, like the stray degree sign, is read as
+    cp1252, so the comment keeps 'CITÉ’S'."""
+    t = _net3_text_lf()
+    for old, new in ACCENTED_RENAMES:
+        t = _rename_node(t, old, new)
+    b = t.replace("[TITLE]\n", "[TITLE]\n;PASTE\n", 1).replace("\n", "\r\n").encode("utf-8")
+    return b.replace(b";PASTE", b";" + PASTED_PAIR.encode("cp1252"))
+
+
+def encoding_fuzz(seed: int = 11, n: int = 150) -> list[tuple[str, bytes, list[str]]]:
+    """(kind, file, the IDs it must keep): n files of Net3 in cp1252 throughout, with 1 to 4 junctions renamed to a
+    random ID with one accented letter (sometimes followed by a quote, a dash or a degree sign) and a random title,
+    then n files in UTF-8 with such IDs and 1 to 6 stray cp1252 bytes in the title.  The second review's generator,
+    call for call, so seed 11 gives its 300 files."""
+    import random
+    letters = "ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖØÙÚÛÜÝàáâãäåçèéêëìíîïñòóôõöøùúûüý"
+    punct = "’“”" + EN_DASH + "°"
+    base = _net3_text_lf()
+    js = ["15", "20", "35", "40", "50", "60", "101", "103", "105", "107"]
+    r = random.Random(seed)
+
+    def name(j):
+        s = "".join(r.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ") for _ in range(r.randint(1, 4)))
+        pos = r.randrange(len(s) + 1)
+        ch = r.choice(letters)
+        if r.random() < 0.3:
+            ch += r.choice(punct)
+        return s[:pos] + ch + s[pos:] + "_" + j
+    out = []
+    for kind in ("cp1252_throughout", "utf8_with_stray"):
+        for _ in range(n):
+            t = base
+            want = []
+            for j in r.sample(js, r.randint(1, 4)):
+                nm = name(j)
+                t = _rename_node(t, j, nm)
+                want.append(nm)
+            title = "Zone " + "".join(r.choice(letters + punct + "abc ") for _ in range(r.randint(0, 12)))
+            if kind == "cp1252_throughout":
+                data = t.replace("[TITLE]\n", "[TITLE]\n" + title + "\n", 1).replace("\n", "\r\n").encode("cp1252")
+            else:
+                stray = "".join(r.choice("°’“”") for _ in range(r.randint(1, 6)))
+                data = (t.replace("[TITLE]\n", "[TITLE]\n@@\n", 1).replace("\n", "\r\n").encode("utf-8")
+                        .replace(b"@@", ("Zone " + stray).encode("cp1252")))
+            out.append((kind, data, want))
+    return out
+
+
+def _clock_start(clock: str) -> bytes:
+    t = _net3_text_lf()
+    assert " Start ClockTime    \t12 am" in t
+    return _crlf(t.replace(" Start ClockTime    \t12 am", f" Start ClockTime    \t{clock}"))
+
+
+def net3_clock_235950() -> bytes:
+    """Net3 starting at 23:59:50 (START CLOCKTIME): 00:00 to the minute, so no model-hours warning."""
+    return _clock_start("23:59:50")
+
+
+def net3_clock_000020() -> bytes:
+    """Net3 starting at 0:00:20: 00:00 to the minute, so no model-hours warning."""
+    return _clock_start("0:00:20")
+
+
+DW_PLASTIC_MM = (0.0015, 0.0024)       # net3_dw_plastic.inp: two Darcy-Weisbach roughness values of plastic pipe
+
+
+def net3_dw_plastic() -> bytes:
+    """Net3 in Darcy-Weisbach with 0.0015 mm on every other pipe and 0.0024 mm on the rest (in millifeet in the
+    file): two roughness values about 1e-6 m apart, which a test that rounded metres to 6 decimals read as one."""
+    t = _net3_text_lf()
+    assert " Headloss           \tH-W" in t
+    t = t.replace(" Headloss           \tH-W", " Headloss           \tD-W")
+    k = [0]
+
+    def f(tok, ln):
+        k[0] += 1
+        return _set_token(tok, ln, 5, f"{DW_PLASTIC_MM[k[0] % 2] / 0.3048:.6g}")
+    return _crlf(_section_edit(t, "PIPES", f))
+
+
+def net1_export_like() -> bytes:
+    """Net1 (C 100 on every pipe) as watergems_export_like writes an export: pump 9's suction end moved to a new
+    junction joined to the old one by a connector of 1 ft and 99 in with C 130, tagged AddedForINPConversion.  The
+    connector is not a second C value of the network: the file must still get the fixed-gamma grid."""
+    t = _lib("Net1").decode("utf-8").replace("\r\n", "\n")
+    pumps, xy, elev = {}, {}, {}
+    _section_edit(t, "PUMPS", lambda tok, ln: pumps.__setitem__(tok[0], (tok[1], tok[2])) or ln)
+    _section_edit(t, "COORDINATES", lambda tok, ln: xy.__setitem__(tok[0], (tok[1], tok[2])) or ln)
+    _section_edit(t, "JUNCTIONS", lambda tok, ln: elev.__setitem__(tok[0], tok[1]) or ln)
+    t = _section_edit(t, "PUMPS", lambda tok, ln: _set_token(tok, ln, 1, f"{tok[0]}_CN"))
+    if "[TAGS]" not in t:
+        t = t.replace("[END]", "[TAGS]\n\n[END]")
+    for p, (a, b) in pumps.items():
+        t = _insert_after_header(t, "JUNCTIONS", f" {p}_CN\t{elev.get(a, elev.get(b, '0'))}\t0")
+        t = _insert_after_header(t, "PIPES", f" {p}_CP\t{a}\t{p}_CN\t1\t99\t130\t0\tOpen\t;")
+        t = _insert_after_header(t, "COORDINATES", f" {p}_CN\t{xy[a][0]}\t{xy[a][1]}")
+        t = _insert_after_header(t, "TAGS", f" LINK {p}_CP\tAddedForINPConversion")
+    return _crlf(t)
+
+
 LONG_UPLOAD_NAME = "Z" * 246 + ".inp"  # a 250-character upload name: legal on APFS, too long once the digest is added
 
 
@@ -917,6 +1371,24 @@ FIXTURES = {
     "net3_singular_headers.inp": net3_singular_headers, "net3_form_feed_headers.inp": net3_form_feed_headers,
     "net3_singular_pipe_dup.inp": net3_singular_pipe_dup, "net3_isolated_junction.inp": net3_isolated_junction,
     "zip_bad_offset.zip": zip_bad_offset, "csv_quote_run.csv": csv_quote_run, "net1_nul_padded.inp": net1_nul_padded,
+    # task 15b: physics settings, and task 15's leftovers
+    "net3_bulk_lines.inp": net3_bulk_lines, "net3_dw.inp": net3_dw, "net3_cm.inp": net3_cm,
+    "net3_clock6.inp": net3_clock6, "net3_weekly_pattern.inp": net3_weekly_pattern,
+    "ky10_const_elev.inp": ky10_const_elev, "net3_no_coords.inp": net3_no_coords,
+    "net3_no_controls.inp": net3_no_controls, "net3_speed_pattern_pumps.inp": net3_speed_pattern_pumps,
+    "net3_zero_demand.inp": net3_zero_demand, "net3_two_parts.inp": net3_two_parts,
+    "net3_no_source.inp": net3_no_source, "watergems_export_like.inp": watergems_export_like,
+    "swmm_after_64kb.inp": swmm_after_64kb, "zip_model_as_txt.zip": zip_model_as_txt,
+    "utf8_stray_cp1252.inp": utf8_stray_cp1252,
+    # task 15b's review cases
+    "net3_dw_uniform.inp": net3_dw_uniform, "net3_rule_premise.inp": net3_rule_premise,
+    "net3_cp1252_pair.inp": net3_cp1252_pair,
+    # task 15b's second review cases
+    "net3_cp1252_one_pair_id.inp": net3_cp1252_one_pair_id, "net3_cp1252_dash_ids.inp": net3_cp1252_dash_ids,
+    "utf8_more_stray_than_accents.inp": utf8_more_stray_than_accents, "utf8_one_id_six_stray.inp": utf8_one_id_six_stray,
+    "utf8_pasted_block.inp": utf8_pasted_block, "utf8_pasted_chance_pair.inp": utf8_pasted_chance_pair,
+    "net3_clock_235950.inp": net3_clock_235950, "net3_clock_000020.inp": net3_clock_000020,
+    "net3_dw_plastic.inp": net3_dw_plastic, "net1_export_like.inp": net1_export_like,
 }
 
 # (fixture, kind it must come back as, the file name may decide something, a backup copy)
@@ -985,6 +1457,25 @@ REVIEW_WNTR_BLOCK = "net3_bom_missing_node.inp"
 REVIEW_TEST_RUN_BLOCK = "net3_isolated_junction.inp"                                     # the final verification
 REVIEW_ZIPS = ("finder_model.zip", "model_and_gis.zip", "finder_shapefile.zip", "city_mains_shp.zip")
 REVIEW_BROKEN_ZIPS = ("zip_bad_offset.zip",)                                             # the final verification
+# task 15b: the physics fixtures (residualmap/intake_exp.py builds them for outputs/intake/task15b_physics.json), and
+# task 15's four leftovers, fixed in task 15b
+PHYSICS_FIXTURES = ("net3_bulk_lines.inp", "net3_dw.inp", "net3_cm.inp", "net3_clock6.inp", "net3_weekly_pattern.inp",
+                    "ky10_const_elev.inp", "net3_no_coords.inp", "net3_no_controls.inp", "net3_speed_pattern_pumps.inp",
+                    "net3_zero_demand.inp", "net3_two_parts.inp", "net3_no_source.inp", "watergems_export_like.inp",
+                    "swmm_after_64kb.inp", "zip_model_as_txt.zip", "utf8_stray_cp1252.inp",
+                    # task 15b's review cases
+                    "net3_dw_uniform.inp", "net3_rule_premise.inp", "net3_cp1252_pair.inp",
+                    # task 15b's second review cases
+                    "net3_cp1252_one_pair_id.inp", "net3_cp1252_dash_ids.inp", "utf8_more_stray_than_accents.inp",
+                    "utf8_one_id_six_stray.inp", "utf8_pasted_block.inp", "utf8_pasted_chance_pair.inp",
+                    "net3_clock_235950.inp", "net3_clock_000020.inp", "net3_dw_plastic.inp", "net1_export_like.inp")
+# the second review's encoding cases: (fixture, how it must decode, the IDs it must keep)
+ENCODING_CONTROLS = (("net3_cp1252_one_pair_id.inp", "cp1252", (ONE_PAIR_ID,)),
+                     ("net3_cp1252_dash_ids.inp", "cp1252", tuple(n for _, n in DASH_IDS)),
+                     ("utf8_more_stray_than_accents.inp", "mixed", tuple(n for _, n in MORE_STRAY_RENAMES)),
+                     ("utf8_one_id_six_stray.inp", "mixed", (ONE_CAPITAL_ID[1],)),
+                     ("utf8_pasted_block.inp", "mixed", tuple(n for _, n in PASTED_BLOCK_RENAMES)),
+                     ("utf8_pasted_chance_pair.inp", "mixed", tuple(n for _, n in ACCENTED_RENAMES)))
 
 
 def build(name: str, dest: str) -> str:

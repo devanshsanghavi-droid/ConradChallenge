@@ -23,6 +23,12 @@ A real run writes to outputs/private/pilot by default (git-ignored), with import
 --synthetic still writes to outputs/pilot.  --inp with the name of a network bundled with WNTR (Net3, ky4, ...) runs
 that network by its name, as before task 15, with its report and no private copy.
 
+Task 15b: the readiness report checks the model's physics (prepare_inp).  A model of more than 3,000 junctions stops
+with the report unless --allow-large is given; a grid build that would leave less than 1.5 GB of disk free is refused
+with a plain message; a file with one C value on every pipe is calibrated on the 'full_fixed_gamma' grid (the old-pipe
+factor held at 0, since it cannot be learned from one C value).  A model blocked now that an earlier version accepted
+leaves no private copy behind.
+
 grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
                 or, for a chloraminated system (--disinfectant chloramine), total_chlorine_mgL instead (never both
                 columns: a log that mixes the two species is refused; docs/example_grab_log_total.csv)
@@ -41,16 +47,17 @@ import hashlib
 import json
 import os
 import sys
+import types
 
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
 from .chemistry import Chemistry, Warming
-from .chloramine import CA_DOSE_MGL
+from .chloramine import CA_DOSE_MGL, ca_condition
 from .features import build_features
-from .importers import Readiness, prepare_inp, stem as inp_stem
-from .simgp import DAY_HOURS, SimGP24
+from .importers import Readiness, prepare_inp, size_gate, stem as inp_stem
+from .simgp import DAY_HOURS, SimGP24, grid_cache_path
 from .simulate import build_scenario, load, net_path, nominal_scenario
 
 LEVELS = (50, 80, 90, 95)
@@ -78,11 +85,15 @@ def prepare_pilot_inp(inp: str, disinfectant: str = "free_chlorine",
     get two grids, and a revised file is never served the old one.  A file that needed a fix (or came in a zip) is
     already written there by prepare_inp, under its content name, and is used as it is (one copy).  The name of a
     network bundled with WNTR (Net3, ky4, ...) that is not a file here runs by that name, as before task 15: it is
-    public, so it gets its report but no private copy, and its grid is the cached one.  (None, report) when the file
-    is not a model or has a blocking problem; nothing is copied then."""
+    public, so it gets its report but no private copy, and its grid is the cached one; when the report fixes it
+    (task 15b: ky10 and Net6 declare reaction orders of 0), the fixed copy in inputs_dir runs instead.  (None, report)
+    when the file is not a model or has a blocking problem; nothing is copied then, and a private copy an earlier
+    version made of the same file is removed (prepare_inp)."""
     if not os.path.exists(inp) and os.path.exists(net_path(inp)):
         path, rep = prepare_inp(net_path(inp), inputs_dir, disinfectant)
-        return (inp if path is not None else None), rep
+        if path is None:
+            return None, rep
+        return (inp if rep.same_file else path), rep
     if not os.path.exists(inp):
         raise FileNotFoundError(f"{inp}: no such file, and not the name of a network bundled with WNTR")
     path, rep = prepare_inp(inp, inputs_dir, disinfectant)
@@ -214,7 +225,7 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
              window_months: int = 3, holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0,
              plant: pd.DataFrame | None = None, bank_cache: str = "readwrite",
              disinfectant: str = "free_chlorine", ph: float | None = None,
-             cl2n: float | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+             cl2n: float | None = None, grid: str = "full") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Rolling hold-out: for each held-out month, fit on the `window_months` before it and predict its
     samples.  Returns (per-sample predictions, per-month summary).
     plant: the plant log (load_plant).  None is the committed temperature-blind SimGP24, unchanged.  With a plant log,
@@ -227,7 +238,9 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
     chloramine grid, its dose axis and likelihood scale).  With the plant's logged pH and Cl2:N (ph, cl2n) the bulk rate
     gets the chloramine mode's prior, model (c), the one held to task 12's bars; without them the prior is uniform,
     model (b).  A plant log is refused (no seasonal chloramine model is built).  dose and threshold default to the
-    disinfectant's (1.2 mg/L free chlorine and 0.2; 2.0 mg/L total chlorine and 0.5)."""
+    disinfectant's (1.2 mg/L free chlorine and 0.2; 2.0 mg/L total chlorine and 0.5).
+    grid: the free-chlorine grid without a plant log, 'full' (the committed path) or 'full_fixed_gamma' for a file
+    with one C value on every pipe (task 15b; importers.grid_for)."""
     if disinfectant not in DEFAULT_DOSE_MGL:
         raise ValueError(f"disinfectant must be one of {sorted(DEFAULT_DOSE_MGL)}")
     if disinfectant == "chloramine" and plant is not None:
@@ -271,8 +284,10 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
                 print(f"warning: held-out month {m}: the fitted effective dose sits at the edge of the chloramine dose "
                       f"axis (x{model.map_dose_:.2f} of {dose:g} mg/L): check --dose, the total chlorine leaving the "
                       f"plant", file=sys.stderr, flush=True)
-        elif bank is None:
+        elif bank is None and grid == "full":
             model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(train[["junction", "hour", "y"]])
+        elif bank is None:
+            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid=grid).fit(train[["junction", "hour", "y"]])
         else:
             model = SeasonalSimGP24(sc, X, bank, seed=seed, cache_dir=cache_dir).fit(
                 train[["junction", "hour", "y", "temp_C", "dose_ratio"]], target_temp_C=float(pl.temp_C[m]),
@@ -338,6 +353,8 @@ def main():
     ap.add_argument("--plant", help="plant log CSV: month,temp_C[,toc_mgL,dose_mgL]; makes the model temperature-aware")
     ap.add_argument("--out", default=None, help="where the results go: default outputs/private/pilot (git-ignored) for "
                                                 "real data, outputs/pilot with --synthetic")
+    ap.add_argument("--allow-large", action="store_true", help="build the grid of a model with more than 3,000 junctions "
+                                                               "(task 15b: the readiness report gives its run cost)")
     a = ap.parse_args()
     if a.threshold is None:
         a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
@@ -372,10 +389,22 @@ def main():
         print(report.to_markdown())
         if inp is None:
             sys.exit(f"{a.inp}: {report.summary()} (the report is in {a.out})")
+        if report.run_cost.get("large") and not a.allow_large:
+            sys.exit(f"{a.inp}: a large model ({report.run_cost['junctions']} junctions): its grid is "
+                     f"{report.run_cost['runs_per_dose']} runs, about {report.run_cost.get('minutes', 0):g} min and "
+                     f"{report.run_cost['grid_file_mb']:g} MB. Give --allow-large to build it.")
+        grid = report.run_cost.get("grid", "full")
+        sc_name = types.SimpleNamespace(wn_name=inp, source_dose=float(a.dose))
+        if not os.path.exists(grid_cache_path(sc_name, "outputs/cache", grid, ca_condition() if grid == "chloramine"
+                                              else None)):
+            ok, msg = size_gate(report.run_cost, "outputs/cache")
+            if not ok:
+                sys.exit(f"{a.inp}: {msg}")
         log, dose = load_log(a.samples, a.taps, a.disinfectant), a.dose
     plant = load_plant(a.plant) if a.plant else None
+    grid = "full" if a.synthetic or a.disinfectant == "chloramine" or plant is not None else grid
     preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
-                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n)
+                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n, grid=grid)
     tag = (a.synthetic or inp_stem(a.inp)) + ("_plant" if plant is not None else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
     summary.to_csv(os.path.join(a.out, f"validation_{tag}.csv"), index=False)

@@ -67,7 +67,12 @@ KB_LOWKB = [0.0125, 0.025, 0.05, 0.075] + KB_GRID   # 1/day
 GRIDS = {"decay": (KB_GRID, KW_GRID, GAMMA_GRID, [1.0], [1.0]),                    # iteration 2: 75 runs
          "full": (KB_GRID, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID),         # iteration 3: 675 runs
          "chloramine": (KB_CA, KW_CA, GAMMA_CA, DEMAND_GRID, ROUGH_GRID),         # task 12: 1440 runs, chloramine only
-         "full_lowkb": (KB_LOWKB, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID)}   # task 13 opt-in: 1215 runs
+         "full_lowkb": (KB_LOWKB, KW_GRID, GAMMA_GRID, DEMAND_GRID, ROUGH_GRID),   # task 13 opt-in: 1215 runs
+         # task 15b: for a file with one C value on every pipe, where the old-pipe factor cannot be learned (it scales
+         # every wall rate by the same 2^(gamma (130 - C) / 30), so it is confounded with kw): the 'full' grid's gamma
+         # 0 slice, 225 runs, its members bit for bit the matching 'full' members.  Reached only through
+         # importers.grid_for for such a file; its own hashed cache name (grid_cache_path), no committed number moves.
+         "full_fixed_gamma": (KB_GRID, KW_GRID, [0.0], DEMAND_GRID, ROUGH_GRID)}
 COMMITTED_GRID_NAMES = ("decay", "full", "chloramine")   # cache names without a grid tag (kept as committed)
 DOSE_GRID = [0.90, 0.95, 1.00, 1.05, 1.10]     # source-dose multiplier: first-order decay is linear in
                                                 # concentration, so this axis is an exact ln-offset, no runs

@@ -43,7 +43,12 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
     age_initial_share (hour x junction, age.AgeBand.initial_share): where more than 5% of the water at that hour is
     still the 7-day run's starting water, the age is a lower bound and the reason says 'at least'.  The default
     keeps the committed reason text, which experiment.main writes into summary_<net>.json, so the committed
-    outputs reproduce byte for byte.  Only the text changes: the sites, hours and scores are the same either way."""
+    outputs reproduce byte for byte.  Only the text changes: the sites, hours and scores are the same either way.
+
+    A route asks for K sites but never more than there are junctions left to choose (iteration 5, task 15b): on a
+    small network whose junctions are mostly sampled already (Net1's 9 junctions with the app's 8 demo samples) the
+    loop used to pick past the last candidate and stop with 'attempt to get argmax of an empty sequence'.  It now
+    returns the sites there are; with K or more candidates (every committed run) nothing changes."""
     sc = model.sc
     z_mu, z_sd = model.predict_hours()
     sd_acq = pd.DataFrame(model.z_sd_acq_, columns=sc.junctions).loc[hours]
@@ -60,7 +65,7 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
     cap = math.ceil(K / len(hours))
     chosen, used = [], {h: 0 for h in hours}
     rows = []
-    for _ in range(K):
+    for _ in range(min(K, len(candidates))):
         score = base.loc[candidates].copy()
         if chosen:
             dnear = D.loc[candidates, chosen].min(axis=1)
@@ -84,6 +89,9 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
             row["reason"] = f"P(daily min < {threshold}) = {p:.2f}: {row['why']}"
         rows.append(row)
         chosen.append(j); candidates.remove(j)
+    if not rows:     # every junction is sampled already: an empty route with the usual columns
+        return pd.DataFrame(columns=["junction", "hour", "p_below", "score", "reason"]
+                            + (["water_age_h", "why"] if with_age else []))
     return pd.DataFrame(rows)
 
 

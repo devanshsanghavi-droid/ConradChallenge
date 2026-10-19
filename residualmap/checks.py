@@ -48,6 +48,7 @@ import sys
 import tempfile
 import time
 import traceback
+import types
 
 import numpy as np
 import pandas as pd
@@ -73,6 +74,7 @@ SI_VS_LEGACY_TOL_MGL = 1e-3
 # build is compared with it, and with the cached file when that file predates the run.
 GRID24_FULL_NET3_SHA256 = "bc849e767dc6e82e41ed3a3bc09e4b673fba8cb8b6698b15eb26efba006c99fb"
 CACHE_BEFORE: dict | None = None    # outputs/cache snapshot taken by run_checks before the first check
+FRESH_GRID_SECONDS: list[float] = []   # the fresh Net3 grid's build time in this run (run_cost_gate compares, task 15b)
 
 
 # ----------------------------------------------------------------------------- tiny harness
@@ -2284,6 +2286,7 @@ def fresh_grid_equals_cached_grid():
     t0 = time.time()
     p1, Z1 = build_grid_24h(sc, "full", preflight_paths=[CACHE])
     secs = time.time() - t0
+    FRESH_GRID_SECONDS.append(secs)
     fresh_hash = _grid_sha256(p1, Z1)
     assert fresh_hash == GRID24_FULL_NET3_SHA256, fresh_hash
     f = os.path.join(CACHE, "grid24_full_Net3.pkl")
@@ -2481,7 +2484,8 @@ def app_water_age_panels():
 # ----------------------------------------------------------------------------- task 14: app, capabilities, docs, numbers
 DASH = ("—", "–")       # em dash, en dash
 # iteration 5's new files, held to 'no em or en dashes' whole (task 15 on)
-IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/config.toml")
+IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/config.toml",
+             "residualmap/intake_exp.py")                                        # task 15b
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -3123,8 +3127,8 @@ def uploader_accepts_any_type():
     is unchanged, so at.file_uploader[0] still finds it, and its help says any file is identified by its content).
     net3_backup.inp.bak (Net3 under a backup name) runs the Net3 path: a readiness report that identifies an EPANET
     model by its content, says the name marks it as a backup copy, says EPANET ran its first hour (the test run, after
-    the final verification) and lists the physics settings as not checked yet, and the default demo's map, 42 of 92
-    junctions flagged.  mains.gpkg (a GeoPackage) gets the plain advice that it
+    the final verification) and, since task 15b, gives the physics checks' rows (reaction orders, run cost) where task
+    15 listed the physics settings as not checked yet, and the default demo's map, 42 of 92 junctions flagged.  mains.gpkg (a GeoPackage) gets the plain advice that it
     is a GIS layer and what to send instead, and the page stops before any simulation; nothing is written for it
     (measured: no file named after it in outputs/app_uploads or outputs/cache).  The run's copy of the backup and its
     grid (outputs/app_uploads and outputs/cache, git-ignored) are
@@ -3174,7 +3178,8 @@ def uploader_accepts_any_type():
     assert b["flagged"] == f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}", b["flagged"]
     assert "Model readiness report" in b["expanders"] and b["readiness"], b
     assert "the name marks it as a backup copy" in b["readiness"][0] and not b["errors"], b
-    assert "Physics settings" in b["readiness"][0] and "not checked yet" in b["readiness"][0], b["readiness"][0]
+    assert "| Reaction orders |" in b["readiness"][0] and "| Run cost |" in b["readiness"][0], b["readiness"][0]
+    assert "not checked yet" not in b["readiness"][0], b["readiness"][0]          # task 15b checks them
     assert "EPANET runs its first hour" in b["readiness"][0] and "| Test run |" in b["readiness"][0], b["readiness"][0]
     assert built[up_dir] == [up_name] and f"grid24_full_{up_name}.pkl" in built[CACHE], built
     gpkg_written = sorted(f for d in (up_dir, CACHE) for f in built[d] if "mains" in f)        # measured, not assumed
@@ -3230,7 +3235,9 @@ def pilot_inp_is_content_hashed_and_private():
     cached grid is used), and a zipped model leaves one private copy, not two.  After the final verification, the
     journal's claim for that run is measured, not assumed: 'pilot --inp Net3' on docs/example_grab_log.csv and
     docs/example_tap_map.csv writes validation_Net3.json, validation_Net3.csv and predictions_Net3.csv byte-identical
-    to the committed files in outputs/pilot (whose all-taps mean is rmse 0.077 and coverage90 0.923)."""
+    to the committed files in outputs/pilot (whose all-taps mean is rmse 0.077 and coverage90 0.923).  Since task 15b
+    the two zone.inp files (Net1, one C value on every pipe) are calibrated on the 'full_fixed_gamma' grid, under its
+    own hashed cache name."""
     import pickle as _pickle
     from . import fixtures as FX
     from .pilot import PRIVATE_INPUTS, PRIVATE_OUT, SYNTHETIC_OUT, default_out, prepare_pilot_inp
@@ -3273,7 +3280,10 @@ def pilot_inp_is_content_hashed_and_private():
         inputs = runs["b"]
         grids = sorted(f for f in os.listdir(os.path.join(d, "outputs", "cache")) if f.startswith("grid24_full_"))
         assert len(inputs) == 2 and all(f.endswith("_zone.inp") for f in inputs) and len(runs["a"]) == 1, runs
-        assert grids == sorted(f"grid24_full_{f}.pkl" for f in inputs), (grids, inputs)
+        from .simgp import grid_cache_path      # task 15b: Net1 has one C value, so its grid holds gamma at 0
+        want = sorted(os.path.basename(grid_cache_path(types.SimpleNamespace(wn_name=f, source_dose=1.2), "",
+                                                       "full_fixed_gamma")) for f in inputs)
+        assert grids == want, (grids, want)
         Z = [_pickle.load(open(os.path.join(d, "outputs", "cache", g), "rb"))[1] for g in grids]
         grid_diff = float(np.abs(Z[0] - Z[1]).max())
         assert grid_diff > 0, grid_diff
@@ -3321,7 +3331,561 @@ def streamlit_config_private():
             "streamlit_reads": got}
 
 
+# ----------------------------------------------------------------------------- task 15b: an imported model's physics
+INTAKE_RECORD_15B = os.path.join(REPO, "outputs", "intake", "task15b_physics.json")
+
+
+def _record_15b(part: str) -> dict:
+    """One part of the committed task-15b record (python -m residualmap.intake_exp record)."""
+    with open(INTAKE_RECORD_15B) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_15b(got: dict, part: str) -> dict:
+    want = _record_15b(part)
+    diff = _json_diff(json.loads(json.dumps(got)), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _physics_fixtures():
+    """The task-15b fixtures built into a temporary folder, and a folder for their prepared copies."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t15b_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), FX.PHYSICS_FIXTURES), os.path.join(d, "prepared")
+
+
+@check("task15b", quick=False)
+def inp_reaction_orders_fixed():
+    """ky10 declares reaction orders of 0 (bulk, wall and tank): the prepared copy sets all three to 1 and lists the fix,
+    and its grid member's mean residual differs between bulk rates 0.2 and 0.8 per day, while the original's is the
+    same at both (probe d2 saw 0.5748; with order 0 the grid's rates have no effect).  Net6 gets the same fix and the
+    size warning (3,323 junctions).  Equals the committed record (outputs/intake/task15b_physics.json, part
+    'reaction_orders')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, _):
+        got = E.part_reaction_orders(paths)
+    k, n6 = got["ky10"], got["Net6"]
+    assert set(k["orders_fixed"]) == {"bulk", "wall", "tank"} and k["fixes"], k
+    assert k["original_same_at_both"] and abs(k["fixed_difference"]) > 1e-3, k
+    assert set(n6["orders_fixed"]) == {"bulk", "wall", "tank"} and n6["large"] and n6["size_warning"], n6
+    _same_as_15b(got, "reaction_orders")
+    return {"ky10_mean_original": k["mean_original"], "ky10_mean_fixed": k["mean_fixed"],
+            "net6_junctions": n6["junctions"], "net6_size_warning": n6["size_warning"]}
+
+
+@check("task15b")
+def inp_bulk_lines_cleared():
+    """net3_bulk_lines.inp (BULK lines on 10 pipes, a TANK line on one tank, LIMITING POTENTIAL 0.5): the prepared copy
+    clears them and its grid member at kb 0.40, kw 0.70, gamma 1 equals Net3's at every junction-hour (max difference
+    0.0); the file as it came differs (the control).  Equals the committed record (part 'bulk_lines')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_bulk_lines(paths, out)
+    assert got["ok"] and (got["bulk_lines"], got["tank_lines"], got["limiting_potential_fixed"]) == (10, 1, "0.5"), got
+    assert got["max_diff_prepared_vs_net3"] == 0.0 and got["max_diff_original_vs_net3"] > 0, got
+    _same_as_15b(got, "bulk_lines")
+    return {k: got[k] for k in ("bulk_lines", "tank_lines", "junction_hours", "max_diff_prepared_vs_net3",
+                                "max_diff_original_vs_net3")}
+
+
+@check("task15b")
+def inp_headloss_formula():
+    """net3_dw.inp (Net3 written in Darcy-Weisbach by the inverse of the stated formula at Net3's own reference
+    velocities) gives a prepared Hazen-Williams copy, and the gate's water-age numbers are reported; the pre-registered
+    gate (median change at most 1 h, 95th percentile at most 4 h, over the scored day's junction-hours) passes.  The
+    114 pipes a positive roughness can match recover their C within 0.5; the 3 C 199 pipes (a tiny roughness in the
+    file) are reported, not scored.  net3_cm.inp (Chezy-Manning) is blocked.  The review's case, net3_dw_uniform.inp
+    (one Darcy-Weisbach roughness on every pipe): the uniform test reads the file's own roughness, so it gets the
+    'full_fixed_gamma' grid and the old-pipe factor is not identifiable, although its converted copy has many C
+    values; net3_dw.inp's old-pipe row is tagged derived (its C values come from the conversion).  The second
+    review's case, net3_dw_plastic.inp (0.0015 mm and 0.0024 mm on alternating pipes, about 1e-6 m apart): the uniform
+    test compares roughness to 6 significant digits, so it finds 2 values and the 'full' grid (rounded to 6 decimals
+    of a metre they were one value, and the row named a roughness no pipe has).  Equals the committed record (part
+    'headloss')."""
+    from . import intake_exp as E
+    from .importers import DW_GATE_MEDIAN_H, DW_GATE_P95_H
+    with _physics_fixtures() as (paths, out):
+        got = E.part_headloss(paths, out)
+    dw = got["dw"]
+    assert dw["ok"] and dw["headloss_in_copy"] == "H-W", dw
+    g = dw["gate"]
+    assert g["passes"] and g["age_change_median_h"] <= DW_GATE_MEDIAN_H and g["age_change_p95_h"] <= DW_GATE_P95_H, g
+    assert (dw["pipes"], dw["pipes_scored"], len(dw["pipes_reported_not_scored"])) == (117, 114, 3), dw
+    assert dw["within_tolerance"] == 114 and dw["max_c_error"] <= 0.5, dw
+    assert got["cm"]["blocked"], got["cm"]
+    assert dw["old_pipe_row_source"] == "derived", dw            # the converted C values are derived, not the file's
+    u = got["dw_uniform"]       # the review's case: one roughness on every pipe, many converted C values
+    assert u["ok"] and u["file_roughness_values"] == 1 and u["converted_c_values"] > 1, u
+    assert u["uniform_c"] and u["grid"] == "full_fixed_gamma" and u["row"].startswith("not identifiable"), u
+    pl = got["dw_plastic"]      # the second review's case: two plastic-pipe roughness values
+    assert pl["ok"] and pl["file_roughness_values"] == 2 and not pl["uniform_c"] and pl["grid"] == "full", pl
+    assert pl["row"].startswith("learned from"), pl
+    _same_as_15b(got, "headloss")
+    return {"gate": g, "max_c_error": dw["max_c_error"], "within_0.5": dw["within_tolerance"],
+            "unmatched_below_199": dw["max_below_unmatched"], "cm_blocked": True,
+            "dw_uniform": {k: u[k] for k in ("converted_c_values", "uniform_c", "grid")},
+            "dw_plastic": {k: pl[k] for k in ("file_roughness_values", "uniform_c", "grid")}}
+
+
+@check("task15b")
+def inp_clock_and_weekly():
+    """Net2.inp: its 8 h start (START CLOCKTIME) is recorded and its in-file source at the dosed inflow is flagged as
+    overridden; net3_clock6.inp gets 6 h; net3_weekly_pattern.inp (a 168-step pattern) gets the weekday warning.  Since
+    the review, a start other than midnight also warns that every hour in the app and the pilot is a model hour (Net2
+    and net3_clock6 warn, Net3 does not), and the start's HH:MM is rounded to the minute once (5:59:59 is 06:00, not
+    05:60).  Since the second review the row and the warning go by that rounded minute too: a start within 30 s of
+    midnight (net3_clock_235950.inp, net3_clock_000020.inp, end to end) is '0 h (00:00)' with no model-hours warning,
+    and the warning quotes the rounded offset ('Add 6 h' for 5:59:59).  Equals the committed record (part
+    'clock')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_clock(paths, out)
+    n2 = got["Net2"]
+    assert n2["start_clock_h"] == 8.0 and n2["source_flagged"] and n2["sources_overridden"] == ["1"], n2
+    assert got["net3_clock6"]["start_clock_h"] == 6.0 and got["net3_clock6"]["ok"], got["net3_clock6"]
+    w = got["net3_weekly_pattern"]
+    assert w["weekly_patterns"] == ["1"] and w["weekday_warning"] and w["ok"], w
+    assert n2["model_hours_warning"] and got["net3_clock6"]["model_hours_warning"], got
+    assert got["Net3"]["start_clock_h"] == 0.0 and not got["Net3"]["model_hours_warning"], got["Net3"]
+    from .importers import _clock
+    edges = {"5:59:59": _clock(5 + 59 / 60 + 59 / 3600), "23:59:50": _clock(23 + 59 / 60 + 50 / 3600),
+             "8:00": _clock(8.0), "6:30": _clock(6.5)}           # the review's 05:60 and 23:60
+    assert edges == {"5:59:59": "06:00", "23:59:50": "00:00", "8:00": "08:00", "6:30": "06:30"}, edges
+    for f, v in got["near_midnight"].items():      # the second review: no 'starts at 00:00, not midnight' warning
+        assert v["ok"] and v["row"] == "0 h (00:00)" and not v["model_hours_warning"], (f, v)
+    rd = got["rounding"]
+    assert [rd[k]["model_hours_warning"] for k in ("23:59:50", "0:00:20", "5:59:59", "6:30")] == [False, False, True, True], rd
+    assert (rd["5:59:59"]["row"], rd["5:59:59"]["warning_offset"]) == ("6 h (06:00)", "Add 6 h"), rd["5:59:59"]
+    assert (rd["6:30"]["row"], rd["6:30"]["warning_offset"]) == ("6.5 h (06:30)", "Add 6.5 h"), rd["6:30"]
+    _same_as_15b(got, "clock")
+    return {"net2_start_h": n2["start_clock_h"], "net3_clock6_h": 6.0, "weekly_warning": True,
+            "net2_multi_day_patterns": n2["multi_day_patterns"],
+            "near_midnight": {k: (v["row"], v["model_hours_warning"]) for k, v in rd.items()}}
+
+
+@check("task15b", quick=False)
+def inp_prv_elevations():
+    """ky10.inp (5 PRVs) is flagged for J-16 at elevation 0 and Net6.inp (2 PRVs) for its three; ky10_const_elev.inp
+    (every junction at one elevation) is blocked with 'elevations needed at these valves', quotes the committed
+    evidence, and lists its reaction fixes as fixes that would be applied, since no copy is kept; Net3.inp (no PRVs, 8
+    junctions at 0) is not flagged.  outputs/intake/elevation_prv_ky10.json reproduces
+    (ky10 with every junction at the mean elevation: the junctions whose water age moves by more than 2 h at some hour
+    of the scored day, and the largest move).  Equals the committed record (part 'prv')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_prv(paths, out)
+    assert got["ky10"]["flagged"] and got["ky10"]["zero_elevation_junctions"] == ["J-16"], got["ky10"]
+    assert got["Net6"]["flagged"] and len(got["Net6"]["zero_elevation_junctions"]) == 3, got["Net6"]
+    c = got["ky10_const_elev"]
+    assert c["blocked"] and c["constant_elevation"] and c["quotes_evidence"], c
+    assert c["fixes"] and c["fixes_heading"].startswith("**Fixes that would be applied**"), c
+    assert not got["Net3"]["flagged"] and len(got["Net3"]["zero_elevation_junctions"]) == 8, got["Net3"]
+    _same_as_15b(got, "prv")
+    ev = E.elevation_prv()
+    with open(E.ELEVATION_PRV) as fh:
+        committed = json.load(fh)
+    diff = _json_diff(json.loads(json.dumps(ev)), committed)
+    assert not diff, diff[:10]
+    return {"ky10_zero": got["ky10"]["zero_elevation_junctions"], "net6_zero": len(got["Net6"]["zero_elevation_junctions"]),
+            "const_blocked": True, "net3_flagged": False,
+            "elevation_evidence": {k: ev[k] for k in ("junctions", "junctions_moved", "max_change_h")}}
+
+
+@check("task15b", quick=False)
+def inp_coordinate_scale():
+    """The ratio of each pipe's drawn length (with vertices) to its declared length: Net3, Net2 and Net6 are schematic
+    (95th over 5th percentile above 1.5); ky4 and ky10 are to scale, in feet (median 3.281 per metre); net3_no_coords.inp
+    has no coordinates.  Equals the committed record (part 'coordinates')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_coordinates(paths, out)
+    for n in ("Net3", "Net2", "Net6"):
+        assert got[n]["status"] == "schematic", (n, got[n])
+    for n in ("ky4", "ky10"):
+        assert (got[n]["status"], got[n]["units"]) == ("to scale", "feet"), (n, got[n])
+    assert got["net3_no_coords"]["status"] == "no coordinates", got["net3_no_coords"]
+    _same_as_15b(got, "coordinates")
+    return {n: (v["status"], v.get("units"), v.get("spread")) for n, v in got.items()}
+
+
+@check("task15b")
+def inp_controls_and_structure():
+    """net3_no_controls.inp is flagged 'pumps but no controls'; net3_speed_pattern_pumps.inp (no controls, a speed
+    pattern on each pump) gets no such warning; net3_zero_demand.inp and net3_two_parts.inp are flagged;
+    net3_no_source.inp is blocked; watergems_export_like.inp (connector pipes of 1 ft and 99 in tagged
+    AddedForINPConversion) is reported.  The review's cases: net3_rule_premise.inp (no controls, one rule that reads
+    pump 10 and sets pipe 20) flags both pumps, because a rule's premise reads a link and only its actions set one;
+    Net6's one pipe of the connector size, with no tag, is counted and not reported.  Equals the committed record
+    (part 'structure')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_structure(paths, out)
+    assert got["net3_no_controls.inp"]["pump_warning"] and got["net3_no_controls.inp"]["ok"], got["net3_no_controls.inp"]
+    sp = got["net3_speed_pattern_pumps.inp"]
+    assert sp["ok"] and not sp["pump_warning"] and sp["pumps_without_controls"] == [], sp
+    assert got["net3_zero_demand.inp"]["zero_total_demand"] and got["net3_two_parts.inp"]["parts"] == [97, 2], got
+    assert not got["net3_no_source.inp"]["ok"] and got["net3_no_source.inp"]["blocking"], got["net3_no_source.inp"]
+    wg = got["watergems_export_like.inp"]
+    assert wg["ok"] and wg["connector_row"] and (wg["connector_pipes"], wg["connector_tags"]) == (2, 2), wg
+    rp = got["net3_rule_premise.inp"]      # a rule that reads pump 10 and sets pipe 20: pump 10 is not controlled
+    assert rp["ok"] and rp["pump_warning"] and rp["pumps_without_controls"] == ["10", "335"], rp
+    n6 = got["Net6"]                       # one pipe of the connector size, no tag: counted, not reported
+    assert (n6["connector_pipes"], n6["connector_tags"], n6["connector_row"]) == (1, 0, False), n6
+    _same_as_15b(got, "structure")
+    return {f: {k: v.get(k) for k in ("ok", "pump_warning", "zero_total_demand", "parts", "connector_pipes")}
+            for f, v in got.items()}
+
+
+@check("task15b", quick=False)
+def uniform_c_fixes_gamma():
+    """Net1.inp (C 100 on every pipe) is flagged: the old-pipe factor is not identifiable, and the file gets the
+    'full_fixed_gamma' grid, whose 225 members each equal the matching gamma-0 member of Net1's 'full' grid bit for bit
+    (both built in memory, never cached).  The committed networks keep more than one C value (Net3 5, Net2 2, ky4 2),
+    so no default moves.  In chloramine mode (no fixed-gamma chloramine grid exists) Net1 gets the 1440-run chloramine
+    grid, and its row says that grid still varies the factor, not that it is held at 0 (the review's case).  The second
+    review's case, Net1 written as an export (net1_export_like.inp: a connector of 1 ft and 99 in with C 130 at its
+    pump, tagged AddedForINPConversion): the uniform test leaves the recognised connector out, so the file still gets
+    'full_fixed_gamma', one C value, and a row that says the connector was left out.  Equals the committed record
+    (part 'uniform_c')."""
+    from . import intake_exp as E
+    got = E.part_uniform_c()
+    n1 = got["Net1"]
+    assert n1["uniform_c"] and n1["grid"] == "full_fixed_gamma" and n1["runs_per_dose"] == 225, n1
+    assert got["fixed_gamma_members"] == got["members_bit_identical_to_full_gamma0"] == got["full_gamma0_members"] == 225
+    assert got["gamma_values"] == [0.0] and got["same_order_as_full"], got
+    assert all(v > 1 for v in got["committed_networks_c_values"].values()), got["committed_networks_c_values"]
+    assert n1["row_says_held_at_0"], n1
+    ca = got["Net1_chloramine"]           # no chloramine fixed-gamma grid: the row must not say the factor is held
+    assert ca["uniform_c"] and ca["grid"] == "chloramine" and ca["runs_per_dose"] == 1440, ca
+    assert not ca["row_says_held_at_0"] and ca["row_says_chloramine_grid_varies_it"], ca
+    ex = got["Net1_export_like"]          # the second review: the export's connector is not a second C value
+    assert ex["ok"] and ex["connector_row"] and (ex["connector_pipes"], ex["connector_tags"]) == (1, 1), ex
+    assert ex["uniform_c"] and ex["c_values"] == 1 and ex["grid"] == "full_fixed_gamma", ex
+    assert "connector pipe left out" in ex["row"], ex
+    _same_as_15b(got, "uniform_c")
+    return {"members": got["fixed_gamma_members"], "bit_identical": got["members_bit_identical_to_full_gamma0"],
+            "committed_networks_c_values": got["committed_networks_c_values"],
+            "net1_export_like": {k: ex[k] for k in ("c_values", "uniform_c", "grid")}}
+
+
+@check("task15b", quick=False)
+def run_cost_gate():
+    """The run cost (task 15b, item 10).  Asserted, because it does not depend on timing: the estimate the product
+    reports is the stated formula (one timed 7-day run times the grid's runs over importers.EFFECTIVE_SPEEDUP, from
+    the unrounded run time, and the minutes shown are that estimate rounded); Net6 (3,323 junctions) gets the hard
+    warning; a 10,000-junction count for chloramine on 11 workers with the free disk stood in at 3 GB is refused (1.38
+    GB of grid plus about 1 GB of temporary files would leave under 1.5 GB), and at 6 GB accepted; one run's EPANET
+    files on ky4, ky10 and Net6 are as the record says, and TEMP_MB_PER_JUNCTION is ky4's.  Equals the committed record
+    (part 'run_cost').
+    Not asserted: the pre-registered timing bar (Net3's estimate within a factor of 2 of the fresh grid time).  Its
+    scored run missed (2.10, outputs/intake/run_cost_timing.json), and the ratio moves across the bar from run to run
+    on an unchanged tree, so as an assertion it made the saved run pass or fail by chance.  The miss stands, recorded
+    in the journal; this run's ratio, against the grid fresh_grid_equals_cached_grid built in this run (or, run alone,
+    a fresh build here), goes to the run log only, and no passing run counts as a pass of that bar."""
+    from . import importers as I
+    from . import intake_exp as E
+    from .simgp import build_grid_24h
+    from .simulate import nominal_scenario
+    got = E.part_run_cost()
+    assert got["Net6"]["large"] and got["Net6"]["hard_warning"], got["Net6"]
+    gate = got["mock"]["gate"]
+    assert got["mock"]["workers"] == E.MOCK_WORKERS, got["mock"]
+    assert not gate["3"]["accepted"] and gate["3"]["message_says_floor"] and gate["6"]["accepted"], gate
+    t = got["temp_files_one_run"]
+    assert round(I.TEMP_MB_PER_JUNCTION * t["ky4"]["junctions"], 1) == t["ky4"]["mb"], t
+    _same_as_15b(got, "run_cost")
+    cost = E.bundled("Net3")[1].run_cost
+    estimate = cost["estimate_s"]                                  # the number the product reports, unrounded
+    probe = I.run_cost(cost["junctions"], "free_chlorine", seconds_per_run=0.04)     # the formula, on a fixed run time
+    assert probe["estimate_s"] == I.estimate_seconds(0.04, 675) == 0.04 * 675 / I.EFFECTIVE_SPEEDUP, probe
+    assert abs(estimate * I.EFFECTIVE_SPEEDUP / cost["runs_per_dose"] - cost["seconds_per_run"]) <= 0.0005, cost
+    assert cost["minutes"] == round(estimate / 60, 1), cost
+    if FRESH_GRID_SECONDS:
+        fresh, source = FRESH_GRID_SECONDS[-1], "fresh_grid_equals_cached_grid"
+    else:
+        t0 = time.time()
+        build_grid_24h(nominal_scenario("Net3"), "full")
+        fresh, source = time.time() - t0, "a fresh build in this check"
+    ratio = fresh / estimate
+    return {"estimate_is_the_stated_formula": True, "net6_hard_warning": True, "mock_10000_chloramine": gate,
+            "mock_workers": got["mock"]["workers"], "temp_files_one_run": t,
+            "timing_bar": "pre-registered, missed in its scored run (outputs/intake/run_cost_timing.json); not "
+                          "asserted here, this run's ratio is in the run log only",
+            "_volatile": {"net3_seconds_per_run": round(estimate * I.EFFECTIVE_SPEEDUP / cost["runs_per_dose"], 4),
+                          "net3_estimate_s": round(estimate, 2), "net3_fresh_grid_s": round(fresh, 2),
+                          "fresh_from": source, "ratio": round(ratio, 3),
+                          "within_factor_2_this_run": 0.5 <= ratio <= 2.0}}
+
+
+@check("task15b", quick=False)
+def readiness_bundled_reproduces():
+    """importers.prepare_inp on the six networks WNTR bundles (Net1, Net2, Net3, Net6, ky4, ky10), rerun, equals the
+    committed outputs/intake/readiness_bundled.json (run times and the worker count are left out of it)."""
+    from . import intake_exp as E
+    got = E.readiness_bundled()
+    with open(E.READINESS_BUNDLED) as fh:
+        committed = json.load(fh)
+    diff = _json_diff(json.loads(json.dumps(got)), committed)
+    assert not diff, diff[:10]
+    nets = got["networks"]
+    return {"networks": sorted(nets), "ok": {n: v["ok"] for n, v in nets.items()},
+            "fixes": {n: len(v["fixes"]) for n, v in nets.items()}, "warnings": {n: len(v["warnings"]) for n, v in nets.items()}}
+
+
+@check("task15b")
+def task15_leftovers_fixed():
+    """Task 15's four leftovers, each reproduced on the task-15 code first: a SWMM model whose SWMM-only sections come
+    after the first 64 KB (whose first 64 KB alone is still typed as EPANET, the control) is typed as SWMM with its
+    advice, not blocked with WNTR's syntax error; a zip holding Net3 renamed zone_model.txt is a zip holding a model,
+    prepared as Net3; a UTF-8 file with accented IDs and one stray cp1252 byte is read as UTF-8 with that byte as
+    cp1252, keeps its IDs and warns of the mixed encoding (read as cp1252 throughout, as task 15 did, WNTR fails: the
+    control); a file in cp1252 throughout whose accented capitals before a curly quote are valid UTF-8 pairs by chance
+    (net3_cp1252_pair.inp, the review's second control: 4 such pairs, 9 bytes that are not UTF-8) still decodes as
+    cp1252 throughout, as task 15 decoded it, with its IDs kept and no mixed-encoding warning; a content-named copy
+    that task 15 accepted of a model blocked now (Chezy-Manning) is removed, and another file in the folder is kept.
+    The second review's encoding cases (fixtures.ENCODING_CONTROLS), on both sides of the count rule it replaced
+    (valid UTF-8 characters against stray bytes, by occurrence): in cp1252 throughout, one ID CITÉ'15 written 3 times
+    against 1 stray byte, and five IDs with an en dash (18 against 2), decode as cp1252 with their IDs kept; in UTF-8,
+    more stray bytes than accents, one capital-only ID against 6 stray bytes, a pasted block of 10 cp1252 lines, and a
+    pasted comment holding a chance pair, decode as UTF-8 with their IDs kept (the pasted 'CITÉ'S' too).  The
+    review's fuzz (seed 11: 150 files in cp1252 throughout, 150 in UTF-8 with stray bytes, decode_text only) changes
+    no ID.  Equals the committed record (part 'leftovers')."""
+    from . import intake_exp as E
+    with _physics_fixtures() as (paths, out):
+        got = E.part_leftovers(paths, out)
+    s = got["swmm_after_64kb"]
+    assert s["first_64kb_alone"] == "epanet_inp" and s["kind"] == "swmm_inp" and s["not_a_model"] and s["swmm_advice"], s
+    z = got["zip_model_as_txt"]
+    assert z["kind"] == "epanet_inp_zip" and z["ok"] and z["same_network_as_net3"], z
+    m = got["utf8_stray_cp1252"]
+    assert m["ok"] and m["mixed_warning"] and m["accented_ids_kept"] and m["decoded_as_cp1252_throughout"] != "loads", m
+    p = got["cp1252_with_utf8_pairs"]      # the review's control: decoded as task 15 decoded it
+    assert p["decoded_as"] == "cp1252 (Windows Western European)" and p["ok"] and p["ids_kept"], p
+    assert p["same_as_cp1252_throughout"] and not p["mixed_warning"], p
+    from .fixtures import ENCODING_CONTROLS
+    ec = got["encoding_controls"]
+    assert list(ec) == [f for f, _, _ in ENCODING_CONTROLS], list(ec)
+    for f, v in ec.items():
+        mixed = v["decoded_as"].startswith("utf-8 mixed with")
+        assert v["ok"] and v["ids_kept"] and mixed == v["mixed_warning"] == (v["must_decode_as"] == "mixed"), (f, v)
+    one = ec["net3_cp1252_one_pair_id.inp"]      # the review's file: the old rule's side it got wrong
+    assert one["valid_utf8_chars"] > one["bytes_not_utf8"] and not one["mixed_warning"], one
+    few = ec["utf8_one_id_six_stray.inp"]         # and the other side
+    assert few["valid_utf8_chars"] < few["bytes_not_utf8"] and few["mixed_warning"], few
+    assert ec["utf8_pasted_chance_pair.inp"]["pasted_comment_kept"], ec["utf8_pasted_chance_pair.inp"]
+    fz = got["encoding_fuzz"]
+    assert fz["ids_changed"] == {"cp1252_throughout": 0, "utf8_with_stray": 0}, fz
+    st = got["stale_copy"]
+    assert st["blocked"] and st["stale_removed"] and st["other_file_kept"], st
+    _same_as_15b(got, "leftovers")
+    return {"swmm": s["kind"], "zip_txt": z["kind"], "mixed": m["decoded_as"], "cp1252_with_pairs": p["decoded_as"],
+            "stale_removed": True, "encoding_controls": {f: v["decoded_as"] for f, v in ec.items()},
+            "encoding_fuzz_ids_changed": fz["ids_changed"]}
+
+
+@check("task15b")
+def numbers_scan_settles():
+    """The second review: the numbers scan reads the checks report as a source (every entry but its own), so the run
+    that added task 15b's entries committed a scan of the previous run's report, and the next run on the same tree
+    rewrote it.  Reproduced on a copy of the report in a temporary folder (the committed one is not touched), with one
+    probe entry that holds every number of the README's and journal's scanned sections, standing in for a run's new
+    details: the probe changes the scan's result (the review's case), settle_numbers_entry, which the full run applies
+    before it writes the report, puts the scan of the new report in the entry, and settling again changes nothing
+    (one pass), so one run is enough.  Its first version updated the report's pass counts after the scan, and the
+    counts are numbers in the scan's pool too: the full run caught it, when the journal came to quote the new count."""
+    import copy
+    from . import numbers as N
+    with open(REPORT) as fh:
+        base = json.load(fh)
+    vals = sorted({N.parse_token(m.group(0))[0] for s in N.sections() for m in N.NUM.finditer(s.text)})
+    with tempfile.TemporaryDirectory(prefix="rm_settle_") as d:
+        path = os.path.join(d, "checks_report.json")
+        settled = copy.deepcopy(base)
+        settle_numbers_entry(settled, path=path)
+        before = copy.deepcopy(next(r for r in settled["checks"] if r["name"] == "numbers_trace_to_outputs"))
+        probed = copy.deepcopy(settled)
+        probed["checks"].append({"name": "settle_probe", "group": "task15b", "pass": True, "detail": {"values": vals}})
+        first = settle_numbers_entry(probed, path=path)
+        after = next(r for r in probed["checks"] if r["name"] == "numbers_trace_to_outputs")
+        second = settle_numbers_entry(probed, path=path)
+    assert before["pass"] and after["pass"], (before.get("error"), after.get("error"))
+    assert first["changed"] and before["detail"] != after["detail"], first
+    assert second == {"rerun": True, "changed": False, "passes": 1}, second
+    moved = sorted(k for k in after["detail"]["traced"] if after["detail"]["traced"][k] != before["detail"]["traced"].get(k))
+    return {"probe_changes_the_scan": True, "second_pass_changes_nothing": True, "traced_levels_moved": moved}
+
+
+@check("task15b")
+def route_small_network():
+    """plan_route on Net1 (9 junctions) from its fixed-gamma prior: with 8 junctions sampled and 6 sites asked for it
+    returns the 1 junction left (before task 15b it stopped with 'attempt to get argmax of an empty sequence', at HEAD
+    before task 15 too); with all 9 sampled, an empty route with the usual columns; with none sampled and 3 asked for,
+    3 sites.  The committed default route is unchanged (route_reason_default_unchanged_age_opt_in compares Net3's with
+    outputs/summary_Net3.json, and the committed reruns compare every route output).  Equals the committed record
+    (part 'route')."""
+    from . import intake_exp as E
+    from .features import build_features
+    from .route import plan_route
+    from .simgp import SimGP24
+    from .simulate import nominal_scenario
+    got = E.part_route()
+    c = got["cases"]
+    assert (c["K6_8_sampled"]["rows"], c["K6_9_sampled"]["rows"], c["K3_none_sampled"]["rows"]) == (1, 0, 3), c
+    assert c["K6_9_sampled"]["columns"] == c["K6_8_sampled"]["columns"], c
+    sc = nominal_scenario("Net3")
+    base = plan_route(SimGP24(sc, build_features(sc), seed=0, cache_dir=CACHE).fit_prior(), 8)
+    committed = json.load(open(os.path.join(REPO, "outputs", "summary_Net3.json")))["route_scenario0_K8"]
+    assert base.to_dict("records") == committed
+    _same_as_15b(got, "route")
+    return {"rows": {k: v["rows"] for k, v in c.items()}, "net3_default_route_unchanged": True}
+
+
+APP_T15B_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+import streamlit.runtime.memory_media_file_storage as mm
+PDF = {}
+_orig = mm.MemoryMediaFileStorage.load_and_get_id
+def _rec(self, path_or_data, mimetype, kind, filename=None):
+    if mimetype == "application/pdf":
+        PDF["last"] = path_or_data
+    return _orig(self, path_or_data, mimetype, kind, filename)
+mm.MemoryMediaFileStorage.load_and_get_id = _rec
+from streamlit.testing.v1 import AppTest
+app, net1, net6 = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def upload(name, path):
+    PDF.clear()
+    at = AppTest.from_file(app, default_timeout=900).run()
+    [r for r in at.radio if r.label == "Model"][0].set_value("Upload my .inp")
+    at.run()
+    at.file_uploader[0].set_value((name, open(path, "rb").read(), "application/octet-stream"))
+    at.run()
+    metric = [m for m in at.metric if m.label.startswith("Junctions likely below")]
+    calib = [m for m in at.metric if m.label.startswith("Calibrated decay")]
+    route = [d.value for d in at.dataframe if "reason" in list(d.value.columns)]
+    return {"exception": [e.value for e in at.exception], "flagged": metric[0].value if metric else None,
+            "calib_value": calib[0].value if calib else None, "calib_delta": calib[0].delta if calib else None,
+            "route_rows": len(route[0]) if route else None, "checkboxes": [c.label for c in at.checkbox],
+            "info": [i.value for i in at.info], "errors": [e.value for e in at.error],
+            "subheaders": [s.value for s in at.subheader], "pdf_made": "last" in PDF,
+            "readiness": [m.value for m in at.markdown if m.value.startswith("**Model readiness")]}
+
+print("APP_T15B_JSON " + json.dumps({"net1": upload("Net1.inp", net1), "net6": upload("Net6.inp", net6)}))
+"""
+
+
+@check("task15b", quick=False)
+def app_small_network_upload():
+    """Headless AppTest by widget label: Net1.inp uploaded (9 junctions, C 100 on every pipe) runs end to end with the
+    default demo (8 samples), no exception: the 'full_fixed_gamma' grid is built inside the app, the calibrated-decay
+    metric shows the old-pipe factor as not identifiable, the route has the 1 junction left, and the PDF is made (the
+    route planner stopped this page before task 15b).  Net6.inp (3,323 junctions) shows its readiness report with the
+    'Build the grid anyway' checkbox, unticked, and the page stops before any grid run (no grid file is written).  The
+    runs' copies and grids (outputs/app_uploads and outputs/cache, git-ignored) are deleted afterwards, and earlier
+    copies are moved aside first and put back."""
+    from .simulate import LIB
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    had_dir = os.path.isdir(up_dir)
+    mine = lambda d: [f for f in (os.listdir(d) if os.path.isdir(d) else []) if "_Net1.inp" in f or "_Net6.inp" in f]
+    aside = tempfile.mkdtemp(prefix="rm_t15b_aside_")
+    moved = [(d, f) for d in (up_dir, CACHE) for f in mine(d)]
+    built = {}
+    try:
+        for d, f in moved:
+            os.makedirs(os.path.join(aside, os.path.basename(d)), exist_ok=True)
+            shutil.move(os.path.join(d, f), os.path.join(aside, os.path.basename(d), f))
+        try:
+            r = subprocess.run([PY, "-c", APP_T15B_SCRIPT, os.path.join(REPO, "app.py"), os.path.join(LIB, "Net1.inp"),
+                                os.path.join(LIB, "Net6.inp")], cwd=os.getcwd(), capture_output=True, text=True,
+                               env={**os.environ, "PYTHONPATH": REPO})
+        finally:
+            built = {os.path.basename(d): mine(d) for d in (up_dir, CACHE)}
+            for d in (up_dir, CACHE):
+                for f in mine(d):
+                    os.remove(os.path.join(d, f))
+            if not had_dir and os.path.isdir(up_dir) and not os.listdir(up_dir):
+                os.rmdir(up_dir)
+    finally:
+        for d, f in moved:
+            os.makedirs(d, exist_ok=True)
+            shutil.move(os.path.join(aside, os.path.basename(d), f), os.path.join(d, f))
+        shutil.rmtree(aside, ignore_errors=True)
+    line = [x for x in r.stdout.splitlines() if x.startswith("APP_T15B_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    res = json.loads(line[-1][len("APP_T15B_JSON "):])
+    n1, n6 = res["net1"], res["net6"]
+    assert not n1["exception"] and not n1["errors"], (n1["exception"], n1["errors"])
+    assert n1["flagged"] and n1["flagged"].endswith("of 9"), n1["flagged"]
+    assert "not identifiable" in (n1["calib_delta"] or ""), n1["calib_delta"]
+    assert n1["route_rows"] == 1 and n1["pdf_made"], n1
+    assert "| Old-pipe factor | not identifiable" in n1["readiness"][0], n1["readiness"]
+    grids = [f for f in built["cache"] if "_Net1.inp" in f]
+    assert len(grids) == 1 and grids[0].startswith("grid24_full_fixed_gamma_"), built
+    assert not n6["exception"] and any(c.startswith("Build the grid anyway") for c in n6["checkboxes"]), n6
+    assert n6["flagged"] is None and any("tick 'Build the grid anyway'" in i for i in n6["info"]), n6
+    assert not [f for f in built["cache"] if "_Net6.inp" in f], built
+    assert "Large model:" in n6["readiness"][0], n6["readiness"]
+    return {"net1_flagged": n1["flagged"], "net1_calib_delta_says": "old-pipe factor: not identifiable from one C value",
+            "net1_route_rows": n1["route_rows"], "net1_grid": "grid24_full_fixed_gamma_<sha1>[:8]_Net1.inp_<tag>.pkl",
+            "net6_checkbox": True, "net6_stopped_before_any_run": True}
+
+
 # ----------------------------------------------------------------------------- runner
+def _counts(rs: list) -> dict:
+    return {"all_pass": all(r["pass"] is not False for r in rs),
+            "n_pass": sum(r["pass"] is True for r in rs), "n_fail": sum(r["pass"] is False for r in rs),
+            "n_skipped": sum(r["pass"] is None for r in rs)}
+
+
+def settle_numbers_entry(report: dict, run_log: dict | None = None, path: str = REPORT) -> dict:
+    """The numbers scan (numbers_trace_to_outputs) reads the checks report as one of its sources, every entry but its
+    own, so in a run whose other entries changed (a new check, a new detail) it scanned the previous run's report, and
+    the next run on the same tree wrote a different entry (task 15b's second review).  This writes the report to
+    path, with its pass counts brought up to date first (they are numbers in the scan's pool too), reruns the scan on
+    that file and puts the result in the entry, and repeats while the entry changes: the scan leaves its own entry
+    out, so the entry settles on the first pass, unless its pass or fail changed the counts.  Returns what it did,
+    for the run log."""
+    from . import numbers as N
+    entry = next((r for r in report["checks"] if r["name"] == "numbers_trace_to_outputs"), None)
+    if entry is None or entry["pass"] is None:
+        return {"rerun": False}
+    changed, passes = False, 0
+    keep = N.PATH_OVERRIDE.get(N.SELF_REPORT)
+    N.PATH_OVERRIDE[N.SELF_REPORT] = path
+    try:
+        for passes in range(1, 4):
+            report.update(_counts(report["checks"]))
+            with open(path, "wb") as fh:
+                fh.write((json.dumps(_jsonable(report), indent=1) + "\n").encode())
+            N._VALUES.clear()
+            try:
+                detail, ok, err = numbers_trace_to_outputs(), True, None
+            except Exception as e:  # noqa: BLE001
+                detail, ok, err = None, False, f"{type(e).__name__}: {e}"
+            detail = _jsonable(detail)
+            if detail == entry.get("detail") and ok == entry["pass"] and err == entry.get("error"):
+                break
+            changed = True
+            entry["detail"], entry["pass"] = detail, ok
+            entry.pop("error", None)
+            if err:
+                entry["error"] = err
+    finally:
+        if keep is None:
+            N.PATH_OVERRIDE.pop(N.SELF_REPORT, None)
+        else:
+            N.PATH_OVERRIDE[N.SELF_REPORT] = keep
+        N._VALUES.clear()
+    report.update(_counts(report["checks"]))
+    if run_log is not None:
+        run_log.update(_counts(run_log["results"]))
+    return {"rerun": True, "changed": changed, "passes": passes}
+
+
 def run_checks(quick: bool) -> tuple[dict, dict]:
     """Returns (report, run_log): the report holds only results that do not change from run to run; the run log
     adds the date, the timings and the free disk."""
@@ -3367,11 +3931,7 @@ def run_checks(quick: bool) -> tuple[dict, dict]:
     import wntr
     import sklearn
     import scipy
-
-    def counts(rs):
-        return {"all_pass": all(r["pass"] is not False for r in rs),
-                "n_pass": sum(r["pass"] is True for r in rs), "n_fail": sum(r["pass"] is False for r in rs),
-                "n_skipped": sum(r["pass"] is None for r in rs)}
+    counts = _counts
     # a check whose result depends on a private input outside the repository goes to the run log only, so the
     # committed report is the same whether or not that input is on this machine (task 14's review)
     in_report = [r for r in results if r["name"] not in RUN_LOG_ONLY]
@@ -3625,6 +4185,7 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     if not a.quick:   # the committed report is written by full runs only
         old = open(REPORT, "rb").read() if os.path.exists(REPORT) else None
+        run_log["numbers_scan_settled"] = settle_numbers_entry(report, run_log)   # one run is enough
         new = (json.dumps(_jsonable(report), indent=1) + "\n").encode()
         with open(REPORT, "wb") as fh:
             fh.write(new)

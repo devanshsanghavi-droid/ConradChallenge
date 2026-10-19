@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 75,
+ "n_pass": 89,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,35 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 197,
+    "registry_ok": 280,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1161,
+     "code or path": 1316,
      "date": 67,
-     "identifier": 582,
+     "identifier": 620,
      "link target": 12,
      "run cost (logs, df)": 6,
      "seed range": 20,
-     "setting or literature value written in the code": 18,
-     "time of day": 46
+     "setting or literature value written in the code": 16,
+     "time of day": 59
     },
     "traced": {
-     "iteration-4 outputs": 204,
-     "file cited in its section": 3053,
-     "file cited in its paragraph": 4200,
-     "outputs": 5
+     "iteration-4 outputs": 213,
+     "file cited in its section": 3064,
+     "file cited in its paragraph": 4532,
+     "outputs": 5,
+     "iteration-5 outputs": 2
     },
-    "n_tokens": 7487,
+    "n_tokens": 7839,
     "power_caught_of_tested": {
      "decimal": [
-      776,
-      8497
+      912,
+      8677
      ],
      "integer": [
-      818,
-      5643
+      909,
+      6111
      ]
     }
    }
@@ -1344,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 27,
+    "iteration4_texts_checked": 29,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -1505,6 +1506,394 @@
      "address": "localhost",
      "stats": false
     }
+   }
+  },
+  {
+   "name": "inp_reaction_orders_fixed",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "ky10_mean_original": {
+     "0.2": 0.5748,
+     "0.8": 0.5748
+    },
+    "ky10_mean_fixed": {
+     "0.2": 0.5714,
+     "0.8": 0.4561
+    },
+    "net6_junctions": 3323,
+    "net6_size_warning": true
+   }
+  },
+  {
+   "name": "inp_bulk_lines_cleared",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "bulk_lines": 10,
+    "tank_lines": 1,
+    "junction_hours": 2208,
+    "max_diff_prepared_vs_net3": 0.0,
+    "max_diff_original_vs_net3": 0.1909
+   }
+  },
+  {
+   "name": "inp_headloss_formula",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "gate": {
+     "pipes": 117,
+     "c_min": 110.0043,
+     "c_max": 153.7597,
+     "age_change_median_h": 0.0447,
+     "age_change_p95_h": 1.1313,
+     "passes": true
+    },
+    "max_c_error": 0.331,
+    "within_0.5": 114,
+    "unmatched_below_199": 45.24,
+    "cm_blocked": true,
+    "dw_uniform": {
+     "converted_c_values": 68,
+     "uniform_c": true,
+     "grid": "full_fixed_gamma"
+    },
+    "dw_plastic": {
+     "file_roughness_values": 2,
+     "uniform_c": false,
+     "grid": "full"
+    }
+   }
+  },
+  {
+   "name": "inp_clock_and_weekly",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "net2_start_h": 8.0,
+    "net3_clock6_h": 6.0,
+    "weekly_warning": true,
+    "net2_multi_day_patterns": [
+     [
+      "1",
+      55.0
+     ],
+     [
+      "2",
+      55.0
+     ],
+     [
+      "3",
+      55.0
+     ]
+    ],
+    "near_midnight": {
+     "23:59:50": [
+      "0 h (00:00)",
+      false
+     ],
+     "0:00:20": [
+      "0 h (00:00)",
+      false
+     ],
+     "5:59:59": [
+      "6 h (06:00)",
+      true
+     ],
+     "6:30": [
+      "6.5 h (06:30)",
+      true
+     ]
+    }
+   }
+  },
+  {
+   "name": "inp_prv_elevations",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "ky10_zero": [
+     "J-16"
+    ],
+    "net6_zero": 3,
+    "const_blocked": true,
+    "net3_flagged": false,
+    "elevation_evidence": {
+     "junctions": 920,
+     "junctions_moved": 90,
+     "max_change_h": 47.41
+    }
+   }
+  },
+  {
+   "name": "inp_coordinate_scale",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "Net3": [
+     "schematic",
+     "unknown",
+     6.71
+    ],
+    "Net2": [
+     "schematic",
+     "unknown",
+     2.33
+    ],
+    "Net6": [
+     "schematic",
+     "unknown",
+     13.03
+    ],
+    "ky4": [
+     "to scale",
+     "feet",
+     1.01
+    ],
+    "ky10": [
+     "to scale",
+     "feet",
+     1.01
+    ],
+    "net3_no_coords": [
+     "no coordinates",
+     null,
+     null
+    ]
+   }
+  },
+  {
+   "name": "inp_controls_and_structure",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "net3_no_controls.inp": {
+     "ok": true,
+     "pump_warning": true,
+     "zero_total_demand": false,
+     "parts": [
+      97
+     ],
+     "connector_pipes": 0
+    },
+    "net3_speed_pattern_pumps.inp": {
+     "ok": true,
+     "pump_warning": false,
+     "zero_total_demand": false,
+     "parts": [
+      97
+     ],
+     "connector_pipes": 0
+    },
+    "net3_zero_demand.inp": {
+     "ok": true,
+     "pump_warning": false,
+     "zero_total_demand": true,
+     "parts": [
+      97
+     ],
+     "connector_pipes": 0
+    },
+    "net3_two_parts.inp": {
+     "ok": true,
+     "pump_warning": false,
+     "zero_total_demand": false,
+     "parts": [
+      97,
+      2
+     ],
+     "connector_pipes": 0
+    },
+    "net3_no_source.inp": {
+     "ok": false,
+     "pump_warning": false,
+     "zero_total_demand": null,
+     "parts": null,
+     "connector_pipes": null
+    },
+    "watergems_export_like.inp": {
+     "ok": true,
+     "pump_warning": false,
+     "zero_total_demand": false,
+     "parts": [
+      99
+     ],
+     "connector_pipes": 2
+    },
+    "net3_rule_premise.inp": {
+     "ok": true,
+     "pump_warning": true,
+     "zero_total_demand": false,
+     "parts": [
+      97
+     ],
+     "connector_pipes": 0
+    },
+    "Net6": {
+     "ok": null,
+     "pump_warning": null,
+     "zero_total_demand": null,
+     "parts": null,
+     "connector_pipes": 1
+    }
+   }
+  },
+  {
+   "name": "uniform_c_fixes_gamma",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "members": 225,
+    "bit_identical": 225,
+    "committed_networks_c_values": {
+     "Net3": 5,
+     "Net2": 2,
+     "ky4": 2
+    },
+    "net1_export_like": {
+     "c_values": 1,
+     "uniform_c": true,
+     "grid": "full_fixed_gamma"
+    }
+   }
+  },
+  {
+   "name": "run_cost_gate",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "estimate_is_the_stated_formula": true,
+    "net6_hard_warning": true,
+    "mock_10000_chloramine": {
+     "3": {
+      "accepted": false,
+      "message_says_floor": true
+     },
+     "6": {
+      "accepted": true,
+      "message_says_floor": false
+     }
+    },
+    "mock_workers": 11,
+    "temp_files_one_run": {
+     "ky4": {
+      "junctions": 959,
+      "mb": 9.5
+     },
+     "ky10": {
+      "junctions": 920,
+      "mb": 9.2
+     },
+     "Net6": {
+      "junctions": 3323,
+      "mb": 31.6
+     }
+    },
+    "timing_bar": "pre-registered, missed in its scored run (outputs/intake/run_cost_timing.json); not asserted here, this run's ratio is in the run log only"
+   }
+  },
+  {
+   "name": "readiness_bundled_reproduces",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "networks": [
+     "Net1",
+     "Net2",
+     "Net3",
+     "Net6",
+     "ky10",
+     "ky4"
+    ],
+    "ok": {
+     "Net1": true,
+     "Net2": true,
+     "Net3": true,
+     "Net6": true,
+     "ky4": true,
+     "ky10": true
+    },
+    "fixes": {
+     "Net1": 0,
+     "Net2": 0,
+     "Net3": 0,
+     "Net6": 1,
+     "ky4": 0,
+     "ky10": 1
+    },
+    "warnings": {
+     "Net1": 0,
+     "Net2": 3,
+     "Net3": 1,
+     "Net6": 3,
+     "ky4": 1,
+     "ky10": 3
+    }
+   }
+  },
+  {
+   "name": "task15_leftovers_fixed",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "swmm": "swmm_inp",
+    "zip_txt": "epanet_inp_zip",
+    "mixed": "utf-8 mixed with 1 stray byte read as cp1252 (Windows Western European)",
+    "cp1252_with_pairs": "cp1252 (Windows Western European)",
+    "stale_removed": true,
+    "encoding_controls": {
+     "net3_cp1252_one_pair_id.inp": "cp1252 (Windows Western European)",
+     "net3_cp1252_dash_ids.inp": "cp1252 (Windows Western European)",
+     "utf8_more_stray_than_accents.inp": "utf-8 mixed with 4 stray bytes read as cp1252 (Windows Western European)",
+     "utf8_one_id_six_stray.inp": "utf-8 mixed with 6 stray bytes read as cp1252 (Windows Western European)",
+     "utf8_pasted_block.inp": "utf-8 mixed with 21 stray bytes read as cp1252 (Windows Western European)",
+     "utf8_pasted_chance_pair.inp": "utf-8 mixed with 3 stray bytes read as cp1252 (Windows Western European)"
+    },
+    "encoding_fuzz_ids_changed": {
+     "cp1252_throughout": 0,
+     "utf8_with_stray": 0
+    }
+   }
+  },
+  {
+   "name": "numbers_scan_settles",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "probe_changes_the_scan": true,
+    "second_pass_changes_nothing": true,
+    "traced_levels_moved": [
+     "file cited in its paragraph",
+     "file cited in its section",
+     "iteration-4 outputs"
+    ]
+   }
+  },
+  {
+   "name": "route_small_network",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "rows": {
+     "K6_8_sampled": 1,
+     "K6_9_sampled": 0,
+     "K3_none_sampled": 3
+    },
+    "net3_default_route_unchanged": true
+   }
+  },
+  {
+   "name": "app_small_network_upload",
+   "group": "task15b",
+   "pass": true,
+   "detail": {
+    "net1_flagged": "8 of 9",
+    "net1_calib_delta_says": "old-pipe factor: not identifiable from one C value",
+    "net1_route_rows": 1,
+    "net1_grid": "grid24_full_fixed_gamma_<sha1>[:8]_Net1.inp_<tag>.pkl",
+    "net6_checkbox": true,
+    "net6_stopped_before_any_run": true
    }
   },
   {

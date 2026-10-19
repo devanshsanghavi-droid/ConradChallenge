@@ -28,10 +28,21 @@ not adopted (chloramine mode asks for this month's water temperature for the nit
 Iteration 5, task 15: the uploader takes any file and identifies it by its content (residualmap/importers.py).  An
 EPANET model goes through prepare_inp: a byte-order mark, UTF-16 or a Windows code page is fixed in a copy, IDs are
 checked before WNTR parses, and a 'Model readiness report' says what came from the file, what was derived, what is
-assumed and what is missing (the model's physics settings are listed as not checked yet).  Any other file gets plain
+assumed and what is missing (task 15 listed the model's physics settings as not checked yet; task 15b checks them,
+below).  Any other file gets plain
 advice on what to send instead, and the page stops.  A clean UTF-8 .inp is stored exactly as before
 (outputs/app_uploads/<sha1>[:8]_<name>), so its grid cache name is unchanged.  .streamlit/config.toml keeps the
 server on localhost and usage statistics off, from the next start of the server.
+
+Iteration 5, task 15b: the readiness report checks an uploaded model's physics (reaction orders set to 1, per-pipe and
+per-tank bulk lines cleared, Darcy-Weisbach converted to Hazen-Williams behind a water-age gate, Chezy-Manning blocked,
+the start clock recorded, pressure-control valves and elevations, coordinates, sources, pumps and controls,
+connectivity) and gives its run cost.  A file with one C value (or one Darcy-Weisbach roughness) on every pipe gets
+the 'full_fixed_gamma' grid (the old-pipe factor held at 0; in chloramine mode the chloramine grid, which still varies
+it) and the old-pipe factor is shown as not identifiable; a model of more than 3,000 junctions
+needs the checkbox in its readiness report; a grid that would leave less than 1.5 GB of disk free is refused.  A
+network so small that the samples leave fewer junctions than the route asks for gets a shorter route (it stopped the
+app before).  The bundled examples never go through prepare_inp and run exactly as before.
 """
 from __future__ import annotations
 
@@ -57,9 +68,10 @@ from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, 
 from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
 from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
 from residualmap.features import build_features
-from residualmap.importers import prepare_inp
+from residualmap.importers import prepare_inp, size_gate
 from residualmap.route import plan_route
-from residualmap.simgp import DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_edge_mass, simulator_grid_24h
+from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path, grid_edge_mass,
+                               simulator_grid_24h)
 from residualmap.simulate import LIB, build_scenario, hidden_chem_draws, nominal_scenario, source_nodes
 from residualmap import chloramine as CA
 
@@ -93,15 +105,29 @@ def upload_model(data: bytes, name: str, disinfectant: str):
     return prepare_inp(data, UPLOAD_DIR, disinfectant, name=name)
 
 
-def show_intake(box, rep) -> None:
-    """The upload's advice (not a model), its blocking problems, or its readiness report, in the main area."""
+def show_intake(box, rep) -> bool:
+    """The upload's advice (not a model), its blocking problems, or its readiness report, in the main area.  For a
+    model of more than importers.LARGE_JUNCTIONS junctions (task 15b) the report holds a checkbox: True when the grid
+    may be built (always True for a smaller model)."""
     if rep.not_a_model:
         box.warning(rep.advice())
-        return
+        return False
     if rep.blocking:
         box.error("This model cannot run yet. " + " ".join(rep.blocking))
+    large = bool(rep.run_cost.get("large"))
     with box.expander("Model readiness report", expanded=bool(rep.blocking or rep.fixes or rep.warnings)):
         st.markdown(rep.to_markdown())
+        if large and not rep.blocking:
+            return st.checkbox(f"Build the grid anyway: {rep.run_cost['runs_per_dose']} runs, about "
+                               f"{rep.run_cost.get('minutes', 0):g} min and {rep.run_cost['grid_file_mb']:g} MB "
+                               f"(a large model)", value=False)
+    return True
+
+
+def old_pipe_text(g: float, uniform_c: bool) -> str:
+    """The old-pipe factor for the page and the PDF: its calibrated value, or, for a file with one C value on every
+    pipe (task 15b), that it cannot be learned."""
+    return "old-pipe factor: not identifiable from one C value" if uniform_c else f"old-pipe factor γ={g:.1f}"
 
 
 # ----------------------------------------------------------------------------- inputs
@@ -119,6 +145,7 @@ with st.sidebar:
                   help="A chloraminated system measures TOTAL chlorine, which decays far more slowly than free chlorine. "
                        "The chloramine mode uses its own decay ranges, dose axis, likelihood scale and threshold; free and "
                        "total chlorine readings are never mixed.") == DISINFECTANTS[1]
+    uniform_c = False          # task 15b: one C value on every pipe (an uploaded file only; the examples have several)
     if up is not None:
         disinfectant = "chloramine" if ca else "free_chlorine"
         try:            # prepare_inp turns what is in a file into plain problems; this is the last guard for the rest
@@ -130,10 +157,13 @@ with st.sidebar:
             net_path, readiness = None, None
             intake_box.error(f"This file could not be read ({type(e).__name__}). Send the model's EPANET export "
                              f"(.inp) again, on its own.")
-        if readiness is not None:
-            show_intake(intake_box, readiness)
+        confirmed = show_intake(intake_box, readiness) if readiness is not None else False
         if net_path is None:
             st.stop()
+        if not confirmed:
+            intake_box.info("A large model: tick 'Build the grid anyway' in the readiness report to start its runs.")
+            st.stop()
+        uniform_c = bool(readiness.flags.get("uniform_c"))
     if ca:
         dose = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
                                help="Total chlorine (chloramine) at the source. The model treats it as uncertain and lets "
@@ -190,18 +220,19 @@ def workers_skip_this_app():
 
 
 @st.cache_resource(show_spinner=False)
-def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = ""):
-    """Nominal model, physics features and the simulator grid (cached on disk too): the 675-run free-chlorine grid, or
-    the chloramine mode's 1440-run grid under its own cache tag.  The in-memory cache key is (file, dose, disinfectant,
-    chemistry tag): chem_tag is the chloramine grid's chemistry.cache_tag ('' for free chlorine), so a change to the
-    chloramine grid's definition or physics version is never served a grid from before it."""
+def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = "", grid: str = "full"):
+    """Nominal model, physics features and the simulator grid (cached on disk too): the 675-run free-chlorine grid
+    (or, for an uploaded file with one C value on every pipe, its 225-run gamma-0 slice 'full_fixed_gamma', task 15b),
+    or the chloramine mode's 1440-run grid under its own cache tag.  The in-memory cache key is (file, dose,
+    disinfectant, chemistry tag, grid): chem_tag is the chloramine grid's chemistry.cache_tag ('' for free chlorine),
+    so a change to the chloramine grid's definition or physics version is never served a grid from before it."""
     sc = nominal_scenario(path, sample_hour=14, source_dose=dose)
     X = build_features(sc)
     with workers_skip_this_app():
         if chloramine:
             simulator_grid_24h(sc, CACHE_DIR, "chloramine", cond=CA.ca_condition())
         else:
-            simulator_grid_24h(sc, CACHE_DIR, "full")
+            simulator_grid_24h(sc, CACHE_DIR, grid)
     return sc, X
 
 
@@ -296,11 +327,20 @@ if ca and demo and os.path.basename(net_path) == "ky4":
     st.error("The chloramine demo truth (EPA's chloramine chemistry in EPANET-MSX) is offered on Net3 and Net2 only: on "
              "ky4 one simulation takes too long here. Turn the demo off to use your own total chlorine samples.")
     st.stop()
-n_runs = int(np.prod([len(a) for a in GRIDS["chloramine" if ca else "full"]]))
+grid = "chloramine" if ca else ("full_fixed_gamma" if uniform_c else "full")
+n_runs = int(np.prod([len(a) for a in GRIDS[grid]]))
+if up is not None:     # task 15b: refuse a grid build that would leave less than 1.5 GB free (a cached grid needs none)
+    cond_ = CA.ca_condition() if ca else None
+    if not os.path.exists(grid_cache_path(types.SimpleNamespace(wn_name=net_path, source_dose=float(dose)), CACHE_DIR,
+                                          grid, cond_)):
+        disk_ok, disk_msg = size_gate(readiness.run_cost, CACHE_DIR)
+        if not disk_ok:
+            st.error(disk_msg)
+            st.stop()
 with st.spinner(f"Running {n_runs} EPANET simulations of your model over the decay and hydraulic-mismatch grid "
                 f"(once per network; cached afterwards)…"):
     sc, X = (prepare(net_path, float(dose), True, cache_tag(CA.ca_condition(), "chloramine")) if ca else
-             prepare(net_path, float(dose)))
+             prepare(net_path, float(dose)) if grid == "full" else prepare(net_path, float(dose), False, "", grid))
 with st.spinner("Running 10 EPANET water-age simulations of your model (demand and roughness settings; once per network)…"):
     band = water_age(net_path, sc)
 junctions = list(sc.junctions)
@@ -332,6 +372,7 @@ if demo:
     else:
         tr = demo_truth(net_path, float(dose), int(demo_seed), demo_kb, demo_kw)
     rng = np.random.default_rng(int(demo_seed))
+    n_demo = min(int(n_demo), len(junctions))          # task 15b: a network smaller than the slider (Net1 has 9)
     js = list(rng.choice(junctions, int(n_demo), replace=False)) if n_demo else []
     hs = [int(h) for h in rng.choice(DAY_HOURS, int(n_demo))] if n_demo else []
     ys = [float(np.clip(tr.truth_by_hour.loc[h, j] + rng.normal(0, 0.03), 0.01, None)) for j, h in zip(js, hs)]
@@ -358,8 +399,10 @@ if ca:
     model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid="chloramine",
                     cond=CA.ca_condition(), lik_sd=LIK_SD_CA, doses=DOSES_CA)
     model.log_prior = CA.prior_log_vector(model.params, float(ph_log), float(cl2n_log))
-else:
+elif grid == "full":
     model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold))
+else:
+    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid=grid)
 model.fit(S if len(S) else None)
 hourly = model.predict_hours()
 pmin = model.predict_daily_min()
@@ -389,7 +432,7 @@ c2.metric(f"Junctions likely below {threshold:g} mg/L ({label})", f"{int(flag.su
 c3.metric("Worst hour of the day", f"{worst:02d}:00", f"{frac_by_hour[worst]:.0%} of junctions below by median")
 if model.map_params_ is not None:
     kb, kw, g, dm, rm = model.map_params_
-    c4.metric("Calibrated decay (bulk / wall)", f"{kb:{KB_FMT}} /d · {kw:.2f} m/d", f"old-pipe factor γ={g:.1f}, demand ×{dm:.2f}, dose ×{model.map_dose_:.2f}")
+    c4.metric("Calibrated decay (bulk / wall)", f"{kb:{KB_FMT}} /d · {kw:.2f} m/d", f"{old_pipe_text(g, uniform_c)}, demand ×{dm:.2f}, dose ×{model.map_dose_:.2f}")
 else:
     c4.metric("Calibrated decay", "no samples yet", "map = your model's physics alone")
 
@@ -516,8 +559,10 @@ with loss_col:
             accuracy = (f" In simulation on this network ({test['n_seeds']} scenarios, 8 samples each) the calibrated median was "
                         f"off from the truth's by {test['split_median_diff']:.2f} on average and by up to {test['split_median_diff_max']:.2f} "
                         f"in one scenario." if test else " It has not been tested against a simulated truth for this file.")
+            gamma_words = ("old-pipe factor not identifiable from one C value" if uniform_c else
+                           f"old-pipe factor {model.map_params_[2]:.1f}")
             st.caption(f"For the single most likely decay rates your samples calibrate (bulk {model.map_params_[0]:{KB_FMT}} /day, wall "
-                       f"{model.map_params_[1]:.2f} m/day, old-pipe factor {model.map_params_[2]:.1f}): a median {ws.median():.0%} of the "
+                       f"{model.map_params_[1]:.2f} m/day, {gamma_words}): a median {ws.median():.0%} of the "
                        f"chlorine lost on the way to a junction is lost at the pipe walls, the rest in the water (organics and other "
                        f"reactants). It is an estimate: with few samples, bulk and wall decay can trade off against each other."
                        f"{accuracy} Exact along a single path from the source; approximate where flows mix (here the two parts add "
@@ -577,7 +622,8 @@ def pdf_bytes() -> bytes:
     ax = fig.add_subplot(gs[0, :]); ax.axis("off")
     name = os.path.basename(net_path)
     ax.text(0, 0.97, f"ResidualMap: monthly chlorine report, {name}", fontsize=18, fontweight="bold", va="top")
-    calib = (f"calibrated decay: bulk {model.map_params_[0]:{KB_FMT}} /day, wall {model.map_params_[1]:.2f} m/day, old-pipe factor {model.map_params_[2]:.1f}; "
+    gamma_pdf = "old-pipe factor not identifiable (one C value)" if uniform_c else f"old-pipe factor {model.map_params_[2]:.1f}" if model.map_params_ is not None else ""
+    calib = (f"calibrated decay: bulk {model.map_params_[0]:{KB_FMT}} /day, wall {model.map_params_[1]:.2f} m/day, {gamma_pdf}; "
              f"demand ×{model.map_params_[3]:.2f}, roughness ×{model.map_params_[4]:.2f}, dose ×{model.map_dose_:.2f}") if model.map_params_ is not None else "no samples yet: map from the model's physics alone"
     ax.text(0, 0.74, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
                      f"{int((pmin['p_below'] > 0.5).sum())} of {len(junctions)} junctions likely below the minimum at their daily minimum · "
@@ -595,6 +641,8 @@ def pdf_bytes() -> bytes:
     # the reason without its P(...) part (its own column), wrapped so none of it is cut off
     rows = [[str(j), f"{h:02d}:00", f"{p:.2f}", "\n".join(textwrap.wrap(w, PDF_WHY_CHARS))]
             for j, h, p, w in zip(route.junction, route.hour, route.p_below, route.why)]
+    if not rows:      # task 15b: every junction is sampled already (a small network)
+        rows = [["none", "", "", "every junction of this network is sampled already"]]
     tbl = ax.table(cellText=rows, colLabels=["junction", "hour", f"P(min<{threshold:g})", "why"], loc="upper left", cellLoc="left",
                    colWidths=[0.1, 0.1, 0.12, 0.68])
     n_lines = [1] + [r[3].count("\n") + 1 for r in rows]

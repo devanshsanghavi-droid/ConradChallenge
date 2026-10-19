@@ -1,5 +1,6 @@
 """
-importers.py: read any model file safely (iteration 5, task 15).
+importers.py: read any model file safely (iteration 5, task 15), and make an imported model mean what the model
+assumes (task 15b).
 
     python -m residualmap.importers FILE [FILE ...]               # what each file is, by its content, and what to do
     python -m residualmap.importers --prepare FILE [--out DIR]    # the model readiness report for an EPANET model
@@ -35,9 +36,26 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   was found and EPANET ran the model's first hour (a test run, set up as the app's first run, in a temporary folder;
   WNTR reads a junction no pipe connects, and EPANET then stops).  An upload name too long for a file name once the
   digest is added is shortened (prepared_name).  Nothing in a file makes it raise: any failure after the file is read
-  is a blocking problem.  The report does not check the model's physics yet (headloss formula, reaction orders, bulk
-  lines, start time; iteration 5, task 15b): it says so in an 'assumed' row, and warns when the headloss formula is
-  not Hazen-Williams or a reaction order is not 1.
+  is a blocking problem.
+- Task 15b, the model's physics, each a row of the readiness report (fix_reactions_text, dw_to_hw, _physics_report):
+  reaction orders other than 1 are set to 1; per-pipe BULK and per-tank TANK lines are cleared and a LIMITING
+  POTENTIAL set to 0 (per-pipe WALL lines are ignored, since the grid sets every wall rate); a Darcy-Weisbach model is
+  converted to Hazen-Williams (each pipe's C matched to its headloss at its reference velocity) and kept only when the
+  water age of the copy stays within DW_GATE_MEDIAN_H and DW_GATE_P95_H of the file's, and Chezy-Manning blocks; the
+  start clock time is recorded and a weekly pattern warned about; with pressure-control valves every junction at
+  elevation 0 is flagged and one elevation everywhere blocks; coordinates are typed as schematic, to scale in feet or
+  metres, or missing; sources at nodes the tool does not dose (boosters), a source the dose overrides, and more than
+  one inlet are warned about; pumps with no control, rule or speed pattern, no time patterns, zero demand and
+  disconnected parts are warned about, and a WaterGEMS export's connector pipes reported; one C value on every pipe
+  means the old-pipe factor cannot be learned (grid_for gives 'full_fixed_gamma'); and the run cost gives the grid's
+  runs, its file and its temporary files, and minutes from one timed 7-day run, with a hard warning above
+  LARGE_JUNCTIONS and size_gate's refusal when the build would leave under 1.5 GB free.  A model blocked now leaves
+  no copy behind, not even a content-named copy an earlier version accepted.
+- Task 15b also fixed three of task 15's leftovers in the sniff: a SWMM model whose SWMM-only sections come after the
+  first 64 KB (the whole text is searched for them), a zip holding a model under another name (its members' contents
+  are typed), and a UTF-8 file with a few stray bytes of a Windows code page (decode_text reads it as UTF-8 with those
+  bytes as cp1252, and the report says the file mixes two encodings; since the second review the byte pairs a cp1252
+  file makes by chance count for cp1252 and lines are counted, not characters: _utf8_kind, _mixed_utf8).
 - Section headers and their names are read the way WNTR's reader reads them: after any whitespace (a form feed
   included), and a singular name such as [PIPE] is the [PIPES] section; the ID scan also stops at [END], as WNTR does.
 - Zips are read in memory only, never extracted to disk.  A member with an absolute path or a '..' part is refused,
@@ -47,7 +65,7 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   add to a zip (__MACOSX/, ._ copies, .DS_Store, Thumbs.db, desktop.ini) are left out of the listing.
 
 Nothing here is applied inside simulate.load, so the bundled networks run bit for bit as before.  Uses the standard
-library and WNTR only.
+library, WNTR and what WNTR itself needs (numpy, networkx).
 """
 from __future__ import annotations
 
@@ -58,12 +76,14 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import sqlite3
 import struct
 import sys
 import tempfile
+import time
 import warnings
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -83,6 +103,8 @@ SQLITE_MAX_STEPS = 2000                # progress-handler calls (1,000 SQLite st
 MAX_NAME_BYTES = 160                   # a prepared file's name, in UTF-8 bytes (a file name has 255, and the grid
                                        # cache adds up to about 60 for its own words)
 TEST_RUN_ROW = "Test run"              # the readiness row of the EPANET run of the first hour
+RUN_COST_ROW = "Run cost"              # the readiness row of the grid's size and time (task 15b)
+LARGE_WARNING_START = "Large model:"   # the start of the warning for more than LARGE_JUNCTIONS junctions
 FLOAT32_BYTES = 4                      # the grid cache stores ln C as float32: runs x 24 hours x junctions
 CP1252_UNDEFINED = b"\x81\x8d\x8f\x90\x9d"   # the five bytes cp1252 leaves undefined
 
@@ -322,9 +344,11 @@ class Sniff:
 # ----------------------------------------------------------------------------- text
 def decode_text(data: bytes) -> tuple[str, str]:
     """(text, how): a UTF-8 byte-order mark (stripped), a UTF-16 one, UTF-16 without one (NUL bytes on every other
-    position), strict UTF-8, then cp1252, where any of the five bytes cp1252 leaves undefined is read as latin-1 and
-    every other byte as cp1252 (so a euro sign or a curly quote elsewhere in the file still reads right).  how is
-    'utf-8' only for plain UTF-8 with no BOM, the one case that needs no rewrite."""
+    position), strict UTF-8, UTF-8 with a few stray bytes of a Windows code page (task 15b: _mixed_utf8, when the
+    file's valid UTF-8 characters are not the byte pairs a cp1252 file makes by chance), then cp1252, where any of the
+    five bytes cp1252 leaves undefined is read as latin-1 and every other byte as cp1252 (so a euro sign or a curly
+    quote elsewhere in the file still reads right).
+    how is 'utf-8' only for plain UTF-8 with no BOM, the one case that needs no rewrite."""
     for bom, codec, how in ((b"\xef\xbb\xbf", "utf-8", "utf-8 with a byte-order mark"),
                             (b"\xff\xfe", "utf-16-le", "utf-16 (little-endian, with a byte-order mark)"),
                             (b"\xfe\xff", "utf-16-be", "utf-16 (big-endian, with a byte-order mark)")):
@@ -340,6 +364,10 @@ def decode_text(data: bytes) -> tuple[str, str]:
         return data.decode("utf-8"), "utf-8"
     except UnicodeDecodeError:
         pass
+    mixed = _mixed_utf8(data)
+    if mixed is not None:
+        text, n = mixed[:2]
+        return text, f"{MIXED_PREFIX} {n} stray byte{'s' if n != 1 else ''} read as cp1252 (Windows Western European)"
     try:
         return data.decode("cp1252"), "cp1252 (Windows Western European)"
     except UnicodeDecodeError:
@@ -347,6 +375,93 @@ def decode_text(data: bytes) -> tuple[str, str]:
         return (data.decode("cp1252", errors="residualmap_cp1252_gaps"),
                 f"cp1252 (Windows Western European), with {n} byte{'s' if n != 1 else ''} it leaves undefined read as "
                 f"latin-1")
+
+
+MIXED_PREFIX = "utf-8 mixed with"       # decode_text's word for UTF-8 with a few bytes of a Windows code page
+_STRAY = re.compile("[\udc80-\udcff]")   # a byte that is not UTF-8, as surrogateescape decodes it
+_NON_ASCII = re.compile("[^\x00-\x7f]")
+_LINE_BREAK = re.compile("\r\n|\r|\n")
+
+
+def _cp1252_byte(m: re.Match) -> str:
+    return bytes([ord(m.group(0)) - 0xDC00]).decode("cp1252", errors="residualmap_cp1252_gaps")
+
+
+def _utf8_kind(t: str, i: int) -> str:
+    """How the valid multi-byte UTF-8 character t[i] reads in a file that also holds bytes that are not UTF-8 (task
+    15b's second review).  A file in cp1252 throughout holds such characters only by chance, as an accented capital
+    (bytes C2 to DF) followed by a cp1252 symbol or punctuation byte (80 to BF), and the character those two bytes make
+    in UTF-8 says which it is:
+    'strong': a lowercase accented letter (U+00E0 to U+00FF, but not U+00F0), a curly quote, a dash or a bullet
+      (U+2010 to U+203A) or the euro sign.  In cp1252 these bytes read as 'Ã' or 'â€' and a symbol ('Ã©', 'â€™'),
+      which no text in cp1252 writes, so one of them shows the file holds UTF-8.
+    'plausible': another character a model's text uses (U+00A0 to U+017F, the Latin-1 and Latin Extended-A letters,
+      the degree sign and the no-break space; the Romanian letters with a comma below; the Greek letters; any other
+      character of three or four bytes), or a letter of Cyrillic to NKo (U+0400 to U+07FF) next to another letter of
+      those scripts or Greek, as in a word.
+    'chance': anything else, the byte pairs a cp1252 file makes by chance: the C1 controls (U+0080 to U+009F, 'Â' and
+      a quote or dash), Latin Extended-B, the IPA and the combining marks (U+0180 to U+037F, so 'É', 'È', 'Ç', 'Ì' or
+      'Í' and a quote, dash, degree sign or no-break space: 'CITÉ’' is the bytes C9 92, U+0252), and a Cyrillic to NKo
+      letter alone between Latin letters ('Ó' or 'Ñ' and a dash)."""
+    o = ord(t[i])
+    if (0xE0 <= o <= 0xFF and o != 0xF0) or 0x2010 <= o <= 0x203A or o == 0x20AC:
+        return "strong"
+    if 0xA0 <= o <= 0x17F or 0x218 <= o <= 0x21B or 0x386 <= o <= 0x3CE or o >= 0x800:
+        return "plausible"
+    if 0x400 <= o <= 0x7FF and any(0 <= k < len(t) and 0x370 <= ord(t[k]) <= 0x7FF for k in (i - 1, i + 1)):
+        return "plausible"
+    return "chance"
+
+
+def _mixed_utf8(data: bytes) -> tuple[str, int, list[int], int, int] | None:
+    """A UTF-8 file with a few stray bytes of a Windows code page (task 15b; one pasted degree sign or accented letter
+    is enough to fail strict UTF-8): (text, the number of bytes read as cp1252, the first three lines that hold them,
+    the number of lines that hold them, the number of chance pairs among them), or None to decode the file as cp1252
+    throughout, as task 15 did.
+    Each valid UTF-8 character is weighed with _utf8_kind.  The file is read as UTF-8 when it holds a 'strong' one, or
+    when the lines that hold 'plausible' ones are at least as many as the lines that hold stray bytes or chance pairs.
+    Then every stray byte and every chance pair is read as cp1252 (any of the five bytes cp1252 leaves undefined as
+    latin-1) and every other UTF-8 character is kept.  Decoding such a file as cp1252 throughout, as task 15 did,
+    turned every UTF-8 accent into two characters: an accented ID changed, a letter whose second byte is 0xA0 became a
+    no-break space that WNTR splits on, and the model was blocked with WNTR's or EPANET's error rather than a word
+    about the encoding.
+    Lines, not occurrences, are counted (the second review): an ID is written on its own line, at each pipe end and
+    in the coordinates, so counting occurrences let one ID with a chance pair outweigh the stray bytes of a whole file
+    ('CITÉ’15' with a degree sign in the title: 3 against 1).  In the two encodings a stray byte is read the same way
+    and a chance pair too; only the 'plausible' and 'strong' characters read differently, so the rule weighs only the
+    evidence about them.  What it still misreads: a file in cp1252 throughout whose only chance pairs make plausible
+    letters (an 'Ã', 'Ä' or 'Å' before a quote or dash: 'KÅ“' reads as 'Kœ') on at least as many lines as its other
+    bytes that are not UTF-8; and a UTF-8 file whose only accents are capitals or other 'plausible' characters, with
+    stray bytes on more lines than they are, reads as cp1252 throughout."""
+    t = data.decode("utf-8", errors="surrogateescape")
+    if not _STRAY.search(t):
+        return None
+    import bisect
+    breaks = [m.start() for m in _LINE_BREAK.finditer(t)]
+    utf8_lines, other_lines, strong, chance, n_bytes = set(), set(), False, set(), 0
+    for m in _NON_ASCII.finditer(t):
+        i = m.start()
+        line = bisect.bisect_left(breaks, i) + 1
+        if "\udc80" <= t[i] <= "\udcff":
+            other_lines.add(line)
+            n_bytes += 1
+            continue
+        kind = _utf8_kind(t, i)
+        if kind == "chance":
+            chance.add(i)
+            other_lines.add(line)
+            n_bytes += len(t[i].encode("utf-8"))
+        else:
+            utf8_lines.add(line)
+            strong = strong or kind == "strong"
+    if not utf8_lines or not (strong or len(utf8_lines) >= len(other_lines)):
+        return None
+
+    def cp(m: re.Match) -> str:
+        if m.start() in chance:
+            return m.group(0).encode("utf-8").decode("cp1252", errors="residualmap_cp1252_gaps")
+        return _cp1252_byte(m) if "\udc80" <= m.group(0) <= "\udcff" else m.group(0)
+    return _NON_ASCII.sub(cp, t), n_bytes, sorted(other_lines)[:3], len(other_lines), len(chance)
 
 
 def _utf16_without_bom(head: bytes) -> str | None:
@@ -372,7 +487,7 @@ def _head_text(data: bytes) -> tuple[str, str]:
     if len(data) <= HEAD_BYTES:
         return decode_text(data)
     text, how = decode_text(head[:HEAD_BYTES])
-    if how.startswith("cp1252"):
+    if how.startswith(("cp1252", MIXED_PREFIX)):
         try:
             head[:HEAD_BYTES].decode("utf-8")
         except UnicodeDecodeError as e:
@@ -456,11 +571,50 @@ def _sniff_zip(data: bytes) -> Sniff:
     names = [n for n in files if not zip_junk(n)]
     low = [n.lower() for n in names]
     s = _sniff_zip_names(names, low)
+    if s.kind == "zip_other" and names:
+        models = _zip_models_by_content(data, names)
+        if models:
+            s = Sniff("epanet_inp_zip", detail="it holds " + ", ".join(models[:5]) + (" and more" if len(models) > 5
+                                                                                     else "")
+                      + f", an EPANET model by {'its' if len(models) == 1 else 'their'} content (the name does not "
+                        f"end in .inp)", members=models)
     junk = len(files) - len(names)
     if junk:
         s.detail += (f"{'; ' if s.detail else ''}{junk} file{'s' if junk > 1 else ''} that macOS or Windows adds "
                      f"(__MACOSX, ._ copies, .DS_Store, Thumbs.db) left out")
     return s
+
+
+ZIP_CONTENT_SNIFF_MAX = 50             # members whose content is read when no member's name says what the zip holds
+
+
+def _zip_models_by_content(data: bytes, names: list[str]) -> list[str]:
+    """Members that are EPANET models by their content, read in memory (task 15b: a zip holding a model renamed .txt
+    was typed as 'a zip with nothing recognised').  Only when no member's name decided the kind; at most
+    ZIP_CONTENT_SNIFF_MAX members, each under the same rules as the member that is read (read_zip_member: the
+    ratio rule over 10 MB, the size cap), none over TEXT_SCAN_MAX unpacked, and a member that is itself a zip is not
+    opened."""
+    sizes = {}
+    try:
+        sizes = {i.filename: i.file_size for i in zip_listing(data)}
+    except ZipRefused:
+        return []
+    out = []
+    for n in names[:ZIP_CONTENT_SNIFF_MAX]:
+        if sizes.get(n, TEXT_SCAN_MAX + 1) > TEXT_SCAN_MAX:
+            continue
+        try:
+            b = read_zip_member(data, n)
+        except ZipRefused:
+            continue
+        if b.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+            continue
+        try:
+            if _sniff_content(b, n).kind == "epanet_inp":
+                out.append(n)
+        except Exception:  # noqa: BLE001  (a member that cannot be read decides nothing)
+            continue
+    return out
 
 
 def _sniff_zip_names(names: list[str], low: list[str]) -> Sniff:
@@ -946,6 +1100,17 @@ def _sniff_content(data: bytes, name: str) -> Sniff:
         if found_full & deciding:
             found_all, how = found_full, how_full
             where = "in the whole file (its first 64 KB holds none of [JUNCTIONS], [PIPES], [RESERVOIRS] or [TANKS])"
+    other_model = set(SWMM_SECTIONS) | {"SPECIES"}
+    if (found_all & CORE_SECTIONS and not found_all & other_model and HEAD_BYTES < len(data) <= TEXT_SCAN_MAX
+            and where == "in the first 64 KB"):
+        # task 15b: a large SWMM model can hold only shared headers ([JUNCTIONS], [CONDUITS] later) in its first 64 KB,
+        # and was typed as EPANET, then blocked with WNTR's syntax error; the whole text is searched for the
+        # sections only SWMM or EPANET-MSX use (the file is in memory; the search is linear)
+        full, how_full = decode_text(data)
+        found_full = _section_headers(full)
+        if found_full & other_model:
+            found_all, how = found_full, how_full
+            where = "in the whole file (after the first 64 KB, which holds only headers EPANET also uses)"
     swmm = sorted(found_all & set(SWMM_SECTIONS))
     if swmm:
         return Sniff("swmm_inp", detail=f"SWMM section{'s' if len(swmm) > 1 else ''} "
@@ -1089,6 +1254,282 @@ def scan_inp_ids(text: str) -> IdScan:
     return out
 
 
+# ----------------------------------------------------------------------------- physics settings (task 15b)
+# The decay model assumes first-order reactions, one bulk rate for every pipe and tank, and a Hazen-Williams C on every
+# pipe (the old-pipe factor and the roughness axis read it).  A file can say otherwise in ways WNTR reads without a
+# word; these settings and checks turn each into a fix, a block or a warning in the readiness report.
+G_SI = 9.81                                # m/s2
+NU_20C_M2S = 1.1e-5 * 0.3048 ** 2          # EPANET's kinematic viscosity of water at 20 C, 1.1e-5 ft2/s, in m2/s; the file's
+                                           # VISCOSITY option is a multiple of it
+HW_K, HW_Q_EXP, HW_D_EXP = 10.67, 1.852, 4.8704   # Hazen-Williams in SI, as the plan states it:
+                                                  # h/L = 10.67 Q^1.852 / (C^1.852 D^4.8704)
+V_REF_FLOOR_MS = 0.3                       # a pipe's reference velocity: the median |V| over the scored day, at least this
+DW_GATE_MEDIAN_H, DW_GATE_P95_H = 1.0, 4.0  # the Darcy-Weisbach gate (plan open decision 3, lead decision 3), pre-registered
+                                            # before any run: water age may move by at most these over the scored day's
+                                            # junction-hours between the file and its converted copy
+PRESSURE_VALVES = ("PRV", "PSV", "PBV")    # valves whose setting is a pressure: they need real elevations
+SCHEMATIC_SPREAD = 1.5                     # 95th over 5th percentile of drawn over declared pipe length above this: schematic
+FEET_PER_METRE = 1 / 0.3048
+UNIT_RATIO_TOL = 0.1                       # a median ratio within 10% of 3.281 is feet, of 1.0 is metres
+CONNECTOR_LENGTH_M, CONNECTOR_DIAM_M = 0.3048, 99 * 0.0254   # the 1 ft, 99 inch pipes a WaterGEMS export adds
+CONNECTOR_TAG = "addedforinpconversion"
+CONNECTOR_MIN_PIPES = 3                    # untagged pipes of that size reported only from this many (Net6 has one)
+LARGE_JUNCTIONS = 3000                     # above this a grid build needs an explicit confirm (app checkbox, --allow-large)
+EFFECTIVE_SPEEDUP = 4.0                    # the plan's assumed effective parallel speedup of a grid build, not the worker
+                                           # count: its feasibility review measured 2.3 on Net3 and 4.9 on ky10 (11
+                                           # workers).  Task 15b's pre-registered bar on Net3 missed (the build took
+                                           # 2.10 times the estimate, against a bar of 2); the measured runs are in
+                                           # outputs/intake/run_cost_timing.json.  Not restated: that is a decision.
+TEMP_MB_PER_JUNCTION = 9.5 / 959           # one 7-day run's EPANET files (.inp, .rpt, .bin): 9.5 MB on ky4 (959
+                                           # junctions); ky4, ky10 and Net6 are measured in outputs/intake/
+                                           # task15b_physics.json (part run_cost, temp_files_one_run)
+VOLATILE_COST = ("seconds_per_run", "estimate_s", "minutes", "workers", "temp_files_mb")   # vary by run or machine:
+                                                                                           # not in the record
+REACTION_ORDERS = ("BULK", "WALL", "TANK")
+ALL_INP_SECTIONS = frozenset(INP_SECTIONS)
+
+
+def _lines_keep(text: str) -> list[list[str]]:
+    """The text as [line, line end] pairs, split at LF, CR or CR-LF only (as WNTR's reader splits it), so that joining
+    them gives the text back exactly."""
+    parts = re.split(r"(\r\n|\r|\n)", text)
+    return [[parts[i], parts[i + 1] if i + 1 < len(parts) else ""] for i in range(0, len(parts), 2)]
+
+
+def _data_lines(pairs: list[list[str]]):
+    """(index, section, tokens) for every data line of the text (comments taken off), with section names read as
+    WNTR reads them; stops at [END]."""
+    section = None
+    for i, (body, _) in enumerate(pairs):
+        s = body.split(";", 1)[0].strip()
+        if not s:
+            continue
+        if s.startswith("["):
+            section = _canonical_section(s.split("]", 1)[0].lstrip("["))
+            if section == "END":
+                return
+            continue
+        if section is not None:
+            yield i, section, s.split()
+
+
+def _num(tok: str) -> float | None:
+    try:
+        v = float(tok)
+    except ValueError:
+        return None
+    return v if math.isfinite(v) else None
+
+
+def fix_reactions_text(text: str) -> tuple[str, dict]:
+    """The [REACTIONS] settings the decay model cannot use as they are, fixed in the text (the rest of the file is
+    left exactly as it is):
+    - a reaction order other than 1 (bulk, wall or tank) is set to 1 (ky10 and Net6 declare 0, and then the bulk rate
+      has no effect: the grid's members are all the same);
+    - per-pipe BULK and per-tank TANK lines are turned into comments: they override the global bulk rate the grid
+      sets, so those pipes and tanks would ignore the calibrated rate;
+    - a LIMITING POTENTIAL other than 0 is set to 0 (it changes the first-order law).
+    Per-pipe WALL lines and a ROUGHNESS CORRELATION are left in the copy: the grid sets every pipe's wall rate itself,
+    so they are ignored, and the report says so.  Each changed line keeps a ';ResidualMap:' comment with what the file
+    had.  Returns (text, info)."""
+    pairs = _lines_keep(text)
+    info = {"orders": {}, "orders_fixed": {}, "bulk_lines": [], "tank_lines": [], "wall_lines": 0,
+            "limiting_potential": 0.0, "limiting_potential_fixed": None, "roughness_correlation": 0.0}
+    for i, sec, tok in list(_data_lines(pairs)):
+        if sec != "REACTIONS" or len(tok) < 3:
+            continue
+        k1, k2 = tok[0].upper(), tok[1].upper()
+        if k1 == "ORDER" and k2 in REACTION_ORDERS:
+            v = _num(tok[2])
+            info["orders"][k2.lower()] = v
+            if v != 1.0:
+                info["orders_fixed"][k2.lower()] = tok[2]
+                pairs[i][0] = f" ORDER {k2} 1 ;ResidualMap: the file had {tok[2]}; the decay model is first order"
+        elif k1 in ("BULK", "TANK"):
+            info["bulk_lines" if k1 == "BULK" else "tank_lines"].append(tok[1])
+            pairs[i][0] = (";" + pairs[i][0].strip() + " ;ResidualMap: cleared, the calibrated bulk rate applies to "
+                                                       "every pipe and tank")
+        elif k1 == "WALL":
+            info["wall_lines"] += 1
+        elif k1 == "LIMITING":
+            v = _num(tok[2])
+            info["limiting_potential"] = v
+            if v != 0.0:
+                info["limiting_potential_fixed"] = tok[2]
+                pairs[i][0] = f" LIMITING POTENTIAL 0 ;ResidualMap: the file had {tok[2]}"
+        elif k1 == "ROUGHNESS":
+            info["roughness_correlation"] = _num(tok[2])
+    return "".join(a + b for a, b in pairs), info
+
+
+def set_headloss_text(text: str, roughness: dict[str, str]) -> str:
+    """The text with [OPTIONS] HEADLOSS set to H-W and each named pipe's roughness field replaced (the sixth field of
+    its [PIPES] line); every other byte is left as it is."""
+    pairs = _lines_keep(text)
+    for i, sec, tok in list(_data_lines(pairs)):
+        if sec == "OPTIONS" and tok[0].upper() == "HEADLOSS" and len(tok) >= 2:
+            pairs[i][0] = f" Headloss            H-W ;ResidualMap: the file had {tok[1]}"
+        elif sec == "PIPES" and len(tok) >= 6 and tok[0] in roughness:
+            body, sep, comment = pairs[i][0].partition(";")
+            a, b = [m.span() for m in re.finditer(r"\S+", body)][5]
+            pairs[i][0] = body[:a] + roughness[tok[0]] + body[b:] + sep + comment
+    return "".join(a + b for a, b in pairs)
+
+
+def hw_equivalent_c(diameter_m: float, roughness_m: float, velocity_ms: float, nu_m2s: float) -> float:
+    """The Hazen-Williams C that gives the Darcy-Weisbach headloss of a pipe at velocity V:
+    C = [10.67 Q^1.852 (2 g D) / (D^4.8704 f V^2)]^(1/1.852), Q = V pi D^2 / 4, with f from Swamee-Jain,
+    f = 0.25 / [log10(e / (3.7 D) + 5.74 / Re^0.9)]^2, Re = V D / nu (what EPANET uses above Re 4000)."""
+    D, e, V = diameter_m, roughness_m, velocity_ms
+    re_ = V * D / nu_m2s
+    f = 0.25 / math.log10(e / (3.7 * D) + 5.74 / re_ ** 0.9) ** 2
+    q = V * math.pi * D * D / 4
+    return (HW_K * q ** HW_Q_EXP * 2 * G_SI * D / (D ** HW_D_EXP * f * V * V)) ** (1 / HW_Q_EXP)
+
+
+def _run_7day(path: str, parameter: str = "AGE") -> tuple:
+    """A 7-day run of the file, set up as simulate.load sets up every run, in a temporary folder that is removed:
+    (water age in hours at every junction, pipe velocity in m/s), each hour of the scored day (the last)."""
+    import wntr
+    from .simulate import _last_day, load
+    wn = load(path)
+    wn.options.quality.parameter = parameter
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        res = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "run"))
+    age = _last_day(res.node["quality"], wn.junction_name_list) / 3600.0
+    vel = _last_day(res.link["velocity"], wn.pipe_name_list).abs()
+    return age, vel
+
+
+def dw_to_hw(read_path: str, text: str, work_dir: str) -> tuple[str, dict]:
+    """A Darcy-Weisbach model converted to Hazen-Williams, and the gate's numbers.  Each pipe's C is the one that gives
+    its Darcy-Weisbach headloss at its reference velocity (the median |V| over the file's own scored day, at least
+    V_REF_FLOOR_MS), with nu from the file's VISCOSITY option.  The converted copy is run too, and water age is compared
+    at every junction-hour of the scored day: the gate passes when the median change is at most DW_GATE_MEDIAN_H and
+    the 95th percentile at most DW_GATE_P95_H.  Exact only at the reference velocity."""
+    import numpy as np
+    from .simulate import load
+    wn = load(read_path)
+    age0, vel0 = _run_7day(read_path)
+    nu = float(wn.options.hydraulic.viscosity or 1.0) * NU_20C_M2S
+    c, v_ref = {}, {}
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        v_ref[pn] = max(float(np.median(vel0[pn].values)), V_REF_FLOOR_MS)
+        c[pn] = hw_equivalent_c(float(p.diameter), float(p.roughness), v_ref[pn], nu)
+    new_text = set_headloss_text(text, {pn: f"{v:.3f}" for pn, v in c.items()})
+    conv = os.path.join(work_dir, "converted.inp")
+    with open(conv, "w", encoding="utf-8", newline="") as fh:
+        fh.write(new_text)
+    age1, _ = _run_7day(conv)
+    d = np.abs(age1[age0.columns].values - age0.values).ravel()
+    med, p95 = float(np.median(d)), float(np.percentile(d, 95))
+    vals = np.array(list(c.values()))
+    return new_text, {"pipes": len(c), "c_min": float(vals.min()), "c_max": float(vals.max()),
+                      "c": {k: round(v, 3) for k, v in c.items()}, "v_ref": {k: round(v, 4) for k, v in v_ref.items()},
+                      "age_change_median_h": med, "age_change_p95_h": p95,
+                      "passes": med <= DW_GATE_MEDIAN_H and p95 <= DW_GATE_P95_H, "converted_path": conv}
+
+
+def control_scan(text: str) -> dict:
+    """What the [CONTROLS] and [RULES] act on and read, and the [TAGS] a WaterGEMS export adds, from the text:
+    the link IDs a control or rule sets, the node IDs a control or rule reads (any NODE in a simple control; a NODE or
+    JUNCTION whose PRESSURE or HEAD a rule's premise reads), and the number of each.  In a rule only the action
+    clauses set a link (THEN and ELSE, and the AND lines after them); a link named in a premise (IF, and the AND and OR
+    lines after it) is only read, so a pump that a rule reads and never sets is not controlled (found by the review:
+    'IF PUMP 10 STATUS IS OPEN THEN PIPE 20 STATUS IS OPEN' left pump 10 closed for 7 days without a warning)."""
+    pairs = _lines_keep(text)
+    links, nodes, n_controls, n_rules, tags = set(), set(), 0, 0, []
+    clause = None                         # in [RULES]: 'premise' or 'action', the clause the current line belongs to
+    for _, sec, tok in _data_lines(pairs):
+        up = [t.upper() for t in tok]
+        if sec == "CONTROLS":
+            n_controls += 1
+            if up[0] == "LINK" and len(tok) > 1:
+                links.add(tok[1])
+            nodes.update(tok[k + 1] for k in range(len(up) - 1) if up[k] == "NODE")
+        elif sec == "RULES":
+            if up[0] == "RULE":
+                n_rules += 1
+                clause = None
+                continue
+            if up[0] == "IF":
+                clause = "premise"
+            elif up[0] in ("THEN", "ELSE"):
+                clause = "action"
+            elif up[0] == "PRIORITY":
+                clause = None
+            for k in range(len(up) - 1):
+                if clause == "action" and up[k] in ("LINK", "PIPE", "PUMP", "VALVE"):
+                    links.add(tok[k + 1])
+                elif (clause == "premise" and up[k] in ("NODE", "JUNCTION") and k + 2 < len(up)
+                      and up[k + 2] in ("PRESSURE", "HEAD")):
+                    nodes.add(tok[k + 1])
+        elif sec == "TAGS" and len(tok) >= 3 and any(t.lower() == CONNECTOR_TAG for t in tok[2:]):
+            tags.append(tok[1])
+    return {"links": links, "nodes": nodes, "n_controls": n_controls, "n_rules": n_rules, "connector_tags": tags}
+
+
+def coordinate_scale(wn, have_xy: set) -> dict:
+    """Drawn pipe length (with vertices) over declared length, for every pipe with both ends drawn: a spread (95th
+    percentile over 5th) above SCHEMATIC_SPREAD is a schematic drawing; otherwise the median names the units (3.281
+    per metre is feet, 1.0 is metres)."""
+    import numpy as np
+    if not have_xy:
+        return {"status": "no coordinates", "pipes_measured": 0}
+    r = []
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        if p.start_node_name not in have_xy or p.end_node_name not in have_xy or not p.length > 0:
+            continue
+        pts = [p.start_node.coordinates, *p.vertices, p.end_node.coordinates]
+        d = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+        if d > 0:
+            r.append(d / p.length)
+    if len(r) < 2:
+        return {"status": "too few pipes drawn", "pipes_measured": len(r)}
+    p5, p50, p95 = (float(x) for x in np.percentile(r, [5, 50, 95]))
+    spread = p95 / p5
+    out = {"pipes_measured": len(r), "ratio_p5": round(p5, 4), "ratio_median": round(p50, 4),
+           "ratio_p95": round(p95, 4), "spread": round(spread, 2)}
+    if spread > SCHEMATIC_SPREAD:
+        return {"status": "schematic", "units": "unknown", **out}
+    units = ("feet" if abs(p50 / FEET_PER_METRE - 1) <= UNIT_RATIO_TOL else
+             "metres" if abs(p50 - 1) <= UNIT_RATIO_TOL else "unknown")
+    return {"status": "to scale", "units": units, **out}
+
+
+def grid_for(disinfectant: str, uniform_c: bool) -> str:
+    """The simulator grid a file gets: chloramine's for chloramine; for free chlorine, 'full', or 'full_fixed_gamma'
+    (the old-pipe factor held at 0) when every pipe has one C value and the factor cannot be learned."""
+    if disinfectant == "chloramine":
+        return "chloramine"
+    return "full_fixed_gamma" if uniform_c else "full"
+
+
+def disk_free_gb(path: str) -> float:
+    """Free disk in GB (simgp.disk_free_gb); here so a saved check can stand in a value."""
+    from .simgp import disk_free_gb as free
+    return free(path)
+
+
+def size_gate(cost: dict, path: str = ".", free_gb: float | None = None) -> tuple[bool, str]:
+    """(ok, plain message): a grid build is refused when its file plus the temporary EPANET files of one run per worker
+    would leave less than simgp.MIN_FREE_GB free on the volume of `path`."""
+    from .simgp import MIN_FREE_GB
+    free = disk_free_gb(path) if free_gb is None else float(free_gb)
+    need = (cost["grid_file_mb"] + cost["temp_files_mb"]) / 1000
+    left = free - need
+    msg = (f"The grid needs about {cost['grid_file_mb']:g} MB for its file and up to {cost['temp_files_mb']:g} MB of "
+           f"temporary EPANET files while it runs ({cost['workers']} at a time); this disk has {free:.2f} GB free, so "
+           f"{left:.2f} GB would be left")
+    if left < MIN_FREE_GB:
+        return False, (msg + f", below the {MIN_FREE_GB:g} GB this tool keeps free. Free some disk space, or use a "
+                             f"smaller zone of the model.")
+    return True, msg + "."
+
+
 # ----------------------------------------------------------------------------- the readiness report
 @dataclass
 class Readiness:
@@ -1104,6 +1545,7 @@ class Readiness:
     run_cost: dict = field(default_factory=dict)
     prepared: str | None = None                      # the prepared file's name (never its folder)
     same_file: bool = False                          # the prepared file is the file given, untouched
+    flags: dict = field(default_factory=dict)        # task 15b: what the physics checks found, by check (bundled_dict)
 
     def add(self, item: str, value, source: str) -> None:
         assert source in SOURCES, source
@@ -1127,11 +1569,13 @@ class Readiness:
             n = len(self.blocking)
             return f"{n} problem{'s' if n > 1 else ''} stop{'' if n > 1 else 's'} this model from running."
         if any(item == TEST_RUN_ROW for item, _, _ in self.rows):
-            bits = ["WNTR reads it and EPANET runs its first hour without an error; the full runs come next. Its "
-                    "physics settings are used as the file has them and are not checked yet (the 'Physics settings' "
-                    "row)."]
+            bits = ["WNTR reads it and EPANET runs its first hour without an error, and one full 7-day run (timed for "
+                    "the run cost); the grid's runs come next. Its physics settings are checked in the rows below "
+                    "(reaction orders, bulk lines, headloss formula, start time, valves and elevations, coordinates, "
+                    "sources, pumps and controls, connectivity, pipe roughness)."]
         else:                          # prepare_inp(parse=False)
-            bits = ["Prepared without a check: WNTR has not read it and EPANET has not run it."]
+            bits = ["Prepared without a check: WNTR has not read it and EPANET has not run it; only the reaction "
+                    "settings in its text were checked."]
         if self.fixes:
             bits.append(f"{len(self.fixes)} fix{'es' if len(self.fixes) > 1 else ''} applied to a copy; your file is "
                         f"not changed.")
@@ -1148,7 +1592,10 @@ class Readiness:
         if self.rows:
             out += ["| item | value | source |", "|---|---|---|"]
             out += [f"| {i} | {v.replace('|', '/')} | {s} |" for i, v, s in self.rows] + [""]
-        if self.fixes:
+        if self.fixes and self.blocking:
+            out += ["**Fixes that would be applied** (no copy is kept while a problem stops the run; your file is not "
+                    "changed):"] + [f"- {f}" for f in self.fixes] + [""]
+        elif self.fixes:
             out += ["**Fixes applied to a copy** (your file is not changed):"] + [f"- {f}" for f in self.fixes] + [""]
         if self.warnings:
             out += ["**Warnings:**"] + [f"- {w}" for w in self.warnings] + [""]
@@ -1159,7 +1606,17 @@ class Readiness:
                 "not_a_model": self.not_a_model, "ok": self.ok, "summary": self.summary(),
                 "rows": [{"item": i, "value": v, "source": s} for i, v, s in self.rows], "blocking": self.blocking,
                 "fixes": self.fixes, "warnings": self.warnings, "run_cost": self.run_cost, "prepared": self.prepared,
-                "same_file": self.same_file}
+                "same_file": self.same_file, "flags": self.flags}
+
+    def bundled_dict(self) -> dict:
+        """What outputs/intake/readiness_bundled.json keeps of a report: everything that does not vary from run to run
+        or machine to machine (the measured run time, the minutes estimated from it and the worker count are left out;
+        they go to the checks' run log), and no file name."""
+        cost = {k: v for k, v in self.run_cost.items() if k not in VOLATILE_COST}
+        flags = {k: v for k, v in self.flags.items() if k != "run_cost"}
+        return {"ok": self.ok, "blocking": self.blocking, "fixes": self.fixes, "warnings": self.warnings, "run_cost": cost,
+                "flags": flags, "rows": [{"item": i, "value": v, "source": s} for i, v, s in self.rows
+                                         if i not in (RUN_COST_ROW, "File", "Text encoding")]}
 
     def to_json(self) -> str:
         return json.dumps(self.as_dict(), indent=1)
@@ -1180,16 +1637,37 @@ def _sha1(b: bytes) -> str:
     return hashlib.sha1(b).hexdigest()
 
 
-def run_cost(n_junctions: int, disinfectant: str) -> dict:
-    """The simulator grid for one dose: its EPANET runs and its cache file (ln C as float32 for every run, hour of the
-    last day and junction)."""
+def run_cost(n_junctions: int, disinfectant: str, uniform_c: bool = False, seconds_per_run: float | None = None,
+             workers: int | None = None) -> dict:
+    """The simulator grid for one dose (task 15b): its EPANET runs, its cache file (ln C as float32 for every run, hour
+    of the last day and junction: 64.8 KB per junction for the 675-run free-chlorine grid, 138.2 KB for chloramine's
+    1440 runs), the temporary EPANET files of one run per worker while it builds, and, given one timed 7-day run, the
+    minutes it takes (runs times that run, over the measured effective speedup EFFECTIVE_SPEEDUP, not the worker
+    count).  'large': more junctions than LARGE_JUNCTIONS, which needs an explicit confirm."""
     from .simgp import GRIDS
-    grid = "chloramine" if disinfectant == "chloramine" else "full"
+    grid = grid_for(disinfectant, uniform_c)
     runs = 1
     for axis in GRIDS[grid]:
         runs *= len(axis)
     mb = runs * 24 * n_junctions * FLOAT32_BYTES / 1e6
-    return {"grid": grid, "runs_per_dose": runs, "grid_file_mb": round(mb, 1)}
+    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    out = {"grid": grid, "runs_per_dose": runs, "grid_file_mb": round(mb, 1), "junctions": n_junctions,
+           "large": n_junctions > LARGE_JUNCTIONS, "workers": workers,
+           "temp_files_mb": round(TEMP_MB_PER_JUNCTION * n_junctions * workers, 1)}
+    if seconds_per_run is not None:
+        est = estimate_seconds(float(seconds_per_run), runs)
+        out["seconds_per_run"] = round(float(seconds_per_run), 3)
+        out["estimate_s"] = est                   # unrounded: what run_cost_gate scores
+        out["minutes"] = round(est / 60, 1)
+    return out
+
+
+def estimate_seconds(seconds_per_run: float, runs: int) -> float:
+    """The grid build's time estimate (task 15b, item 10, as the plan states it): one timed 7-day run times the number
+    of runs, over the assumed effective parallel speedup EFFECTIVE_SPEEDUP.  On a small model, where starting the
+    workers takes most of the time, the build takes longer than this, and on a large one less
+    (outputs/intake/run_cost_timing.json: Net3's builds took 1.4 to 2.1 times the estimate, ky10's 0.64)."""
+    return seconds_per_run * runs / EFFECTIVE_SPEEDUP
 
 
 def prepared_name(digest: str, name: str, keep_name: bool) -> str:
@@ -1240,6 +1718,120 @@ def prepare_inp(src, out_dir: str, disinfectant: str = "free_chlorine", name: st
         return None, rep
 
 
+def _stale_names(name: str, contents: list[bytes]) -> set[str]:
+    """Every content name a prepared copy of this file can have had, under task 15's scheme and this one: the digest
+    of the bytes as received, as decoded, or after the reaction fixes, with the upload name kept or the safe stem.
+    The digest makes each name this file's own."""
+    out = set()
+    for b in contents:
+        d = _sha1(b)[:8]
+        out.update(prepared_name(d, name, keep) for keep in (True, False))
+    return out
+
+
+def _remove_stale(out_dir: str, names: set[str], keep: str | None) -> None:
+    """A blocked model leaves no prepared copy behind (task 15b): a content-named copy that an earlier version (or an
+    earlier, less strict check) accepted is removed from out_dir.  The file given (keep) is never removed."""
+    for n in names:
+        p = os.path.join(out_dir, n)
+        if keep is not None and os.path.abspath(p) == os.path.abspath(keep):
+            continue
+        if os.path.isfile(p) and not os.path.islink(p):
+            with contextlib.suppress(OSError):
+                os.remove(p)
+
+
+def _write_temp(out_dir: str, b: bytes) -> str:
+    """b in a new temporary file in out_dir (removed again if the write fails)."""
+    fd, tmp = tempfile.mkstemp(prefix=".prepare_", suffix=".inp", dir=out_dir)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(b)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+        raise
+    return tmp
+
+
+def _decode_fix(rep: Readiness, data: bytes, how: str) -> None:
+    """The decoding fix (and, for a file that mixes two encodings, a warning naming the lines)."""
+    if how == "utf-8":
+        return
+    if how.startswith(MIXED_PREFIX):
+        _, n, lines, n_lines, pairs = _mixed_utf8(data)
+        chance = (f", {2 * pairs if pairs > 1 else 'two'} of them in {pairs if pairs > 1 else 'a'} pair"
+                  f"{'s' if pairs > 1 else ''} that {'are' if pairs > 1 else 'is'} valid UTF-8 only by chance (an "
+                  f"accented capital before a quote, a dash or a degree sign, as in 'CITÉ’')" if pairs else "")
+        rep.fixes.append(f"Read the text as UTF-8, with {n} stray byte{'s' if n != 1 else ''} read as cp1252 (Windows "
+                         f"Western European){chance}, and saved it as UTF-8 (WNTR reads UTF-8 only).")
+        rep.warnings.append(f"The file mixes two text encodings: it is UTF-8 except for {n} byte{'s' if n != 1 else ''} "
+                            f"(on line{'s' if n_lines != 1 else ''} {', '.join(map(str, lines))}"
+                            f"{' and more' if n_lines > len(lines) else ''}), which {'were' if n != 1 else 'was'} "
+                            f"read as cp1252 (Windows Western European), as a pasted degree sign or accented letter "
+                            f"usually is. If a name or an ID there looks wrong, correct it in the modelling package and "
+                            f"export again.")
+        return
+    what = {"utf-8 with a byte-order mark": "Removed the byte-order mark at the start (WNTR stops at line 1 on it)"}
+    rep.fixes.append(what.get(how, f"Decoded the text from {how} and saved it as UTF-8 (WNTR reads UTF-8 only)") + ".")
+
+
+def _ids_list(ids: list[str], k: int = 6) -> str:
+    return ", ".join(ids[:k]) + (f" and {len(ids) - k} more" if len(ids) > k else "")
+
+
+def _reaction_fixes(rep: Readiness, info: dict) -> None:
+    """The reaction settings fix_reactions_text changed, as fixes (task 15b, items 1 and 2), kept for the rows."""
+    rep.flags["reactions"] = {"orders": info["orders"], "orders_fixed": info["orders_fixed"],
+                              "bulk_lines": len(info["bulk_lines"]), "tank_lines": len(info["tank_lines"]),
+                              "wall_lines": info["wall_lines"], "limiting_potential": info["limiting_potential"],
+                              "limiting_potential_fixed": info["limiting_potential_fixed"],
+                              "roughness_correlation": info["roughness_correlation"]}
+    of = info["orders_fixed"]
+    if of:
+        rep.fixes.append("Set the reaction order to 1, as the decay model assumes (first order), where the file had "
+                         + " and ".join(f"{k} {v}" for k, v in of.items()) + ". An order of 0 is another law (a fixed "
+                         "amount lost per day), so the decay rates would not mean what they say, and the bulk rate can "
+                         "have no effect at all.")
+    b, t = info["bulk_lines"], info["tank_lines"]
+    if b or t:
+        parts = ([f"the BULK lines of {len(b)} pipe{'s' if len(b) != 1 else ''} ({_ids_list(b)})"] if b else []) + \
+                ([f"the TANK lines of {len(t)} tank{'s' if len(t) != 1 else ''} ({_ids_list(t)})"] if t else [])
+        rep.fixes.append("Cleared " + " and ".join(parts) + ": a per-pipe or per-tank bulk rate overrides the one the "
+                         "model calibrates, so those pipes and tanks would ignore it. The calibrated bulk rate now "
+                         "applies to every pipe and tank.")
+    if info["limiting_potential_fixed"] is not None:
+        rep.fixes.append(f"Set LIMITING POTENTIAL to 0, where the file had {info['limiting_potential_fixed']}: with a "
+                         f"limiting potential the bulk decay is not first order in the chlorine.")
+
+
+def _reaction_rows(rep: Readiness) -> None:
+    r = rep.flags.get("reactions")
+    if r is None:
+        return
+    if r["orders_fixed"]:
+        had = ", ".join(f"{k} {v}" for k, v in r["orders_fixed"].items())
+        rep.add("Reaction orders", f"the file has {had}; the copy uses 1 (first order) for bulk, wall and tank, as the "
+                                   f"decay model assumes", DERIVED)
+    else:
+        rep.add("Reaction orders", "1 (first order) for bulk, wall and tank, as the decay model assumes"
+                + ("" if len(r["orders"]) == 3 else " (EPANET's default where the file sets none)"), FROM_FILE)
+    bits = []
+    if r["bulk_lines"] or r["tank_lines"]:
+        bits.append(f"{r['bulk_lines']} per-pipe BULK and {r['tank_lines']} per-tank TANK lines cleared in the copy, "
+                    f"so the calibrated bulk rate applies everywhere")
+    if r["limiting_potential_fixed"] is not None:
+        bits.append(f"LIMITING POTENTIAL {r['limiting_potential_fixed']} set to 0")
+    if r["wall_lines"] or r["roughness_correlation"]:
+        bits.append((f"{r['wall_lines']} per-pipe WALL lines" if r["wall_lines"] else "")
+                    + (" and " if r["wall_lines"] and r["roughness_correlation"] else "")
+                    + (f"a ROUGHNESS CORRELATION of {r['roughness_correlation']:g}" if r["roughness_correlation"] else "")
+                    + " ignored: the model sets every pipe's wall rate from its C")
+    rep.add("Per-pipe and per-tank rates", "; ".join(bits) if bits else "none: one bulk rate for every pipe and tank, "
+                                                                        "as the decay model assumes",
+            DERIVED if bits else FROM_FILE)
+
+
 def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectant: str, parse: bool,
              rep: Readiness) -> tuple[str | None, Readiness]:
     s = sniff(data, name)
@@ -1270,33 +1862,46 @@ def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectan
             + ("; the name marks it as a backup copy" if s.backup else ""), FROM_FILE)
     text, how = decode_text(data)
     rep.add("Text encoding", how, FROM_FILE)
-    if how != "utf-8":
-        what = {"utf-8 with a byte-order mark": "Removed the byte-order mark at the start (WNTR stops at line 1 on it)"}
-        rep.fixes.append(what.get(how, f"Decoded the text from {how} and saved it as UTF-8 (WNTR reads UTF-8 only)")
-                         + ".")
+    _decode_fix(rep, data, how)
     ids = scan_inp_ids(text)
     rep.blocking += ids.blocking
     rep.warnings += ids.warnings
+    fixed, rinfo = (text, None) if rep.blocking else fix_reactions_text(text)
+    stale = _stale_names(name, [data, text.encode("utf-8"), fixed.encode("utf-8")])
     if rep.blocking:
+        _remove_stale(out_dir, stale, path)
         return None, rep
-    # write only when needed, under a temporary name until WNTR has read it, an entry point is found and the test
-    # run passed; a temporary file left by any failure (the save itself included) is removed in the finally
-    tmp, accepted, out_path = None, False, None
+    _reaction_fixes(rep, rinfo)
+    changed = fixed != text
+    # write only when needed, under a temporary name until WNTR has read it, an entry point is found, the physics
+    # checks and the test runs passed; a temporary file left by any failure (the save itself included) is removed in
+    # the finally, and so is a content-named copy of this file that an earlier version accepted (task 15b)
+    tmp, tmp2, accepted, out_path = None, None, False, None
     try:
-        if path is not None and how == "utf-8":
-            out_path, rep.same_file = path, True
+        if path is not None and how == "utf-8" and not changed:
+            read_path = out_path = path
+            rep.same_file = True
         else:
-            new = data if how == "utf-8" else text.encode("utf-8")
+            new = data if how == "utf-8" and not changed else fixed.encode("utf-8")
             fname = prepared_name(_sha1(new)[:8], name, keep_name=how == "utf-8" and not rep.fixes)
             os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, fname)
-            if not os.path.exists(out_path):      # content-named: an existing file is this one, already accepted
-                fd, tmp = tempfile.mkstemp(prefix=".prepare_", suffix=".inp", dir=out_dir)
-                with os.fdopen(fd, "wb") as fh:
-                    fh.write(new)
+            read_path = tmp = _write_temp(out_dir, new)
         rep.prepared = os.path.basename(out_path)
-        accepted = True if not parse else _read_and_report(tmp or out_path, out_path, rep, ids, disinfectant)
-        if accepted and tmp is not None:
+        replacement = None
+        if parse:
+            accepted, replacement = _read_and_report(read_path, out_path, rep, ids, disinfectant, fixed)
+        else:
+            accepted = True
+        if accepted and replacement is not None:      # a Darcy-Weisbach model, converted: the copy holds the new text
+            new2 = replacement.encode("utf-8")
+            out_path = os.path.join(out_dir, prepared_name(_sha1(new2)[:8], name, keep_name=False))
+            os.makedirs(out_dir, exist_ok=True)
+            tmp2 = _write_temp(out_dir, new2)
+            os.replace(tmp2, out_path)
+            tmp2 = None
+            rep.prepared, rep.same_file = os.path.basename(out_path), False
+        elif accepted and tmp is not None:
             os.replace(tmp, out_path)
             tmp = None
     except OSError as e:
@@ -1304,11 +1909,13 @@ def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectan
         rep.blocking.append(f"The prepared copy could not be saved ({e.strerror or type(e).__name__}); nothing was "
                             f"kept.")
     finally:
-        if tmp is not None:
-            with contextlib.suppress(OSError):
-                os.remove(tmp)
+        for t in (tmp, tmp2):
+            if t is not None:
+                with contextlib.suppress(OSError):
+                    os.remove(t)
         if not accepted:
             rep.prepared, rep.same_file = None, False
+            _remove_stale(out_dir, stale, path)
     return (out_path if accepted else None), rep
 
 
@@ -1348,10 +1955,311 @@ def _test_run(wn) -> str | None:
     return None
 
 
-def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan, disinfectant: str) -> bool:
-    """WNTR's load of the prepared copy, the report rows that need it and EPANET's test run of the first hour; False
-    (with a blocking problem) when WNTR cannot read it, the model has no entry point or the test run fails."""
+ELEVATION_EVIDENCE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs", "intake",
+                                  "elevation_prv_ky10.json")
+
+
+def _elevation_evidence() -> str:
+    """One sentence from the committed outputs/intake/elevation_prv_ky10.json, or '' when it is not there."""
+    try:
+        with open(ELEVATION_EVIDENCE) as fh:
+            d = json.load(fh)
+        return (f" In a test on the public model ky10 (its {d['pressure_valves']} PRVs), setting every junction to one "
+                f"elevation moved the water age by more than {d['threshold_h']:g} h at {d['junctions_moved']} of "
+                f"{d['junctions']} junctions, by up to {d['max_change_h']:.1f} h (outputs/intake/elevation_prv_ky10.json).")
+    except (OSError, KeyError, ValueError, TypeError):
+        return ""
+
+
+def _clock_minute(hours: float) -> int:
+    """A time in hours as the minute of the day, rounded once (5:59:59 is minute 360; 23:59:50 and 0:00:20 are 0)."""
+    return int(round(hours * 60)) % 1440
+
+
+def _clock(hours: float) -> str:
+    """HH:MM of a time in hours, rounded to the minute once (so 5:59:59 is 06:00, never 05:60)."""
+    m = _clock_minute(hours)
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def _clock_report(rep: Readiness, clock_h: float) -> None:
+    """The start clock row and, for a start other than midnight, the model-hours warning (task 15b, item 4).  Both
+    quote the start rounded to the minute once, and the warning goes by that minute (the second review: a start within
+    30 s of midnight is 00:00 and gets no warning, and the offset quoted is the rounded one)."""
+    m = _clock_minute(clock_h)
+    off = f"{m / 60:g} h"
+    rep.add("Start clock time", f"{off} ({_clock(clock_h)}): the model's hour 0 is this time of day; recorded, the file "
+                                f"is not changed", FROM_FILE)
+    if m:
+        rep.warnings.append(f"The model starts at {_clock(clock_h)} (START CLOCKTIME), so its hour 0 is {_clock(clock_h)}, "
+                            f"not midnight. Until clock time is converted (planned), every hour in the app and the "
+                            f"pilot is a model hour: the map's hours, the worst hour, the route's hours, and the hours "
+                            f"of your samples, which are read as model hours too. Add {off} to a model hour for "
+                            f"the time of day, and take {off} off a sample's time of day before entering it.")
+
+
+def _physics_report(rep: Readiness, wn, ctl: dict, have_xy: set, src_nodes: list[str]) -> set[str]:
+    """The task-15b checks that read the model WNTR loaded (no EPANET run): headloss formula, start clock and pattern
+    lengths, pressure-control valves and elevations, coordinates, sources and entry points, pumps and controls,
+    demand, connectivity and export connectors.  Rows, warnings and blocking problems go to rep; what each found goes
+    to rep.flags.  Returns the export's connector pipes when the Export connectors row recognises them (the pipes
+    tagged AddedForINPConversion, and the pipes of 1 ft and 99 in once the row is shown), which the uniform-C test
+    leaves out; else an empty set."""
+    import networkx as nx
+    from wntr.network import LinkStatus
+    f = rep.flags
+    _reaction_rows(rep)
+    # 3. headloss formula (the conversion itself runs later, after the test run)
+    hl = wn.options.hydraulic.headloss
+    f["headloss"] = hl
+    if hl == "H-W":
+        rep.add("Headloss formula", "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the "
+                                    "roughness axis read each pipe's roughness as a C", FROM_FILE)
+    elif hl == "D-W":
+        rep.add("Headloss formula", "D-W (Darcy-Weisbach) in your file; converted to Hazen-Williams in the copy, each "
+                                    "pipe's C matched to its headloss at its reference velocity (next rows)", DERIVED)
+    else:
+        rep.add("Headloss formula", f"{hl} (Chezy-Manning) in your file", FROM_FILE)
+        rep.blocking.append("The file uses the Chezy-Manning headloss formula. The wall decay reads each pipe's roughness "
+                            "as a Hazen-Williams C, and a Manning n has no such reading, so the decay rates would not "
+                            "mean what they say. Export the model with Hazen-Williams, or ask your modeller.")
+    # 4. start clock time and pattern lengths
+    t = wn.options.time
+    clock_h = float(t.start_clocktime or 0) / 3600
+    f["start_clock_h"] = clock_h
+    _clock_report(rep, clock_h)
+    step = float(t.pattern_timestep or 3600)
+    weekly, multi = [], []
+    for pn in wn.pattern_name_list:
+        dur_h = len(wn.get_pattern(pn).multipliers) * step / 3600
+        if abs(dur_h - 168) < 1e-9:
+            weekly.append(pn)
+        elif dur_h > 24 + 1e-9:
+            multi.append([pn, dur_h])
+    f["weekly_patterns"], f["multi_day_patterns"] = weekly, multi
+    if weekly:
+        rep.warnings.append(f"{len(weekly)} weekly pattern{'s' if len(weekly) != 1 else ''} ({_ids_list(weekly)}: a "
+                            f"week long). Every run is 7 days and only the last day is scored, so the scored day is "
+                            f"the pattern's day 7, six days after the weekday it starts on. The file does not record "
+                            f"that weekday: tell us which day of the week the pattern starts on, so the scored day can "
+                            f"be named.")
+    if multi:
+        rep.warnings.append(f"{len(multi)} pattern{'s' if len(multi) != 1 else ''} longer than a day and not a week ("
+                            + ", ".join(f"{pn}: {d:g} h" for pn, d in multi[:6]) + "): EPANET repeats each one over its "
+                            "own length, so the scored day (the last of the 7-day run) is not a repeat of one daily "
+                            "cycle.")
+    # 5. pressure-control valves and elevations
+    junctions = wn.junction_name_list
+    kinds: dict[str, list[str]] = {}
+    for vn in wn.valve_name_list:
+        kinds.setdefault(str(wn.get_link(vn).valve_type), []).append(vn)
+    pvalves = [vn for k in PRESSURE_VALVES for vn in kinds.get(k, [])]
+    elev = {j: float(wn.get_node(j).elevation) for j in junctions}
+    zeros = [j for j in junctions if elev[j] == 0.0]
+    constant = len(junctions) > 1 and len(set(elev.values())) == 1
+    pnodes = [j for j in junctions if j in ctl["nodes"]]
+    need = set(pnodes)
+    for vn in pvalves:
+        link = wn.get_link(vn)
+        need.update((link.start_node_name, link.end_node_name))
+    need_j = [j for j in junctions if j in need]
+    emitters = [j for j in junctions if (wn.get_node(j).emitter_coefficient or 0) > 0]
+    pressure_driven = str(wn.options.hydraulic.demand_model).upper() in ("PDA", "PDD")
+    f["pressure_valves"] = {k: len(kinds.get(k, [])) for k in PRESSURE_VALVES if kinds.get(k)}
+    f["zero_elevation_junctions"] = zeros
+    f["zero_elevation_flagged"] = bool(pvalves and zeros and not constant)
+    f["constant_elevation"] = constant
+    f["elevations_needed_at"] = len(need_j)
+    if pvalves:
+        what = ", ".join(f"{len(kinds[k])} {k}" for k in PRESSURE_VALVES if kinds.get(k))
+        at_zero = [j for j in need_j if j in set(zeros)]
+        rep.add("Elevations", f"{len(pvalves)} pressure-control valve{'s' if len(pvalves) != 1 else ''} ({what}): the "
+                              f"elevations change the flows here; real elevations are needed at the valves"
+                              + (", downstream of them and in pressure-based controls" if pnodes else
+                                 " and downstream of them")
+                              + f"; {len(need_j)} junction{'s' if len(need_j) != 1 else ''} "
+                              + ("sit on either side of a valve or in such a control" if pnodes else
+                                 "sit on either side of a valve")
+                              + (f", {len(at_zero)} of them at elevation 0" if at_zero else
+                                 ", none of them at elevation 0"), FROM_FILE)
+        if constant:
+            rep.blocking.append(
+                f"Elevations needed at these valves: {_ids_list(pvalves)}. Every junction has the same elevation "
+                f"({next(iter(elev.values())):g} m), and a pressure-reducing, -sustaining or -breaker valve works on the "
+                f"pressure, the head minus the elevation, so with one made-up elevation the valves set the wrong flows "
+                f"and the water age is wrong." + _elevation_evidence() + " Export the model with its real elevations, "
+                f"at least at the valves, the junctions downstream of them and the junctions named in pressure-based "
+                f"controls.")
+        elif zeros:
+            rep.warnings.append(
+                f"{len(zeros)} junction{'s' if len(zeros) != 1 else ''} at elevation 0 in a model with pressure-control "
+                f"valves: {_ids_list(zeros, 10)}. If a 0 means 'not surveyed', the pressure there is wrong, and near a "
+                f"valve or a pressure-based control so are the flows." + _elevation_evidence() + " Check these "
+                f"elevations in the modelling package.")
+    elif pnodes or emitters or pressure_driven:
+        users = ([f"{len(pnodes)} junctions read by pressure-based controls"] if pnodes else []) + \
+                ([f"{len(emitters)} emitters"] if emitters else []) + (["pressure-driven demands"] if pressure_driven
+                                                                       else [])
+        rep.add("Elevations", "no pressure-control valves; " + " and ".join(users) + " use the pressure, so the "
+                              "elevations there change the flows; read from your file", FROM_FILE)
+        if constant:
+            rep.warnings.append("Every junction has the same elevation, and the model uses the pressure ("
+                                + " and ".join(users) + "): the flows there may be wrong. Export the model with its "
+                                "real elevations.")
+    else:
+        rep.add("Elevations", "no pressure-control valves, pressure-based controls or emitters: in this demand-driven "
+                              "run the junction elevations change the pressures, not the flows", FROM_FILE)
+    # 6. coordinates
+    cs = coordinate_scale(wn, have_xy)
+    f["coordinates"] = cs
+    later = "tap mapping by coordinates, when it comes (planned), will not be offered for this file; use junction IDs"
+    if cs["status"] == "no coordinates":
+        rep.add("Coordinate scale", f"no coordinates: the maps will show every node at one point, and {later}", MISSING)
+    elif cs["status"] == "too few pipes drawn":
+        rep.add("Coordinate scale", f"too few pipes drawn to tell: {later}", DERIVED)
+    elif cs["status"] == "schematic":
+        rep.add("Coordinate scale", f"schematic: the drawn pipe lengths are not in proportion to the lengths in the "
+                                    f"file (95th over 5th percentile of their ratio {cs['spread']:g}, above "
+                                    f"{SCHEMATIC_SPREAD:g}), so {later}", DERIVED)
+    else:
+        unit = {"feet": "in feet", "metres": "in metres"}.get(cs["units"], "in units that are not feet or metres")
+        rep.add("Coordinate scale", f"to scale, {unit} (median drawn length {cs['ratio_median']:g} per metre of "
+                                    f"declared length; 95th over 5th percentile {cs['spread']:g})", DERIVED)
+    # 7. sources in the file and entry points
+    dosed = set(src_nodes)
+    srcs = [(s.node_name, str(s.source_type)) for _, s in wn.sources()]
+    over = [n for n, _ in srcs if n in dosed]
+    boost = [n for n, _ in srcs if n not in dosed]
+    f["sources_overridden"], f["booster_sources"], f["entry_points"] = over, boost, list(src_nodes)
+    if not srcs:
+        rep.add("Sources in the file", "none: the dose you set enters at every entry point", FROM_FILE)
+    else:
+        rep.add("Sources in the file", "; ".join(([f"at {_ids_list(over)}, an entry point: replaced by the dose you "
+                                                   f"set"] if over else [])
+                                                 + ([f"at {_ids_list(boost)}, not an entry point (a booster): kept in "
+                                                     f"the file, but at the tool's dose scale it adds almost nothing"]
+                                                    if boost else [])), FROM_FILE)
+    if over:
+        rep.warnings.append(f"The file's own source at {_ids_list(over)} is overridden: the tool doses every entry point "
+                            f"with the dose you set.")
+    if boost:
+        rep.warnings.append(f"{len(boost)} source{'s' if len(boost) != 1 else ''} at node{'s' if len(boost) != 1 else ''} "
+                            f"the tool does not dose ({_ids_list(boost)}): boosters, kept as the file has them. The tool "
+                            f"writes its own dose to EPANET in the model's units, a thousand times the file's mg/L, and "
+                            f"leaves these as they are, so they stay in the run at about a thousandth of their strength "
+                            f"and add almost nothing. How to treat boosters is an open decision; until then the map "
+                            f"has almost none of their chlorine.")
+    if len(src_nodes) > 1:
+        rep.warnings.append(f"{len(src_nodes)} entry points ({_ids_list(list(src_nodes))}): every one is dosed at the "
+                            f"same value, the dose you set. If they carry different residuals, the map is off near "
+                            f"them; a residual per inlet is planned.")
+    # 8. structure: pumps and controls, demand and patterns, connected parts, export connectors
+    loose = []
+    for pn in wn.pump_name_list:
+        p = wn.get_link(pn)
+        if getattr(p, "speed_pattern_name", None) or pn in ctl["links"]:
+            continue
+        loose.append((pn, "closed" if p.initial_status == LinkStatus.Closed else "open"))
+    f["pumps_without_controls"] = [pn for pn, _ in loose]
+    f["controls"], f["rules"] = ctl["n_controls"], ctl["n_rules"]
+    rep.add("Pumps and controls", f"{wn.num_pumps} pump{'s' if wn.num_pumps != 1 else ''}; {ctl['n_controls']} "
+                                  f"control{'s' if ctl['n_controls'] != 1 else ''} and {ctl['n_rules']} "
+                                  f"rule{'s' if ctl['n_rules'] != 1 else ''}", FROM_FILE)
+    if loose:
+        opened = [pn for pn, st in loose if st == "open"]
+        closed = [pn for pn, st in loose if st == "closed"]
+        desc = "; ".join(([f"open all the time: {_ids_list(opened)}"] if opened else [])
+                         + ([f"closed all the time: {_ids_list(closed)}"] if closed else []))
+        rep.warnings.append(f"Pumps but no controls: {len(loose)} of {wn.num_pumps} pump{'s' if wn.num_pumps != 1 else ''} "
+                            f"{'has' if len(loose) == 1 else 'have'} no control, rule or speed pattern ({desc}), so "
+                            f"{'it stays' if len(loose) == 1 else 'each stays'} as the file starts it for all 7 days. If "
+                            f"the real pumps cycle, the water age and the tanks' chlorine are wrong: export the model "
+                            f"with its controls.")
+    total = sum(ts.base_value for j in junctions for ts in wn.get_node(j).demand_timeseries_list if ts.base_value > 0)
+    f["patterns"], f["zero_total_demand"] = len(wn.pattern_name_list), total == 0
+    rep.add("Demand", f"{len(wn.pattern_name_list)} time pattern{'s' if len(wn.pattern_name_list) != 1 else ''}"
+                      + ("; no junction takes water" if total == 0 else ""), FROM_FILE)
+    if not wn.pattern_name_list:
+        rep.warnings.append("No time patterns: every demand is the same all day, so the daily low point of the residual "
+                            "is not represented.")
+    if total == 0:
+        rep.warnings.append("Zero total demand: no junction takes water, so water moves only as the tanks fill and "
+                            "drain, and its age is not the network's.")
+    g = nx.Graph()
+    g.add_nodes_from(wn.node_name_list)
+    g.add_edges_from((link.start_node_name, link.end_node_name) for _, link in wn.links())
+    parts = sorted((sorted(c) for c in nx.connected_components(g)), key=lambda c: (-len(c), c[0]))
+    f["parts"] = [len(c) for c in parts]
+    if len(parts) > 1:
+        dry = [c for c in parts if not set(c) & (dosed | set(wn.tank_name_list) | set(wn.reservoir_name_list))]
+        rep.add("Connected parts", f"{len(parts)} parts that no pipe, pump or valve joins (sizes "
+                                   f"{', '.join(str(len(c)) for c in parts[:6])})", DERIVED)
+        rep.warnings.append(f"{len(parts)} parts that no pipe, pump or valve joins (sizes "
+                            f"{', '.join(str(len(c)) for c in parts[:6])}{' and more' if len(parts) > 6 else ''}): "
+                            f"each part needs its own entry point"
+                            + (f", and {len(dry)} part{'s have' if len(dry) != 1 else ' has'} none (for example "
+                               f"{_ids_list(dry[0], 3)}), so no chlorine reaches it" if dry else "")
+                            + ". If the zone was cut from a larger model, check the cut.")
+    else:
+        rep.add("Connected parts", "one connected network", DERIVED)
+    conn = [pn for pn in wn.pipe_name_list
+            if abs(wn.get_link(pn).length - CONNECTOR_LENGTH_M) < 0.01 and abs(wn.get_link(pn).diameter
+                                                                                 - CONNECTOR_DIAM_M) < 0.01]
+    f["connector_pipes"], f["connector_tags"] = len(conn), len(ctl["connector_tags"])
+    if ctl["connector_tags"] or len(conn) >= CONNECTOR_MIN_PIPES:   # one pipe of that size alone says nothing (Net6)
+        rep.add("Export connectors", f"{len(conn)} pipe{'s' if len(conn) != 1 else ''} of 1 ft and 99 in (the size a "
+                                     f"WaterGEMS EPANET export uses for its connector pipes) and "
+                                     f"{len(ctl['connector_tags'])} element{'s' if len(ctl['connector_tags']) != 1 else ''} "
+                                     f"tagged AddedForINPConversion (the tag it gives them); kept as they are (for "
+                                     f"information)", FROM_FILE)
+        return set(conn) | (set(ctl["connector_tags"]) & set(wn.pipe_name_list))
+    return set()
+
+
+def _dw_report(rep: Readiness, conv: dict) -> None:
+    """Rows, fix or block for a Darcy-Weisbach file and its gate (task 15b, item 3)."""
+    from .simulate import roughness_factor
+    keep = ("pipes", "c_min", "c_max", "age_change_median_h", "age_change_p95_h", "passes")
+    rep.flags["headloss_conversion"] = {k: (round(conv[k], 4) if isinstance(conv[k], float) else conv[k]) for k in keep}
+    med, p95 = conv["age_change_median_h"], conv["age_change_p95_h"]
+    rep.add("Headloss conversion", f"water age moved by a median of {med:.2f} h and a 95th percentile of {p95:.2f} h "
+                                   f"over the scored day's junction-hours between your file and the copy; the copy is "
+                                   f"kept up to {DW_GATE_MEDIAN_H:g} h and {DW_GATE_P95_H:g} h", DERIVED)
+    if conv["passes"]:
+        rep.fixes.append(f"Converted the Darcy-Weisbach headloss formula to Hazen-Williams: each of the {conv['pipes']} "
+                         f"pipes gets the C ({conv['c_min']:.0f} to {conv['c_max']:.0f}) that gives its Darcy-Weisbach "
+                         f"headloss at its reference velocity (the median over the scored day, at least "
+                         f"{V_REF_FLOOR_MS:g} m/s). The wall decay reads each pipe's roughness as a C, and a "
+                         f"Darcy-Weisbach roughness (a fraction of a millimetre) read as a C near 0 would multiply every "
+                         f"wall rate by about {roughness_factor(0.0):.0f} at the old-pipe factor 1. The conversion is "
+                         f"exact at that velocity only, which is why the water age is compared.")
+    else:
+        rep.blocking.append(f"The Darcy-Weisbach model could not be converted closely enough: water age moved by a "
+                            f"median of {med:.2f} h (at most {DW_GATE_MEDIAN_H:g} h is kept) and a 95th percentile of "
+                            f"{p95:.2f} h (at most {DW_GATE_P95_H:g} h) between the file and a Hazen-Williams copy. Export "
+                            f"the model with Hazen-Williams, or ask your modeller.")
+
+
+def _timed_member_run(path: str, gamma: float) -> float:
+    """Seconds for one 7-day EPANET run of the file exactly as a grid member runs it (simulate_nominal_chlorine at
+    kb 0.40, kw 0.70), in a temporary folder that is removed; it raises when EPANET cannot run it."""
+    from .simulate import simulate_nominal_chlorine
+    with tempfile.TemporaryDirectory(prefix="rm_test_run_") as d, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        t0 = time.perf_counter()
+        simulate_nominal_chlorine(path, 0.40, 0.70, gamma, file_prefix=os.path.join(d, "member"))
+        return time.perf_counter() - t0
+
+
+def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan, disinfectant: str,
+                     text: str) -> tuple[bool, str | None]:
+    """WNTR's load of the prepared copy, the report rows that need it, the physics checks (task 15b), EPANET's test run
+    of the first hour, the Darcy-Weisbach conversion and its gate, and one timed 7-day run for the run cost.
+    (accepted, replacement): accepted is False (with a blocking problem) when WNTR cannot read it, the model has no
+    entry point, a physics check blocks or a run fails; replacement is the converted text of a Darcy-Weisbach model,
+    which _prepare saves instead of the copy read here."""
     import wntr
+    from .simgp import GRIDS
     from .simulate import source_nodes
     try:
         with warnings.catch_warnings():
@@ -1360,56 +2268,117 @@ def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan,
     except Exception as e:  # noqa: BLE001
         msg = str(e).replace(read_path, os.path.basename(out_path))     # the file's name, never its folder
         rep.blocking.append(f"EPANET (through WNTR) could not read this model: {type(e).__name__}: {msg[:300]}")
-        return False
+        return False, None
     for item, n in (("Junctions", wn.num_junctions), ("Reservoirs", wn.num_reservoirs), ("Tanks", wn.num_tanks),
                     ("Pipes", wn.num_pipes), ("Pumps", wn.num_pumps), ("Valves", wn.num_valves)):
         rep.add(item, n, FROM_FILE)
     rep.add("Flow units", wn.options.hydraulic.inpfile_units, FROM_FILE)
-    headloss = wn.options.hydraulic.headloss
-    rep.add("Headloss formula", headloss, FROM_FILE)
     n_nodes = wn.num_nodes
-    n_xy = len(ids.coordinate_ids & set(wn.node_name_list))
-    if n_xy:
-        rep.add("Node coordinates", f"{n_xy} of {n_nodes} nodes", FROM_FILE)
+    have_xy = ids.coordinate_ids & set(wn.node_name_list)
+    if have_xy:
+        rep.add("Node coordinates", f"{len(have_xy)} of {n_nodes} nodes", FROM_FILE)
     else:
         rep.add("Node coordinates", "none: the maps need them (EPANET or the modelling package writes them in "
                                     "[COORDINATES])", MISSING)
     src_nodes = source_nodes(wn)
     if not src_nodes:
         rep.blocking.append("No reservoir, inflow junction or tank found: the model needs a place where water enters.")
-        return False
+        return False, None
     how_in = ("reservoirs" if wn.reservoir_name_list else
               "junctions with a negative demand (inflows)" if set(src_nodes) <= set(wn.junction_name_list) else "tanks")
     rep.add("Where water enters", f"{how_in}: {', '.join(src_nodes[:6])}{' and more' if len(src_nodes) > 6 else ''}",
             DERIVED)
     rep.add("Disinfectant", f"{DISINFECTANT_WORDS[disinfectant]} (your setting; every entry point gets the same dose)",
             ASSUMED)
-    rep.add("Physics settings", "used as your file has them and not checked yet: the headloss formula, the reaction "
-                                "orders, per-pipe and per-tank BULK lines, LIMITING POTENTIAL and START CLOCKTIME. A "
-                                "model that does not use Hazen-Williams or first-order reactions runs, but its decay "
-                                "rates do not mean what they say; these checks are planned, not built", ASSUMED)
-    if headloss != "H-W":
-        rep.warnings.append(f"The file uses the {headloss} headloss formula. The wall decay reads each pipe's roughness "
-                            f"as a Hazen-Williams C, so on this file the wall rates and the old-pipe factor do not mean "
-                            f"what they say. Converting the formula is planned, not built: export the model with "
-                            f"Hazen-Williams if the modelling package can.")
-    r = wn.options.reaction
-    orders = [(w, v) for w, v in (("bulk", r.bulk_order), ("wall", r.wall_order), ("tank", r.tank_order))
-              if v is not None and float(v) != 1.0]
-    if orders:
-        rep.warnings.append("The file sets the " + " and ".join(f"{w} reaction order to {float(v):g}" for w, v in orders)
-                            + ". The decay model assumes first order (1) and does not change the file's order yet, so "
-                              "its decay rates mean something else on this file.")
-    rep.run_cost = run_cost(wn.num_junctions, disinfectant)
-    rep.add("Run cost", f"{rep.run_cost['runs_per_dose']} EPANET runs per dose, once per file; a grid file of about "
-                        f"{rep.run_cost['grid_file_mb']:g} MB", DERIVED)
-    problem = _test_run(wn)            # last: it changes wn's time and quality options
+    connectors = _physics_report(rep, wn, control_scan(text), have_xy, src_nodes)
+    if rep.blocking:
+        return False, None
+    headloss = wn.options.hydraulic.headloss
+    # the uniform-C test leaves out the export's connector pipes (the second review: a WaterGEMS-style export of a
+    # one-C network has a C 130 connector of 1 ft at each pump, which is not a second C value of the network)
+    scored = [pn for pn in wn.pipe_name_list if pn not in connectors] or list(wn.pipe_name_list)
+    roughness = [float(wn.get_link(pn).roughness) for pn in scored]
+    left_out = len(wn.pipe_name_list) - len(scored)
+    n_junctions = wn.num_junctions
+    problem = _test_run(wn)            # it changes wn's time and quality options: nothing below reads them
     if problem:
         rep.blocking.append(problem)
-        return False
+        return False, None
+    replacement, final_path = None, read_path
+    with tempfile.TemporaryDirectory(prefix="rm_test_run_") as work:
+        if headloss == "D-W":
+            try:
+                replacement, conv = dw_to_hw(read_path, text, work)
+            except Exception as e:  # noqa: BLE001
+                rep.blocking.append(f"The Darcy-Weisbach model could not be converted ({type(e).__name__}: "
+                                    f"{str(e)[:200]}). Export the model with Hazen-Williams, or ask your modeller.")
+                return False, None
+            _dw_report(rep, conv)
+            if not conv["passes"]:
+                return False, None
+            final_path = conv["converted_path"]
+            keep = set(scored)
+            converted = sorted({round(float(v), 6) for k, v in conv["c"].items() if k in keep})
+            rep.flags["converted_c_values"] = len(converted)
+        # the uniform test reads the file's own roughness, before any conversion: a Darcy-Weisbach file with one
+        # roughness on every pipe gets many converted C values, which differ by diameter and velocity, not by age.
+        # It compares them to 6 significant digits, not 6 decimals (the second review: a Darcy-Weisbach roughness in
+        # metres is about 1e-6 for plastic pipe, so 6 decimals made 0.0015 mm and 0.0024 mm one value)
+        own = sorted({float(f"{v:.6g}") for v in roughness})
+        uniform = len(own) == 1
+        rep.flags["c_values"], rep.flags["uniform_c"] = len(own), uniform
+        but = (f" (the export's {left_out} connector pipe{'s' if left_out != 1 else ''} left out)" if left_out else "")
+        if uniform:
+            what = (f"one C value: every pipe has C {own[0]:g}{but}, so the factor would scale every wall rate alike "
+                    f"and cannot be told from the wall rate itself" if headloss != "D-W" else
+                    f"one roughness value: every pipe has the Darcy-Weisbach roughness {own[0] * 1000:g} mm in your "
+                    f"file{but}, so "
+                    f"the C values of the converted copy ({converted[0]:g} to {converted[-1]:g}) differ only by each "
+                    f"pipe's diameter and velocity, not by its age, and the factor would read them as age")
+            if grid_for(disinfectant, True) == "full_fixed_gamma":
+                fixed_runs = math.prod(len(a) for a in GRIDS["full_fixed_gamma"])
+                held = f"it is held at 0 (the free-chlorine grid with the factor held at 0 has {fixed_runs} runs)"
+            else:
+                held = ("the chloramine grid still varies it (a chloramine grid with the factor held at 0 is not built "
+                        "yet), so its calibrated value means nothing for this file and the app shows it as not "
+                        "identifiable")
+            rep.add("Old-pipe factor", f"not identifiable from {what}; {held}", DERIVED)
+        elif headloss == "D-W" and converted:
+            rep.add("Old-pipe factor", f"learned from the {len(converted)} C values the conversion gives "
+                                       f"({converted[0]:g} to {converted[-1]:g}), from your file's {len(own)} "
+                                       f"roughness values{but}", DERIVED)
+        elif own:
+            rep.add("Old-pipe factor", f"learned from your file's {len(own)} C values ({own[0]:g} to "
+                                       f"{own[-1]:g}){but}", FROM_FILE)
+        try:
+            secs = _timed_member_run(final_path, 0.0 if uniform else 1.0)
+        except Exception as e:  # noqa: BLE001
+            msg = str(e).replace(work, "")
+            rep.blocking.append(f"EPANET could not run the 7-day simulation that every grid member is ({type(e).__name__}: "
+                                f"{msg[:200]}). Open the model in EPANET or the modelling package, fix what it reports, "
+                                f"and export it again.")
+            return False, None
+    rep.run_cost = run_cost(n_junctions, disinfectant, uniform, secs)
+    c = rep.run_cost
+    est = c["estimate_s"]
+    rep.add(RUN_COST_ROW, f"{c['runs_per_dose']} EPANET runs per dose (the {c['grid']} grid), once per file: about "
+                          + (f"{max(1, round(est)):d} s" if est < 60 else f"{c['minutes']:g} min")
+                          + f" here, estimated as {c['runs_per_dose']} times one 7-day run ({c['seconds_per_run']:.2f} s) "
+                          f"over an assumed parallel speedup of {EFFECTIVE_SPEEDUP:g}. The real speedup grows with the "
+                          f"model's size, because starting the workers takes a fixed time: a small model's grid takes "
+                          f"longer than this estimate, a large one's less. A grid file of about {c['grid_file_mb']:g} MB "
+                          f"and up to "
+                          f"{c['temp_files_mb']:g} MB of temporary files while it runs", DERIVED)
+    if c["large"]:
+        rep.warnings.append(f"{LARGE_WARNING_START} {n_junctions} junctions, more than {LARGE_JUNCTIONS}. The grid is "
+                            f"{c['runs_per_dose']} runs and a file of about {c['grid_file_mb']:g} MB (the run cost row "
+                            f"has the time), so building it needs an explicit confirm (a checkbox in the app's readiness "
+                            f"report, or --allow-large in the pilot). The model is not skeletonized: trimming branches would "
+                            f"delete the dead ends, where residuals are lowest.")
     rep.add(TEST_RUN_ROW, "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) "
-                          "without an error; the full runs are longer and come next", DERIVED)
-    return True
+                          "without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+            DERIVED)
+    return True, replacement
 
 
 # ----------------------------------------------------------------------------- command line

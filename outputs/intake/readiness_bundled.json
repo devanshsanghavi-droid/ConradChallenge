@@ -1,0 +1,1146 @@
+{
+ "about": "importers.prepare_inp on the six networks WNTR bundles, as a record (the app never prepares the bundled examples). Run times and the worker count are left out; they vary by run and machine. Written by python -m residualmap.intake_exp bundled.",
+ "networks": {
+  "Net1": {
+   "same_file": true,
+   "ok": true,
+   "blocking": [],
+   "fixes": [],
+   "warnings": [],
+   "run_cost": {
+    "grid": "full_fixed_gamma",
+    "runs_per_dose": 225,
+    "grid_file_mb": 0.2,
+    "junctions": 9,
+    "large": false
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 1.0,
+      "tank": 1.0,
+      "wall": 1.0
+     },
+     "orders_fixed": {},
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 0.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [],
+    "pressure_valves": {},
+    "zero_elevation_junctions": [],
+    "zero_elevation_flagged": false,
+    "constant_elevation": false,
+    "elevations_needed_at": 0,
+    "coordinates": {
+     "status": "schematic",
+     "units": "unknown",
+     "pipes_measured": 12,
+     "ratio_p5": 0.0082,
+     "ratio_median": 0.0155,
+     "ratio_p95": 0.1579,
+     "spread": 19.17
+    },
+    "sources_overridden": [],
+    "booster_sources": [],
+    "entry_points": [
+     "9"
+    ],
+    "pumps_without_controls": [],
+    "controls": 2,
+    "rules": 0,
+    "patterns": 1,
+    "zero_total_demand": false,
+    "parts": [
+     11
+    ],
+    "connector_pipes": 0,
+    "connector_tags": 0,
+    "c_values": 1,
+    "uniform_c": true
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "9",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "12",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "11 of 11 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "reservoirs: 9",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "0 h (00:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "no pressure-control valves, pressure-based controls or emitters: in this demand-driven run the junction elevations change the pressures, not the flows",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "schematic: the drawn pipe lengths are not in proportion to the lengths in the file (95th over 5th percentile of their ratio 19.17, above 1.5), so tap mapping by coordinates, when it comes (planned), will not be offered for this file; use junction IDs",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "none: the dose you set enters at every entry point",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "1 pump; 2 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "1 time pattern",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "not identifiable from one C value: every pipe has C 100, so the factor would scale every wall rate alike and cannot be told from the wall rate itself; it is held at 0 (the free-chlorine grid with the factor held at 0 has 225 runs)",
+     "source": "derived"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  },
+  "Net2": {
+   "same_file": true,
+   "ok": true,
+   "blocking": [],
+   "fixes": [],
+   "warnings": [
+    "The model starts at 08:00 (START CLOCKTIME), so its hour 0 is 08:00, not midnight. Until clock time is converted (planned), every hour in the app and the pilot is a model hour: the map's hours, the worst hour, the route's hours, and the hours of your samples, which are read as model hours too. Add 8 h to a model hour for the time of day, and take 8 h off a sample's time of day before entering it.",
+    "3 patterns longer than a day and not a week (1: 55 h, 2: 55 h, 3: 55 h): EPANET repeats each one over its own length, so the scored day (the last of the 7-day run) is not a repeat of one daily cycle.",
+    "The file's own source at 1 is overridden: the tool doses every entry point with the dose you set."
+   ],
+   "run_cost": {
+    "grid": "full",
+    "runs_per_dose": 675,
+    "grid_file_mb": 2.3,
+    "junctions": 35,
+    "large": false
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 1.0,
+      "tank": 1.0,
+      "wall": 1.0
+     },
+     "orders_fixed": {},
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 8.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [
+     [
+      "1",
+      55.0
+     ],
+     [
+      "2",
+      55.0
+     ],
+     [
+      "3",
+      55.0
+     ]
+    ],
+    "pressure_valves": {},
+    "zero_elevation_junctions": [],
+    "zero_elevation_flagged": false,
+    "constant_elevation": false,
+    "elevations_needed_at": 0,
+    "coordinates": {
+     "status": "schematic",
+     "units": "unknown",
+     "pipes_measured": 40,
+     "ratio_p5": 0.0163,
+     "ratio_median": 0.0227,
+     "ratio_p95": 0.0381,
+     "spread": 2.33
+    },
+    "sources_overridden": [
+     "1"
+    ],
+    "booster_sources": [],
+    "entry_points": [
+     "1"
+    ],
+    "pumps_without_controls": [],
+    "controls": 0,
+    "rules": 0,
+    "patterns": 3,
+    "zero_total_demand": false,
+    "parts": [
+     36
+    ],
+    "connector_pipes": 0,
+    "connector_tags": 0,
+    "c_values": 2,
+    "uniform_c": false
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "35",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "40",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "36 of 36 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "junctions with a negative demand (inflows): 1",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "8 h (08:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "no pressure-control valves, pressure-based controls or emitters: in this demand-driven run the junction elevations change the pressures, not the flows",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "schematic: the drawn pipe lengths are not in proportion to the lengths in the file (95th over 5th percentile of their ratio 2.33, above 1.5), so tap mapping by coordinates, when it comes (planned), will not be offered for this file; use junction IDs",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "at 1, an entry point: replaced by the dose you set",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "0 pumps; 0 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "3 time patterns",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "learned from your file's 2 C values (100 to 140)",
+     "source": "from your file"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  },
+  "Net3": {
+   "same_file": true,
+   "ok": true,
+   "blocking": [],
+   "fixes": [],
+   "warnings": [
+    "2 entry points (River, Lake): every one is dosed at the same value, the dose you set. If they carry different residuals, the map is off near them; a residual per inlet is planned."
+   ],
+   "run_cost": {
+    "grid": "full",
+    "runs_per_dose": 675,
+    "grid_file_mb": 6.0,
+    "junctions": 92,
+    "large": false
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 1.0,
+      "tank": 1.0,
+      "wall": 1.0
+     },
+     "orders_fixed": {},
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 0.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [],
+    "pressure_valves": {},
+    "zero_elevation_junctions": [
+     "60",
+     "601",
+     "61",
+     "120",
+     "261",
+     "263",
+     "265",
+     "269"
+    ],
+    "zero_elevation_flagged": false,
+    "constant_elevation": false,
+    "elevations_needed_at": 0,
+    "coordinates": {
+     "status": "schematic",
+     "units": "unknown",
+     "pipes_measured": 117,
+     "ratio_p5": 0.0028,
+     "ratio_median": 0.0045,
+     "ratio_p95": 0.0189,
+     "spread": 6.71
+    },
+    "sources_overridden": [],
+    "booster_sources": [],
+    "entry_points": [
+     "River",
+     "Lake"
+    ],
+    "pumps_without_controls": [],
+    "controls": 18,
+    "rules": 0,
+    "patterns": 5,
+    "zero_total_demand": false,
+    "parts": [
+     97
+    ],
+    "connector_pipes": 0,
+    "connector_tags": 0,
+    "c_values": 5,
+    "uniform_c": false
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "92",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "2",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "3",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "117",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "2",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "97 of 97 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "reservoirs: River, Lake",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "0 h (00:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "no pressure-control valves, pressure-based controls or emitters: in this demand-driven run the junction elevations change the pressures, not the flows",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "schematic: the drawn pipe lengths are not in proportion to the lengths in the file (95th over 5th percentile of their ratio 6.71, above 1.5), so tap mapping by coordinates, when it comes (planned), will not be offered for this file; use junction IDs",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "none: the dose you set enters at every entry point",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "2 pumps; 18 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "5 time patterns",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "learned from your file's 5 C values (110 to 199)",
+     "source": "from your file"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  },
+  "Net6": {
+   "same_file": false,
+   "ok": true,
+   "blocking": [],
+   "fixes": [
+    "Set the reaction order to 1, as the decay model assumes (first order), where the file had bulk 0.0 and tank 0.0 and wall 0. An order of 0 is another law (a fixed amount lost per day), so the decay rates would not mean what they say, and the bulk rate can have no effect at all."
+   ],
+   "warnings": [
+    "3 junctions at elevation 0 in a model with pressure-control valves: JUNCTION-3215, JUNCTION-3216, JUNCTION-3322. If a 0 means 'not surveyed', the pressure there is wrong, and near a valve or a pressure-based control so are the flows. In a test on the public model ky10 (its 5 PRVs), setting every junction to one elevation moved the water age by more than 2 h at 90 of 920 junctions, by up to 47.4 h (outputs/intake/elevation_prv_ky10.json). Check these elevations in the modelling package.",
+    "Pumps but no controls: 1 of 61 pumps has no control, rule or speed pattern (open all the time: PUMP-3889), so it stays as the file starts it for all 7 days. If the real pumps cycle, the water age and the tanks' chlorine are wrong: export the model with its controls.",
+    "Large model: 3323 junctions, more than 3000. The grid is 675 runs and a file of about 215.3 MB (the run cost row has the time), so building it needs an explicit confirm (a checkbox in the app's readiness report, or --allow-large in the pilot). The model is not skeletonized: trimming branches would delete the dead ends, where residuals are lowest."
+   ],
+   "run_cost": {
+    "grid": "full",
+    "runs_per_dose": 675,
+    "grid_file_mb": 215.3,
+    "junctions": 3323,
+    "large": true
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 0.0,
+      "tank": 0.0,
+      "wall": 0.0
+     },
+     "orders_fixed": {
+      "bulk": "0.0",
+      "tank": "0.0",
+      "wall": "0"
+     },
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 0.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [],
+    "pressure_valves": {
+     "PRV": 2
+    },
+    "zero_elevation_junctions": [
+     "JUNCTION-3215",
+     "JUNCTION-3216",
+     "JUNCTION-3322"
+    ],
+    "zero_elevation_flagged": true,
+    "constant_elevation": false,
+    "elevations_needed_at": 4,
+    "coordinates": {
+     "status": "schematic",
+     "units": "unknown",
+     "pipes_measured": 3829,
+     "ratio_p5": 0.0036,
+     "ratio_median": 0.0143,
+     "ratio_p95": 0.0466,
+     "spread": 13.03
+    },
+    "sources_overridden": [],
+    "booster_sources": [],
+    "entry_points": [
+     "RESERVOIR-3323"
+    ],
+    "pumps_without_controls": [
+     "PUMP-3889"
+    ],
+    "controls": 124,
+    "rules": 0,
+    "patterns": 3,
+    "zero_total_demand": false,
+    "parts": [
+     3356
+    ],
+    "connector_pipes": 1,
+    "connector_tags": 0,
+    "c_values": 12,
+    "uniform_c": false
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "3323",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "32",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "3829",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "61",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "2",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "3356 of 3356 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "reservoirs: RESERVOIR-3323",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "the file has bulk 0.0, tank 0.0, wall 0; the copy uses 1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "derived"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "0 h (00:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "2 pressure-control valves (2 PRV): the elevations change the flows here; real elevations are needed at the valves and downstream of them; 4 junctions sit on either side of a valve, none of them at elevation 0",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "schematic: the drawn pipe lengths are not in proportion to the lengths in the file (95th over 5th percentile of their ratio 13.03, above 1.5), so tap mapping by coordinates, when it comes (planned), will not be offered for this file; use junction IDs",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "none: the dose you set enters at every entry point",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "61 pumps; 124 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "3 time patterns",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "learned from your file's 12 C values (70 to 199)",
+     "source": "from your file"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  },
+  "ky4": {
+   "same_file": true,
+   "ok": true,
+   "blocking": [],
+   "fixes": [],
+   "warnings": [
+    "Pumps but no controls: 1 of 2 pumps has no control, rule or speed pattern (open all the time: ~@Pump-2), so it stays as the file starts it for all 7 days. If the real pumps cycle, the water age and the tanks' chlorine are wrong: export the model with its controls."
+   ],
+   "run_cost": {
+    "grid": "full",
+    "runs_per_dose": 675,
+    "grid_file_mb": 62.1,
+    "junctions": 959,
+    "large": false
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 1.0,
+      "tank": 1.0,
+      "wall": 1.0
+     },
+     "orders_fixed": {},
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 0.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [],
+    "pressure_valves": {},
+    "zero_elevation_junctions": [],
+    "zero_elevation_flagged": false,
+    "constant_elevation": false,
+    "elevations_needed_at": 0,
+    "coordinates": {
+     "status": "to scale",
+     "units": "feet",
+     "pipes_measured": 1156,
+     "ratio_p5": 3.272,
+     "ratio_median": 3.2809,
+     "ratio_p95": 3.2909,
+     "spread": 1.01
+    },
+    "sources_overridden": [],
+    "booster_sources": [],
+    "entry_points": [
+     "R-1"
+    ],
+    "pumps_without_controls": [
+     "~@Pump-2"
+    ],
+    "controls": 2,
+    "rules": 0,
+    "patterns": 3,
+    "zero_total_demand": false,
+    "parts": [
+     964
+    ],
+    "connector_pipes": 0,
+    "connector_tags": 0,
+    "c_values": 2,
+    "uniform_c": false
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "959",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "1",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "4",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "1156",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "2",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "0",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "964 of 964 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "reservoirs: R-1",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "0 h (00:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "no pressure-control valves, pressure-based controls or emitters: in this demand-driven run the junction elevations change the pressures, not the flows",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "to scale, in feet (median drawn length 3.2809 per metre of declared length; 95th over 5th percentile 1.01)",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "none: the dose you set enters at every entry point",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "2 pumps; 2 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "3 time patterns",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "learned from your file's 2 C values (140 to 150)",
+     "source": "from your file"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  },
+  "ky10": {
+   "same_file": false,
+   "ok": true,
+   "blocking": [],
+   "fixes": [
+    "Set the reaction order to 1, as the decay model assumes (first order), where the file had bulk 0 and tank 0 and wall 0. An order of 0 is another law (a fixed amount lost per day), so the decay rates would not mean what they say, and the bulk rate can have no effect at all."
+   ],
+   "warnings": [
+    "1 junction at elevation 0 in a model with pressure-control valves: J-16. If a 0 means 'not surveyed', the pressure there is wrong, and near a valve or a pressure-based control so are the flows. In a test on the public model ky10 (its 5 PRVs), setting every junction to one elevation moved the water age by more than 2 h at 90 of 920 junctions, by up to 47.4 h (outputs/intake/elevation_prv_ky10.json). Check these elevations in the modelling package.",
+    "2 entry points (R-1, R-2): every one is dosed at the same value, the dose you set. If they carry different residuals, the map is off near them; a residual per inlet is planned.",
+    "Pumps but no controls: 10 of 13 pumps have no control, rule or speed pattern (open all the time: ~@Pump-1, ~@Pump-10, ~@Pump-11, ~@Pump-12, ~@Pump-2, ~@Pump-3 and 4 more), so each stays as the file starts it for all 7 days. If the real pumps cycle, the water age and the tanks' chlorine are wrong: export the model with its controls."
+   ],
+   "run_cost": {
+    "grid": "full",
+    "runs_per_dose": 675,
+    "grid_file_mb": 59.6,
+    "junctions": 920,
+    "large": false
+   },
+   "flags": {
+    "reactions": {
+     "orders": {
+      "bulk": 0.0,
+      "tank": 0.0,
+      "wall": 0.0
+     },
+     "orders_fixed": {
+      "bulk": "0",
+      "tank": "0",
+      "wall": "0"
+     },
+     "bulk_lines": 0,
+     "tank_lines": 0,
+     "wall_lines": 0,
+     "limiting_potential": 0.0,
+     "limiting_potential_fixed": null,
+     "roughness_correlation": 0.0
+    },
+    "headloss": "H-W",
+    "start_clock_h": 0.0,
+    "weekly_patterns": [],
+    "multi_day_patterns": [],
+    "pressure_valves": {
+     "PRV": 5
+    },
+    "zero_elevation_junctions": [
+     "J-16"
+    ],
+    "zero_elevation_flagged": true,
+    "constant_elevation": false,
+    "elevations_needed_at": 10,
+    "coordinates": {
+     "status": "to scale",
+     "units": "feet",
+     "pipes_measured": 1043,
+     "ratio_p5": 3.2702,
+     "ratio_median": 3.2808,
+     "ratio_p95": 3.2943,
+     "spread": 1.01
+    },
+    "sources_overridden": [],
+    "booster_sources": [],
+    "entry_points": [
+     "R-1",
+     "R-2"
+    ],
+    "pumps_without_controls": [
+     "~@Pump-1",
+     "~@Pump-10",
+     "~@Pump-11",
+     "~@Pump-12",
+     "~@Pump-2",
+     "~@Pump-3",
+     "~@Pump-4",
+     "~@Pump-5",
+     "~@Pump-6",
+     "~@Pump-7"
+    ],
+    "controls": 6,
+    "rules": 0,
+    "patterns": 4,
+    "zero_total_demand": false,
+    "parts": [
+     935
+    ],
+    "connector_pipes": 0,
+    "connector_tags": 0,
+    "c_values": 3,
+    "uniform_c": false
+   },
+   "rows": [
+    {
+     "item": "Junctions",
+     "value": "920",
+     "source": "from your file"
+    },
+    {
+     "item": "Reservoirs",
+     "value": "2",
+     "source": "from your file"
+    },
+    {
+     "item": "Tanks",
+     "value": "13",
+     "source": "from your file"
+    },
+    {
+     "item": "Pipes",
+     "value": "1043",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps",
+     "value": "13",
+     "source": "from your file"
+    },
+    {
+     "item": "Valves",
+     "value": "5",
+     "source": "from your file"
+    },
+    {
+     "item": "Flow units",
+     "value": "GPM",
+     "source": "from your file"
+    },
+    {
+     "item": "Node coordinates",
+     "value": "935 of 935 nodes",
+     "source": "from your file"
+    },
+    {
+     "item": "Where water enters",
+     "value": "reservoirs: R-1, R-2",
+     "source": "derived"
+    },
+    {
+     "item": "Disinfectant",
+     "value": "free chlorine (your setting; every entry point gets the same dose)",
+     "source": "assumed"
+    },
+    {
+     "item": "Reaction orders",
+     "value": "the file has bulk 0, tank 0, wall 0; the copy uses 1 (first order) for bulk, wall and tank, as the decay model assumes",
+     "source": "derived"
+    },
+    {
+     "item": "Per-pipe and per-tank rates",
+     "value": "none: one bulk rate for every pipe and tank, as the decay model assumes",
+     "source": "from your file"
+    },
+    {
+     "item": "Headloss formula",
+     "value": "H-W (Hazen-Williams), as the decay model assumes: the wall decay and the roughness axis read each pipe's roughness as a C",
+     "source": "from your file"
+    },
+    {
+     "item": "Start clock time",
+     "value": "0 h (00:00): the model's hour 0 is this time of day; recorded, the file is not changed",
+     "source": "from your file"
+    },
+    {
+     "item": "Elevations",
+     "value": "5 pressure-control valves (5 PRV): the elevations change the flows here; real elevations are needed at the valves and downstream of them; 10 junctions sit on either side of a valve, none of them at elevation 0",
+     "source": "from your file"
+    },
+    {
+     "item": "Coordinate scale",
+     "value": "to scale, in feet (median drawn length 3.2808 per metre of declared length; 95th over 5th percentile 1.01)",
+     "source": "derived"
+    },
+    {
+     "item": "Sources in the file",
+     "value": "none: the dose you set enters at every entry point",
+     "source": "from your file"
+    },
+    {
+     "item": "Pumps and controls",
+     "value": "13 pumps; 6 controls and 0 rules",
+     "source": "from your file"
+    },
+    {
+     "item": "Demand",
+     "value": "4 time patterns",
+     "source": "from your file"
+    },
+    {
+     "item": "Connected parts",
+     "value": "one connected network",
+     "source": "derived"
+    },
+    {
+     "item": "Old-pipe factor",
+     "value": "learned from your file's 3 C values (100 to 150)",
+     "source": "from your file"
+    },
+    {
+     "item": "Test run",
+     "value": "EPANET ran the first hour (hydraulics and water age, set up as the app's first run) without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
+     "source": "derived"
+    }
+   ]
+  }
+ }
+}

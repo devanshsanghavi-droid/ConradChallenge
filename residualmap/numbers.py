@@ -60,6 +60,7 @@ JOURNAL_START = "## Iteration 4, chemistry (tasks 8 to 14)"
 IT4_DIRS = ("outputs/chem/", "outputs/chem_2ra/", "outputs/chloramine/")
 IT5_DIRS = ("outputs/intake/",)                       # iteration 5 (task 15 on)
 SELF_REPORT = "outputs/chem/checks_report.json"      # the saved checks' report: its numbers-scan entry is left out
+PATH_OVERRIDE: dict[str, str] = {}   # a file to read in place of one under outputs/ (checks.numbers_scan_settles only)
 IT4_TASK = re.compile(r"\b(?:tasks?|Task) (?:8|9|10b?|11|12|13|14)\b|\biteration 4\b|\bIteration 4\b")
 IT5_TASK = re.compile(r"\b(?:tasks?|Task) (?:15b?|16[bc]?|17|18|19|20|21)\b|\b[Ii]teration 5\b")
 
@@ -107,6 +108,14 @@ _FA = ("false_alarms_no_bar", 0)                          # Net3, 2ra, random, 8
 T15, L15 = "Task 15", "Honest limitations (iteration-5"      # iteration 5's sections (task 15 on)
 _I15 = "outputs/intake/task15_import.json"
 _T15R = ("runs", "post_task15_review")          # the rerun on the final tree, after the review
+T15B = "Task 15b"                                # task 15b's journal section (the T15 prefix finds task 15's first)
+_P15B = "outputs/intake/task15b_physics.json"
+_EV15B = "outputs/intake/elevation_prv_ky10.json"
+_TM15B = "outputs/intake/run_cost_timing.json"
+_RB15B = "outputs/intake/readiness_bundled.json"
+_N2P = ("networks", "Net2", "flags", "multi_day_patterns", 0, 1)   # the length of Net2's first pattern, in hours
+_T15BR = ("runs", "post_task15b_review")        # the rerun on the final tree, after task 15b's review
+_T15BR2 = ("runs", "post_task15b_review2")      # the same, after task 15b's second review
 
 
 def _age(net: str, *keys) -> tuple:
@@ -362,6 +371,91 @@ REGISTRY: list[tuple] = [
     ("journal", T15, "flagged, {} of 36 found, 1 false alarm", (_BR, _T15R + ("app_default_demo", "found")), "d"),
     ("journal", T15, "36 of {} found, 1 false alarm", (_BR, _T15R + ("app_default_demo", "unsampled_violations")), "d"),
     ("journal", T15, "36 of 36 found, {} false alarm", (_BR, _T15R + ("app_default_demo", "false_alarms")), "d"),
+    # task 15b: the numbers table, the run cost's missed bar (item 10) and the README's task-15b bullet
+    ("journal", T15B, "| {} and 0.5748 | the same (order 0) |", (_P15B, ("reaction_orders", "ky10", "mean_original", "0.2")), ".4f"),
+    ("journal", T15B, "| 0.5748 and {} | the same (order 0) |", (_P15B, ("reaction_orders", "ky10", "mean_original", "0.8")), ".4f"),
+    ("journal", T15B, "| {} and 0.4561 | different |", (_P15B, ("reaction_orders", "ky10", "mean_fixed", "0.2")), ".4f"),
+    ("journal", T15B, "| 0.5714 and {} | different |", (_P15B, ("reaction_orders", "ky10", "mean_fixed", "0.8")), ".4f"),
+    ("journal", T15B, "largest difference {} over 2208 junction-hours", (_P15B, ("bulk_lines", "max_diff_prepared_vs_net3")), ".1f"),
+    ("journal", T15B, "largest difference 0.0 over {} junction-hours", (_P15B, ("bulk_lines", "junction_hours")), "d"),
+    ("journal", T15B, "the file as it came {} |", (_P15B, ("bulk_lines", "max_diff_original_vs_net3")), ".4f"),
+    ("journal", T15B, "| median {} h, 95th percentile 1.1313 h |", (_P15B, ("headloss", "dw", "gate", "age_change_median_h")), ".4f"),
+    ("journal", T15B, "95th percentile {} h | at most 1 h and 4 h |", (_P15B, ("headloss", "dw", "gate", "age_change_p95_h")), ".4f"),
+    ("journal", T15B, "| {} of 114, largest error 0.331 |", (_P15B, ("headloss", "dw", "within_tolerance")), "d"),
+    ("journal", T15B, "| 114 of {}, largest error 0.331 |", (_P15B, ("headloss", "dw", "pipes_scored")), "d"),
+    ("journal", T15B, "largest error {} | all |", (_P15B, ("headloss", "dw", "max_c_error")), ".3f"),
+    ("journal", T15B, "| 153.76, {} below; reported, not scored |", (_P15B, ("headloss", "dw", "max_below_unmatched")), ".2f"),
+    ("journal", T15B, "| {} converted C values; fixed-gamma grid |", (_P15B, ("headloss", "dw_uniform", "converted_c_values")), "d"),
+    ("journal", T15B, "| {} of 920 junctions move more than 2 h", (_EV15B, ("junctions_moved",)), "d"),
+    ("journal", T15B, "| 90 of {} junctions move more than 2 h", (_EV15B, ("junctions",)), "d"),
+    ("journal", T15B, "up to {} h | reproduces |", (_EV15B, ("max_change_h",)), ".2f"),
+    ("journal", T15B, "| Net3 {}, Net2 2.33, Net6 13.03 schematic", (_P15B, ("coordinates", "Net3", "spread")), ".2f"),
+    ("journal", T15B, "Net3 6.71, Net2 {}, Net6 13.03 schematic", (_P15B, ("coordinates", "Net2", "spread")), ".2f"),
+    ("journal", T15B, "Net2 2.33, Net6 {} schematic", (_P15B, ("coordinates", "Net6", "spread")), ".2f"),
+    ("journal", T15B, "| {} of 225 | all |", (_P15B, ("uniform_c", "members_bit_identical_to_full_gamma0")), "d"),
+    ("journal", T15B, "| 225 of {} | all |", (_P15B, ("uniform_c", "full_gamma0_members")), "d"),
+    ("journal", T15B, "chloramine grid ({} MB, plus 1089.7 MB", (_P15B, ("run_cost", "mock", "grid_file_mb")), ".1f"),
+    ("journal", T15B, "plus {} MB of temporary files on 11 workers", (_P15B, ("run_cost", "mock", "temp_files_mb")), ".1f"),
+    ("journal", T15B, "temporary files on {} workers", (_P15B, ("run_cost", "mock", "workers")), "d"),
+    ("journal", T15B, "measure {} MB on ky4", (_P15B, ("run_cost", "temp_files_one_run", "ky4", "mb")), ".1f"),
+    ("journal", T15B, "{} MB on ky10 and 31.6 MB on Net6", (_P15B, ("run_cost", "temp_files_one_run", "ky10", "mb")), ".1f"),
+    ("journal", T15B, "and {} MB on Net6", (_P15B, ("run_cost", "temp_files_one_run", "Net6", "mb")), ".1f"),
+    ("journal", T15B, "| **{} (missed)** |", (_TM15B, ("scored_run", "ratio")), ".2f"),
+    ("journal", T15B, "the estimate was {} s (one run of 0.032 s", (_TM15B, ("scored_run", "estimate_s")), ".2f"),
+    ("journal", T15B, "(one run of {} s, times 675, over 4)", (_TM15B, ("scored_run", "seconds_per_run")), ".3f"),
+    ("journal", T15B, "the fresh grid took {} s, a ratio of 2.10", (_TM15B, ("scored_run", "fresh_grid_s")), ".2f"),
+    ("journal", T15B, "a ratio of {} (`outputs/intake/run_cost_timing.json`, `scored_run`)", (_TM15B, ("scored_run", "ratio")), ".2f"),
+    ("journal", T15B, "the review's full run gave {};", (_TM15B, ("review_full_run", "ratio")), ".3f"),
+    ("journal", T15B, "five repeats on the final tree gave {} to 1.838", (_TM15B, ("net3_repeats_summary", "ratio_min")), ".3f"),
+    ("journal", T15B, "on the final tree gave 1.437 to {},", (_TM15B, ("net3_repeats_summary", "ratio_max")), ".3f"),
+    ("journal", T15B, "an effective speedup of {} to 2.78 on Net3", (_TM15B, ("net3_repeats_summary", "effective_speedup_min")), ".2f"),
+    ("journal", T15B, "an effective speedup of 2.18 to {} on Net3", (_TM15B, ("net3_repeats_summary", "effective_speedup_max")), ".2f"),
+    ("journal", T15B, "ky10's grid took {} s against an estimate of 303.92 s", (_TM15B, ("ky10", "fresh_grid_s")), ".2f"),
+    ("journal", T15B, "against an estimate of {} s, a ratio of 0.641", (_TM15B, ("ky10", "estimate_s")), ".2f"),
+    ("journal", T15B, "s, a ratio of {} and a speedup of 6.24", (_TM15B, ("ky10", "ratio")), ".3f"),
+    ("journal", T15B, "and a speedup of {}.", (_TM15B, ("ky10", "effective_speedup")), ".2f"),
+    ("journal", T15B, "| {}; 1.437 to 1.838; 0.641 |", (_TM15B, ("review_full_run", "ratio")), ".3f"),
+    ("journal", T15B, "| 1.783; {} to 1.838; 0.641 |", (_TM15B, ("net3_repeats_summary", "ratio_min")), ".3f"),
+    ("journal", T15B, "| 1.783; 1.437 to {}; 0.641 |", (_TM15B, ("net3_repeats_summary", "ratio_max")), ".3f"),
+    ("journal", T15B, "| 1.783; 1.437 to 1.838; {} |", (_TM15B, ("ky10", "ratio")), ".3f"),
+    ("journal", T15B, "| {} of 50 files byte-identical;", (_BR, _T15BR + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T15B, "| 50 of {} files byte-identical;", (_BR, _T15BR + ("vs_committed", "n_files")), "d"),
+    ("journal", T15B, "write all {} files byte-identical", (_BR, _T15BR + ("vs_committed", "n_files")), "d"),
+    ("journal", T15B, "default demo {} of 92 flagged", (_BR, _T15BR + ("app_default_demo", "flagged")), "d"),
+    ("journal", T15B, "flagged, {} of 36 found, 1 false alarm", (_BR, _T15BR + ("app_default_demo", "found")), "d"),
+    ("journal", T15B, "36 of {} found, 1 false alarm", (_BR, _T15BR + ("app_default_demo", "unsampled_violations")), "d"),
+    ("journal", T15B, "36 of 36 found, {} false alarm", (_BR, _T15BR + ("app_default_demo", "false_alarms")), "d"),
+    ("journal", T15B, "its three demand patterns are {} h long", (_RB15B, _N2P), "g"),
+    # task 15b's second review: the copied timing records, the encoding fuzz and the review's one-ID file
+    ("journal", T15B, "| {} of 50 files byte-identical again;", (_BR, _T15BR2 + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T15B, "| 50 of {} files byte-identical again;", (_BR, _T15BR2 + ("vs_committed", "n_files")), "d"),
+    ("journal", T15B, "again; default demo {} of 92 flagged", (_BR, _T15BR2 + ("app_default_demo", "flagged")), "d"),
+    ("journal", T15B, "flagged, {} of 36 found, 1 false alarm again", (_BR, _T15BR2 + ("app_default_demo", "found")), "d"),
+    ("journal", T15B, "36 of {} found, 1 false alarm again", (_BR, _T15BR2 + ("app_default_demo", "unsampled_violations")), "d"),
+    ("journal", T15B, "36 of 36 found, {} false alarm again", (_BR, _T15BR2 + ("app_default_demo", "false_alarms")), "d"),
+    ("journal", T15B, "measured {} and 4.9, copied since the second review", (_TM15B, ("feasibility_review", "Net3", "effective_speedup")), ".1f"),
+    ("journal", T15B, "measured 2.3 and {}, copied since the second review", (_TM15B, ("feasibility_review", "ky10", "effective_speedup")), ".1f"),
+    ("journal", T15B, "({} to 11.31 s across both build logs", (_TM15B, ("standalone_builds", "fresh_grid_s_min")), ".2f"),
+    ("journal", T15B, "(9.35 to {} s across both build logs", (_TM15B, ("standalone_builds", "fresh_grid_s_max")), ".2f"),
+    ("journal", T15B, "(seed {}: 150 files in cp1252 throughout", (_P15B, ("leftovers", "encoding_fuzz", "seed")), "d"),
+    ("journal", T15B, "(seed 11: {} files in cp1252 throughout", (_P15B, ("leftovers", "encoding_fuzz", "files_per_kind")), "d"),
+    ("journal", T15B, "against {} and 12 with item 13's count", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed_first_fix_rule", "cp1252_throughout")), "d"),
+    ("journal", T15B, "against 1 and {} with item 13's count", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed_first_fix_rule", "utf8_with_stray")), "d"),
+    ("journal", T15B, "and {} and 150 with task 15's decoding", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed_task15_rule", "cp1252_throughout")), "d"),
+    ("journal", T15B, "and 0 and {} with task 15's decoding", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed_task15_rule", "utf8_with_stray")), "d"),
+    ("journal", T15B, "| {} and 0 (item 13's count: 1 and 12; task 15: 0 and 150) |", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed", "cp1252_throughout")), "d"),
+    ("journal", T15B, "| 0 and {} (item 13's count: 1 and 12; task 15: 0 and 150) |", (_P15B, ("leftovers", "encoding_fuzz", "ids_changed", "utf8_with_stray")), "d"),
+    ("journal", T15B, "({} valid characters against 1 stray byte)", (_P15B, ("leftovers", "encoding_controls", "net3_cp1252_one_pair_id.inp", "valid_utf8_chars")), "d"),
+    ("journal", T15B, "(3 valid characters against {} stray byte)", (_P15B, ("leftovers", "encoding_controls", "net3_cp1252_one_pair_id.inp", "bytes_not_utf8")), "d"),
+    ("README", L15, "hours of {} h demand patterns", (_RB15B, _N2P), "g"),
+    ("README", L15, "a median of {} h and a 95th percentile of 1.1313 h", (_P15B, ("headloss", "dw", "gate", "age_change_median_h")), ".4f"),
+    ("README", L15, "a 95th percentile of {} h, and gave 114 of 114", (_P15B, ("headloss", "dw", "gate", "age_change_p95_h")), ".4f"),
+    ("README", L15, "gave {} of 114 matchable pipes", (_P15B, ("headloss", "dw", "within_tolerance")), "d"),
+    ("README", L15, "came back {} below", (_P15B, ("headloss", "dw", "max_below_unmatched")), ".2f"),
+    ("README", L15, "the grid took {} times the estimate in the scored run", (_TM15B, ("scored_run", "ratio")), ".2f"),
+    ("README", L15, "and {} to 1.838 times in five later repeats", (_TM15B, ("net3_repeats_summary", "ratio_min")), ".3f"),
+    ("README", L15, "1.437 to {} times in five later repeats", (_TM15B, ("net3_repeats_summary", "ratio_max")), ".3f"),
+    ("README", L15, "while ky10's took {} times it", (_TM15B, ("ky10", "ratio")), ".3f"),
 ]
 
 
@@ -414,7 +508,7 @@ def file_values(rel: str) -> np.ndarray:
         elif isinstance(x, str):
             from_str(x)
 
-    path = os.path.join(REPO, rel)
+    path = PATH_OVERRIDE.get(rel, os.path.join(REPO, rel))
     if rel.endswith(".json"):
         with open(path) as fh:
             x = json.load(fh)
