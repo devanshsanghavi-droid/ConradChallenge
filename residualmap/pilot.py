@@ -29,6 +29,21 @@ with a plain message; a file with one C value on every pipe is calibrated on the
 factor held at 0, since it cannot be learned from one C value).  A model blocked now that an earlier version accepted
 leaves no private copy behind.
 
+Task 16: the grab log is read by importers.read_grab_log.  Its columns are guessed from the header (date and time, or
+one datetime column; 'Sample Point' or tap_id; 'Free Chlorine (mg/L)' or free_chlorine_mgL), or given with --columns; it
+may be in any encoding, separated by semicolons or tabs with decimal commas, or an Excel workbook (.xlsx); a date that
+reads two ways stops the run with the question unless --date-format says; '<0.02' and 'ND' are listed and not fitted;
+an online analyzer's series keeps one reading a day (--analyzer-hour, default 10:00); and each time of day becomes a
+model hour, the time minus the model's START CLOCKTIME, mod 24 h (minutes truncated, as before), so a file that starts
+at 06:00 reads a 09:00 sample as model hour 3, and the run prints that its outputs' hours are model hours.  A model
+that starts at midnight (the bundled Net3 and ky4, and the committed example logs' runs) gives exactly the rows it gave
+before.  --synthetic logs are model hours already.  After the review of task 16: --columns also takes analyte= and
+unit= (a long-format export), a log with both species runs once --columns names its reading column,
+--keep-every-reading keeps a tap that looks like an analyzer whole, and readings above the measuring range ('>2.2')
+are noted apart from those below detection.  After the final verification: --columns also takes analyte_value=, the
+one analyte whose rows are read, for a long-format export whose analytes do not name the species in words the reader
+knows (a log is refused with that question rather than read whole).
+
 grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
                 or, for a chloraminated system (--disinfectant chloramine), total_chlorine_mgL instead (never both
                 columns: a log that mixes the two species is refused; docs/example_grab_log_total.csv)
@@ -56,7 +71,8 @@ from scipy.stats import norm
 from .chemistry import Chemistry, Warming
 from .chloramine import CA_DOSE_MGL, ca_condition
 from .features import build_features
-from .importers import Readiness, prepare_inp, size_gate, stem as inp_stem
+from .importers import (ANALYZER_HOUR, DATE_ORDERS, Readiness, _clock, clock_label, dropped_lines, prepare_inp,
+                        read_grab_log, shows_clock, size_gate, stem as inp_stem)
 from .simgp import DAY_HOURS, SimGP24, grid_cache_path
 from .simulate import build_scenario, load, net_path, nominal_scenario
 
@@ -110,37 +126,59 @@ def prepare_pilot_inp(inp: str, disinfectant: str = "free_chlorine",
     return dest, rep
 
 
-def load_log(samples_csv: str, taps_csv: str, disinfectant: str = "free_chlorine") -> pd.DataFrame:
-    """Join the grab log to the tap map -> junction, hour, y, month, date.  The log's reading column names its species:
-    free_chlorine_mgL (free chlorine) or total_chlorine_mgL (total chlorine, a chloraminated system).  A log with both
-    columns is refused (one likelihood must never mix species), and so is a log whose species does not match
-    `disinfectant`."""
+def read_log(samples: str, taps: str, disinfectant: str = "free_chlorine", date_format: str | None = None,
+             start_clock_h: float = 0.0, analyzer_hour: float = ANALYZER_HOUR, columns: dict | None = None,
+             thin_analyzers: bool = True):
+    """The grab log and tap map read for the model (iteration 5, task 16: importers.read_grab_log): any encoding,
+    separator, header and date format the reader recognises, CSV or Excel, censored readings kept and listed, online
+    analyzer series thinned, and each time of day converted to a model hour with the file's START CLOCKTIME
+    (start_clock_h; 0, a file that starts at midnight, changes no hour).  Returns the GrabLog; raises ValueError
+    (importers.LogRefused) when the log cannot be read as it is."""
+    with open(samples, "rb") as fh:
+        log_data = fh.read()
+    with open(taps, "rb") as fh:
+        taps_data = fh.read()
+    return read_grab_log(log_data, os.path.basename(samples), taps_data, os.path.basename(taps), disinfectant,
+                         date_format=date_format, mapping=columns, start_clock_h=start_clock_h,
+                         analyzer_hour=analyzer_hour, thin_analyzers=thin_analyzers)
+
+
+def load_log(samples_csv: str, taps_csv: str, disinfectant: str = "free_chlorine", date_format: str | None = None,
+             start_clock_h: float = 0.0, analyzer_hour: float = ANALYZER_HOUR, columns: dict | None = None,
+             quiet: bool = False, thin_analyzers: bool = True) -> pd.DataFrame:
+    """Join the grab log to the tap map -> junction, hour, y, month, date, tap_id (hour a model hour).  The log's
+    reading column names its species: free chlorine (free_chlorine_mgL, 'Free Chlorine (mg/L)') or total chlorine
+    (total_chlorine_mgL, a chloraminated system).  A log with both is refused (one likelihood must never mix species),
+    and so is a log whose species does not match `disinfectant`.  Since task 16 the columns are guessed from the header
+    (or given in columns), the file may be in any encoding, separated by semicolons or tabs with decimal commas, or an
+    Excel workbook; a date that reads two ways needs date_format ('MDY', 'DMY', 'YMD' or a strptime format); readings
+    below detection ('<0.02', 'ND') are listed and not used; and each time of day becomes a model hour with
+    start_clock_h.  The committed example logs give the same rows as before task 16.  Prints what it dropped, censored
+    (below detection and above the measuring range, each under its own words), thinned or warns about (quiet=True:
+    nothing); thin_analyzers=False keeps every reading of a tap that looks like an online analyzer."""
     if disinfectant not in SPECIES_COLUMN:
         raise ValueError(f"disinfectant must be one of {sorted(SPECIES_COLUMN)}")
-    log = pd.read_csv(samples_csv, dtype={"tap_id": str})
-    have = [c for c in SPECIES_COLUMN.values() if c in log.columns]
-    if len(have) > 1:
-        what = ("the free-chlorine model reads free chlorine only: drop or rename the total_chlorine_mgL column"
-                if disinfectant == "free_chlorine" else
-                "the chloramine mode reads total chlorine only: drop or rename the free_chlorine_mgL column")
-        what += " (or, if the log mixes a free-chlorine and a chloraminated system, split it by disinfectant)"
-        raise ValueError(f"the grab log has both {have[0]} and {have[1]}: free and total chlorine are different "
-                         f"measurements and one model never mixes them; {what}")
-    want = SPECIES_COLUMN[disinfectant]
-    if have != [want]:
-        found = have[0] if have else "neither column"
-        raise ValueError(f"--disinfectant {disinfectant} needs a {want} column; the grab log has {found}")
-    taps = pd.read_csv(taps_csv, dtype={"tap_id": str, "junction_id": str})
-    df = log.merge(taps[["tap_id", "junction_id"]], on="tap_id", how="left")
-    missing = df.junction_id.isna()
-    if missing.any():
-        print(f"warning: {int(missing.sum())} samples at taps with no junction in the tap map are dropped: "
-              f"{sorted(df.loc[missing, 'tap_id'].unique())}")
-        df = df[~missing]
-    ts = pd.to_datetime(df.date.astype(str) + " " + df.time.astype(str))
-    return pd.DataFrame({"junction": df.junction_id.astype(str), "hour": ts.dt.hour.astype(int),
-                         "y": df[want].astype(float), "month": ts.dt.to_period("M").astype(str),
-                         "date": ts.dt.date.astype(str), "tap_id": df.tap_id.astype(str)}).reset_index(drop=True)
+    g = read_log(samples_csv, taps_csv, disinfectant, date_format, start_clock_h, analyzer_hour, columns,
+                 thin_analyzers)
+    if not quiet:
+        unknown = sorted({d["tap_id"] for d in g.dropped if d["reason"].endswith("is not in the tap map")})
+        if unknown:     # at most 20 named (the final verification of task 16: a tap map from another system)
+            n = sum(d["reason"].endswith("is not in the tap map") for d in g.dropped)
+            print(f"warning: {n} samples at taps with no junction in the tap map are dropped: {unknown[:20]}"
+                  + (f" and {len(unknown) - 20} more taps" if len(unknown) > 20 else ""))
+        for line in dropped_lines([d for d in g.dropped if not d["reason"].endswith("is not in the tap map")]):
+            print(f"warning: not used: {line}")
+        for kind, words in (("below", "below detection"), ("above", "above the measuring range")):
+            c = g.censored[g.censored.kind == kind] if len(g.censored) else g.censored
+            if len(c):
+                print(f"note: {len(c)} reading{'s' if len(c) != 1 else ''} {words} {'are' if len(c) != 1 else 'is'} "
+                      f"kept and listed, not used in the fit: "
+                      + "; ".join(f"row {r.row} tap {r.tap_id} {r.raw!r}" for r in c.itertuples()))
+        for n_ in g.notes[2:]:
+            print(f"note: {n_}")
+        for w in g.warnings:
+            print(f"warning: {w}")
+    return g.frame
 
 
 def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, rotating: int = 3, seed: int = 0,
@@ -355,6 +393,21 @@ def main():
                                                 "real data, outputs/pilot with --synthetic")
     ap.add_argument("--allow-large", action="store_true", help="build the grid of a model with more than 3,000 junctions "
                                                                "(task 15b: the readiness report gives its run cost)")
+    ap.add_argument("--date-format", default=None,
+                    help="how the log's dates are written, when they read two ways (task 16): MDY (month first, "
+                         "10/03/2026 is October 3), DMY (day first), YMD, or a strptime format such as "
+                         "'%%m/%%d/%%Y %%I:%%M %%p'")
+    ap.add_argument("--analyzer-hour", type=float, default=ANALYZER_HOUR,
+                    help="an online analyzer's series (a tap with 12 or more readings a day, minutes apart, on 2 or "
+                         "more days) keeps one reading per day, the one nearest this clock hour (default 10, for 10:00)")
+    ap.add_argument("--keep-every-reading", action="store_true",
+                    help="keep every reading of a tap that looks like an online analyzer (a sampling study)")
+    ap.add_argument("--columns", default=None,
+                    help="the grab log's columns when the guess is wrong (task 16): 'tap=Sample Point;reading=Total "
+                         "Chlorine (mg/L);date=Sample Date/Time;time=' (an empty time: the time is in the date column); "
+                         "also analyte=<column> and unit=<column> for a log with one row per analyte, and "
+                         "analyte_value=<value> for the analyte whose rows are the reading (a LIMS code such as "
+                         "CHLF)")
     a = ap.parse_args()
     if a.threshold is None:
         a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
@@ -400,7 +453,27 @@ def main():
             ok, msg = size_gate(report.run_cost, "outputs/cache")
             if not ok:
                 sys.exit(f"{a.inp}: {msg}")
-        log, dose = load_log(a.samples, a.taps, a.disinfectant), a.dose
+        cols = None
+        if a.columns:
+            cols = {}
+            for part in a.columns.split(";"):
+                k, _, v = part.partition("=")
+                if k.strip() not in ("tap", "reading", "date", "time", "analyte", "unit", "analyte_value"):
+                    ap.error(f"--columns: {k.strip()!r} is not one of tap, reading, date, time, analyte, unit, "
+                             f"analyte_value")
+                cols[k.strip()] = v.strip() or None
+        start_h = float(report.flags.get("start_clock_h") or 0.0)
+        try:            # task 16: each time of day becomes a model hour with the file's START CLOCKTIME
+            log = load_log(a.samples, a.taps, a.disinfectant, date_format=a.date_format, start_clock_h=start_h,
+                           analyzer_hour=a.analyzer_hour, columns=cols, thin_analyzers=not a.keep_every_reading)
+        except ValueError as e:
+            sys.exit(f"{a.samples}: {e}")
+        if shows_clock(start_h):    # the review of task 16: the outputs' hours are model hours, and the run says so
+            print(f"note: {a.inp} starts at {_clock(start_h)} (START CLOCKTIME): the log's times of day were converted "
+                  f"to model hours, and every hour in the pilot's outputs (predictions and validation files) is a "
+                  f"model hour; model hour 0 is {clock_label(0, start_h)} and model hour 3 is "
+                  f"{clock_label(3, start_h)}.")
+        dose = a.dose
     plant = load_plant(a.plant) if a.plant else None
     grid = "full" if a.synthetic or a.disinfectant == "chloramine" or plant is not None else grid
     preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,

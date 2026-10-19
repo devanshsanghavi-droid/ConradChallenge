@@ -184,7 +184,7 @@
    "blocking": [],
    "fixes": [],
    "warnings": [
-    "The model starts at 08:00 (START CLOCKTIME), so its hour 0 is 08:00, not midnight. Until clock time is converted (planned), every hour in the app and the pilot is a model hour: the map's hours, the worst hour, the route's hours, and the hours of your samples, which are read as model hours too. Add 8 h to a model hour for the time of day, and take 8 h off a sample's time of day before entering it.",
+    "The model starts at 08:00 (START CLOCKTIME), so its hour 0 is 08:00, not midnight. When this file is uploaded to the app (or run with the pilot's --inp), the app and the pilot convert (task 16): a grab log's times of day become model hours (the time minus 8 h, mod 24 h), and the app shows the route's hours, the worst hour, the hour picker and each junction's hour of the daily minimum as times of day. Hours typed into the app's sample table stay model hours: take 8 h off a sample's time of day before typing it. Add 8 h to a model hour for the time of day.",
     "3 patterns longer than a day and not a week (1: 55 h, 2: 55 h, 3: 55 h): EPANET repeats each one over its own length, so the scored day (the last of the 7-day run) is not a repeat of one daily cycle.",
     "The file's own source at 1 is overridden: the tool doses every entry point with the dose you set."
    ],

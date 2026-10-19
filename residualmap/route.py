@@ -31,7 +31,7 @@ def spread_hours(K: int, hours: list[int] = DAY_HOURS) -> list[int]:
 def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0.2,
                repulsion: float = 1.0, length_scale_m: float | None = None,
                exclude: list[str] | None = None, with_age: bool = False,
-               age_initial_share: pd.DataFrame | None = None) -> pd.DataFrame:
+               age_initial_share: pd.DataFrame | None = None, hour_label=None) -> pd.DataFrame:
     """K (junction, hour) pairs from a fitted (or prior) SimGP24.  Returns junction, hour, p_below,
     score and a one-sentence reason per site.
 
@@ -48,7 +48,12 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
     A route asks for K sites but never more than there are junctions left to choose (iteration 5, task 15b): on a
     small network whose junctions are mostly sampled already (Net1's 9 junctions with the app's 8 demo samples) the
     loop used to pick past the last candidate and stop with 'attempt to get argmax of an empty sequence'.  It now
-    returns the sites there are; with K or more candidates (every committed run) nothing changes."""
+    returns the sites there are; with K or more candidates (every committed run) nothing changes.
+
+    hours and hour_label (task 16): the app passes the model hours of 07:00 to 17:00 by the clock for an uploaded file
+    whose START CLOCKTIME is not midnight (importers.daytime_model_hours), and hour_label, a function from a model
+    hour to the 'HH:MM' its reason prints (importers.clock_label).  The hour column stays a model hour.  Without
+    hour_label the reason prints f'{h:02d}:00', as before."""
     sc = model.sc
     z_mu, z_sd = model.predict_hours()
     sd_acq = pd.DataFrame(model.z_sd_acq_, columns=sc.junctions).loc[hours]
@@ -78,13 +83,14 @@ def plan_route(model, K: int, hours: list[int] = DAY_HOURS, threshold: float = 0
         near = f"{D.loc[j, chosen].min() / 1000:.1f} km from the nearest other route site" if chosen else "first site"
         why = ("most uncertain violation call" if abs(p - 0.5) < 0.25 else
                "likely violation, confirm it" if p >= 0.75 else "likely fine, widest band")
+        at = hour_label(h) if hour_label is not None else f"{h:02d}:00"
         row = {"junction": j, "hour": h, "p_below": round(p, 2), "score": round(float(base[j]), 3),
-               "reason": f"P(daily min < {threshold}) = {p:.2f} — {why}; sample at {h:02d}:00 where the band is widest by day; {near}."}
+               "reason": f"P(daily min < {threshold}) = {p:.2f} — {why}; sample at {at} where the band is widest by day; {near}."}
         if with_age:
             age = float(sc.age_by_hour_h.loc[h, j])
             lower = age_initial_share is not None and float(age_initial_share.loc[h, j]) > INITIAL_SHARE_MAX
             row["water_age_h"] = round(age, 1)
-            row["why"] = (f"{why}; sample at {h:02d}:00, when the band is widest by day; water {'at least' if lower else 'about'} "
+            row["why"] = (f"{why}; sample at {at}, when the band is widest by day; water {'at least' if lower else 'about'} "
                           f"{age:.0f} h old then in your model; {near}.")
             row["reason"] = f"P(daily min < {threshold}) = {p:.2f}: {row['why']}"
         rows.append(row)

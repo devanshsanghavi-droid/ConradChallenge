@@ -1,0 +1,4 @@
+tap_id,junction_id,flush_min,notes
+T1,225,3,hydrant: the junction IDs are from the Net3 example
+T2,239,3,hydrant
+T3,193,3,customer tap

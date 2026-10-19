@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 89,
+ "n_pass": 102,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,36 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 280,
+    "registry_ok": 349,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1316,
-     "date": 67,
-     "identifier": 620,
+     "code or path": 1551,
+     "date": 74,
+     "identifier": 646,
      "link target": 12,
      "run cost (logs, df)": 6,
      "seed range": 20,
      "setting or literature value written in the code": 16,
-     "time of day": 59
+     "time of day": 123
     },
     "traced": {
-     "iteration-4 outputs": 213,
-     "file cited in its section": 3064,
-     "file cited in its paragraph": 4532,
-     "outputs": 5,
-     "iteration-5 outputs": 2
+     "iteration-4 outputs": 240,
+     "file cited in its section": 3077,
+     "file cited in its paragraph": 4914,
+     "outputs": 6,
+     "iteration-5 outputs": 6
     },
-    "n_tokens": 7839,
+    "n_tokens": 8266,
     "power_caught_of_tested": {
      "decimal": [
-      912,
-      8677
+      949,
+      8743
      ],
      "integer": [
-      909,
-      6111
+      1066,
+      6869
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 29,
+    "iteration4_texts_checked": 36,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -1894,6 +1894,302 @@
     "net1_grid": "grid24_full_fixed_gamma_<sha1>[:8]_Net1.inp_<tag>.pkl",
     "net6_checkbox": true,
     "net6_stopped_before_any_run": true
+   }
+  },
+  {
+   "name": "grab_log_column_mapping",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "lims_us_rows": 40,
+    "lims_us_needs_a_date_format": true,
+    "censored_listed": 4,
+    "censored_raw": [
+     "< 0.05",
+     "<0.02",
+     "BDL",
+     "ND"
+    ],
+    "blank_dropped": 1,
+    "semicolon_rows": 4,
+    "tab_rows": 4,
+    "ambiguous_refused_with_question": true
+   }
+  },
+  {
+   "name": "grab_log_encodings",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "cp1252_rows": 3,
+    "bom_rows": 2,
+    "cp1252_how": "Read as text separated by commas, decoded as cp1252 (Windows Western European); 3 data rows.",
+    "bom_how": "Read as text separated by commas, decoded as utf-8 with a byte-order mark; 2 data rows."
+   }
+  },
+  {
+   "name": "excel_log_equals_csv_log",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "rows": 5,
+    "same_S": true,
+    "leading_zero_warning": true,
+    "label": "same-library self-consistency (openpyxl)"
+   }
+  },
+  {
+   "name": "analyzer_thinning",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "readings_in": 5760,
+    "kept": 60,
+    "per_site_per_day": 1,
+    "at": "10:00"
+   }
+  },
+  {
+   "name": "utc_warning",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "warned": true,
+    "warning_starts": "6 of 6 sample times fall outside 06:00 to 18:00, when grab s"
+   }
+  },
+  {
+   "name": "grab_log_review_cases",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "preamble_logs_read": 3,
+    "overrange_kept_apart": {
+     "below": [
+      "T3"
+     ],
+     "above": [
+      "T1",
+      "T4"
+     ]
+    },
+    "ugL_converted": true,
+    "implausible_listed": 2,
+    "long_format_rows": 3,
+    "both_columns_chosen_reads_one": true,
+    "grab_study_kept": 63,
+    "interleaved_not_used_chars": 2307,
+    "window_outside_listed": 24
+   }
+  },
+  {
+   "name": "grab_log_final_review_cases",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "long_species_rows": {
+     "long_paren": 3,
+     "long_short_names": 3,
+     "long_lims_codes": 3
+    },
+    "wide_both_species_ask": 4,
+    "analyte_value_asked_then_read": 3,
+    "ugl_headers_divided": 5,
+    "unit_spellings_read": 3,
+    "not_used_lines": {
+     "qualifier_interleaved": 1,
+     "unknown_taps_many": 1
+    },
+    "tiny_rows_refused_by_line_count": true,
+    "net2_pilot_hours": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ]
+   }
+  },
+  {
+   "name": "clock_conversion",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "helpers": {
+     "09:00_at_6h": 3,
+     "daytime_6h_labels": [
+      "07:00",
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+      "12:00",
+      "13:00",
+      "14:00",
+      "15:00",
+      "16:00",
+      "17:00"
+     ],
+     "daytime_0h_is_DAY_HOURS": true
+    },
+    "net3_worst": "00:00",
+    "clock6_worst": "06:00",
+    "net3_at_03": "4 of 92",
+    "clock6_at_09": "4 of 92",
+    "clock6_route_hours": [
+     "07:00",
+     "08:00",
+     "16:00",
+     "09:00",
+     "17:00",
+     "15:00"
+    ],
+    "net3_route_hours": [
+     "17:00",
+     "13:00",
+     "10:00",
+     "16:00",
+     "12:00",
+     "14:00"
+    ],
+    "samples_used": 18,
+    "junctions_whose_daily_min_hour_moved_by_6": 92,
+    "net2_caption": true,
+    "net2_worst_model_hour": "04:00",
+    "clock6_demo_sample_clock_hours": [
+     10,
+     12,
+     13,
+     14,
+     15,
+     17
+    ],
+    "net2_upload_hours_unconverted": [
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "net2_upload_caption_says_so": true
+   }
+  },
+  {
+   "name": "app_grab_log_upload",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "samples_used_example": 39,
+    "load_log_rows_in_window": 39,
+    "load_log_rows": 78,
+    "multi_month_samples_used": 12,
+    "unknown_tap_listed": true,
+    "mixed_species_refused": true,
+    "xlsx_equals_csv": true,
+    "censored_listed": 4,
+    "censored_junctions_marked_on_the_map": 4,
+    "ambiguous_asks_then_runs_with_day_first": true,
+    "download_buttons": 1,
+    "multi_month_rows_before_the_window_listed": 24,
+    "overrange_marked_apart": {
+     "below": [
+      1
+     ],
+     "above": [
+      2
+     ]
+    },
+    "long_format_samples_used": 3,
+    "both_species_chosen_samples_used": 2,
+    "species_in_brackets_samples_used": 3,
+    "wide_species_in_brackets_asks": true,
+    "analyte_value_asked_then_samples_used": 3
+   }
+  },
+  {
+   "name": "app_per_junction_table",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "rows": 92,
+    "columns": [
+     "junction",
+     "median (mg/L)",
+     "lo90 (mg/L)",
+     "hi90 (mg/L)",
+     "P(daily min < 0.2)",
+     "hour of the daily minimum"
+    ],
+    "plain_table_rows": 20,
+    "download_buttons": 1,
+    "default_flagged": "42 of 92"
+   }
+  },
+  {
+   "name": "get_started_page_runs",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "software_choices": 12,
+    "coming": 5,
+    "template_downloads": 5,
+    "templates_parse": [
+     "grab_log_template.csv",
+     "grab_log_template.xlsx",
+     "grab_log_total_template.csv",
+     "plant_log_template.csv",
+     "tap_map_by_id_template.csv"
+    ],
+    "check_a_file": [
+     "mains.gpkg: advice",
+     "net3_backup.inp.bak: readiness report",
+     "lims_censored.csv: as a grab log",
+     "task16_tap_map.csv: as a tap map",
+     "ambiguous_dates.csv: the question",
+     "junction_list.csv: a junction list, not a tap map",
+     "log_title_line.csv: as a grab log, its title skipped",
+     "multi_month_log.csv: the main page's window",
+     "junctions_2col.csv: a junction list, not a tap map",
+     "long_paren.csv: its free chlorine rows only"
+    ],
+    "grids_built": 0,
+    "files_left": 0
+   }
+  },
+  {
+   "name": "app_widget_order_unchanged",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "scenarios": 12,
+    "example_picker_first": 10,
+    "upload_scenarios_model_uploader_first": 2,
+    "new_order": [
+     "EPANET .inp file",
+     "Grab log (CSV or Excel)",
+     "Tap map (CSV)"
+    ]
+   }
+  },
+  {
+   "name": "pilot_clock_and_log",
+   "group": "task16",
+   "pass": true,
+   "detail": {
+    "lims_us_with_date_format_rows": 16,
+    "lims_us_without_date_format_stops_with_the_question": true,
+    "clock6_predictions_rows": 12,
+    "clock6_hours_are_clock_minus_6": true,
+    "clock6_and_net3_byte_identical": [
+     "predictions.csv",
+     "validation.csv",
+     "validation.json"
+    ],
+    "clock6_says_its_outputs_are_model_hours": true
    }
   },
   {

@@ -56,6 +56,39 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   are typed), and a UTF-8 file with a few stray bytes of a Windows code page (decode_text reads it as UTF-8 with those
   bytes as cp1252, and the report says the file mixes two encodings; since the second review the byte pairs a cp1252
   file makes by chance count for cp1252 and lines are counted, not characters: _utf8_kind, _mixed_utf8).
+- Task 16, grab logs and tap maps (read_table, guess_log_columns, read_grab_log, read_tap_map): a grab log as the
+  utility's lab or field system exports it, CSV in any encoding decode_text reads and with any of the separators
+  above (decimal commas read), or an Excel workbook through pandas and openpyxl (typed date and time cells kept;
+  zip limits first; since the review of task 16, openpyxl in read-only mode with row and column caps, a cover sheet
+  passed over; a text table's title or 'Lab:' lines and Excel's 'sep=;' line skipped).  The columns are guessed from
+  the header ('Sample Point', 'Sample Date/Time', 'Total Chlorine (mg/L)', or the template's names) or given; one
+  datetime column or a date and a time; US or European dates, month names, and a column whose dates all read two
+  ways is refused with the question until a date format is given ('MDY', 'DMY', 'YMD' or a strptime format).
+  '<0.02', 'ND' and 'BDL' are censored below detection, '>2.2' above the measuring range: kept and listed with their
+  reason, never fitted.  Free and total chlorine are never mixed: a log with both columns is refused until its
+  reading column is chosen, and then only that one is read; a column naming the other species is refused; a
+  long-format export (one row per analyte) keeps only the chosen species' rows (until the final verification this
+  failed when the species sat in brackets or the analytes did not name chlorine in the reader's words: see below).  A reading's unit is read from its
+  header or a units column (µg/L divided by 1000), and one above 10 mg/L is not used.  Tap IDs that Excel turned
+  into numbers are matched by number, with a warning.  A tap with 12 or more readings a day, minutes apart, on 2 or
+  more days is an online analyzer and keeps one reading a day, the one nearest 10:00 (or the hour given), unless it
+  is kept whole.  Most grab samples outside 06:00 to 18:00 warns of a UTC export.  Each time of day becomes a model
+  hour: the time minus START CLOCKTIME, mod 24 h, minutes truncated (model_hour; clock_label and
+  daytime_model_hours go the other way, for display and the route's 07:00 to 17:00 window).  Every row that is not
+  used is listed with its reason (dropped_lines, at most 20 runs of rows per reason).  xlsx_bytes writes the Excel
+  template.  After the final verification of task 16: the species is read with the bracket contents kept ('Chlorine
+  (Free)', 'Cl2 (total)'), 'Chloramine' is total chlorine, and 'Free Cl', 'Total Cl' and the codes FCL2, CL2-F, TCL2,
+  CL2-T name chlorine; two reading columns that are not both of one named species ask which is the reading; a
+  long-format export whose analytes cannot pick the species (codes the reader does not know, two chlorine analytes
+  that name no species, an analyte-like column beside a plain 'Result') is refused with the question until the
+  analyte value is chosen, instead of read whole; a detection limit, pressure or temperature column is no reading;
+  units without a slash ('ugL', 'mg Cl2/L', 'mg/litre') and a mangled 'Âµ' are read, and a log with readings above
+  and below 10 mg/L warns of an unnamed µg/L; a text's lines are counted before it is split, and records stop at the
+  row limit; a comma title before a semicolon export, and an Excel title row of two cells, are skipped; an Excel 00:00
+  among timed datetimes is a time only at an online analyzer's tap; a time column holding a date and a time gives its
+  time; a tap ID with a superscript digit is a tap like any other; a two-column junction export is no tap map; and a
+  not-used reason that names a value is one line for all its values when more than 5 differ, the list capped at 30
+  lines.
 - Section headers and their names are read the way WNTR's reader reads them: after any whitespace (a form feed
   included), and a singular name such as [PIPE] is the [PIPES] section; the ID scan also stops at [END], as WNTR does.
 - Zips are read in memory only, never extracted to disk.  A member with an absolute path or a '..' part is refused,
@@ -269,15 +302,15 @@ KINDS: dict[str, tuple[str, str, str]] = {
     "gpx": ("gis", "a GPS track (GPX)",
             "GPS points are useful for sample taps later; they are not a hydraulic model. " + _EPANET_EXPORT),
     "xlsx": ("table", "an Excel workbook (.xlsx)",
-             "If it is a grab-sample log, type the samples into the table for now; uploading a sample log is planned. "
-             "The pilot path reads grab logs saved as CSV."),
+             "If it is a grab-sample log, upload it under '2. Your samples' with the demo off, with its tap map; the "
+             "Get started page checks it first. It is not a model."),
     "xls_legacy": ("table", "a legacy Excel workbook (.xls)",
-                   "Save it as .xlsx or CSV. If it is a grab-sample log, the pilot path reads it as CSV."),
+                   "Save it as .xlsx or CSV. If it is a grab-sample log, upload that under '2. Your samples'."),
     "office_other": ("document", "a Word or PowerPoint file",
                      "It is not a model. " + _EPANET_EXPORT),
     "delimited_text": ("table", "a table in text form (CSV or similar)",
-                       "If it is a grab-sample log, type the samples into the table for now; the pilot path reads grab "
-                       "logs as CSV. It is not a model."),
+                       "If it is a grab-sample log or a tap map, upload it under '2. Your samples' with the demo off; "
+                       "the Get started page checks it first. It is not a model."),
     "text_other": ("text", "plain text with no EPANET sections",
                    "It has none of the EPANET section headers ([JUNCTIONS], [PIPES] and so on). If it should be a model, "
                    "open it in EPANET or the modelling package and save it again as .inp."),
@@ -1992,10 +2025,12 @@ def _clock_report(rep: Readiness, clock_h: float) -> None:
                                 f"is not changed", FROM_FILE)
     if m:
         rep.warnings.append(f"The model starts at {_clock(clock_h)} (START CLOCKTIME), so its hour 0 is {_clock(clock_h)}, "
-                            f"not midnight. Until clock time is converted (planned), every hour in the app and the "
-                            f"pilot is a model hour: the map's hours, the worst hour, the route's hours, and the hours "
-                            f"of your samples, which are read as model hours too. Add {off} to a model hour for "
-                            f"the time of day, and take {off} off a sample's time of day before entering it.")
+                            f"not midnight. When this file is uploaded to the app (or run with the pilot's --inp), the "
+                            f"app and the pilot convert (task 16): a grab log's times of day become model hours (the "
+                            f"time minus {off}, mod 24 h), and the app shows the route's hours, the worst hour, the "
+                            f"hour picker and each junction's hour of the daily minimum as times of day. Hours typed "
+                            f"into the app's sample table stay model hours: take {off} off a sample's time of day "
+                            f"before typing it. Add {off} to a model hour for the time of day.")
 
 
 def _physics_report(rep: Readiness, wn, ctl: dict, have_xy: set, src_nodes: list[str]) -> set[str]:
@@ -2379,6 +2414,1391 @@ def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan,
                           "without an error, and one full 7-day run of the grid's kind; the grid's runs come next",
             DERIVED)
     return True, replacement
+
+
+# ----------------------------------------------------------------------------- task 16: grab logs, tap maps, clock time
+# A grab log arrives as the utility's lab or field system exports it: one datetime column or a date and a time, US or
+# European dates, headers such as 'Total Chlorine (mg/L)' or 'Sample Point', semicolons and decimal commas, a Windows
+# code page or a byte-order mark, '<0.02' and 'ND' for readings below detection, an Excel workbook with typed date and
+# time cells whose numeric tap IDs lost their leading zeros, or 15-minute data from an online analyzer.  read_grab_log
+# turns it into the pilot's rows (junction, model hour, reading, month, date, tap) and says what it did with every row.
+LOG_WINDOW_MONTHS = 3                  # the app's date window: the last 3 calendar months that hold a reading, as the
+                                       # pilot's --window counts months
+ANALYZER_MIN_PER_DAY = 12              # an online analyzer: 12 or more readings a day ...
+ANALYZER_MAX_STEP_MIN = 30             # ... a median step of at most 30 minutes between them (an analyzer day) ...
+ANALYZER_MIN_DAYS = 2                  # ... on 2 or more days; or 12 or more a day on ANALYZER_DENSE_DAYS days or more
+ANALYZER_DENSE_DAYS = 7                # (a historian's hourly export).  An hourly grab-sampling study of a day or two
+                                       # is neither, so every one of its readings is kept (the review of task 16)
+ANALYZER_HOUR = 10.0                   # an analyzer series is thinned to the reading nearest this clock hour, per day
+ANALYZER_MAX_GAP_MIN = 60              # ... when one lies within this many minutes of it; otherwise that day has none
+UTC_DAY_MIN = (6 * 60, 18 * 60)        # most grab samples outside 06:00 to 18:00 suggests times exported in UTC
+DAY_START_H, DAY_END_H = 7, 17         # simgp.DAY_HOURS (07:00 to 17:00), the hours an operator can take a grab sample
+LOG_MAX_BYTES = 100 * 1024 * 1024      # a grab log or tap map read whole up to this size
+LOG_MAX_ROWS = 1_000_000
+LOG_MAX_COLS = 200                     # an Excel sheet is read up to this many columns (a stray cell far right is cut)
+LOG_LAYOUT_RECORDS = 50                # a text table's separator and header line are found in its first 50 records
+READING_MAX_MGL = 10.0                 # a reading above this is no chlorine residual: listed, not used (check the unit)
+READING_HIGH_MEDIAN_MGL = 5.0          # a median reading above this warns (the unit or the column may be wrong)
+DROPPED_MAX_RUNS = 20                  # the not-used list gives at most this many runs of rows per reason, and counts
+DROPPED_MAX_VALUES = 5                 # a reason that names a value ('not a number: '0.452 J'') becomes one line for
+                                       # all its values when more than this many differ (the final verification)
+DROPPED_MAX_LINES = 30                 # and the list gives at most this many lines, the last counting the rest
+LOG_MAX_LINES = 2 * LOG_MAX_ROWS + LOG_LAYOUT_RECORDS   # line breaks counted before a text is split (quoted
+                                       # comments over several lines leave room); more is refused unread
+DATE_ORDERS = {"MDY": "month first (MM/DD/YYYY)", "DMY": "day first (DD/MM/YYYY)", "YMD": "year first (YYYY-MM-DD)"}
+_BLANK_READINGS = {"", "-", "--", "na", "n/a", "nan", "none", "null", "#n/a"}
+_ND_WORDS = {"nd", "n.d.", "n/d", "non-detect", "nondetect", "non detect", "not detected", "bdl", "below detection",
+             "<dl", "<mdl", "<rl", "<lod", "<mrl"}
+# a reading column's header names chlorine: a word containing 'chlorine', or one of these words; never a header with
+# one of the _NOT_CHLORINE words (chloride, chlorate and chlorite contain 'chlor' but are other analytes)
+_READING_WORDS = ("cl2", "chlor", "chloramine", "chloramines", "residual")
+_NOT_CHLORINE = {"chloride", "chlorides", "chlorate", "chlorates", "chlorite", "chlorites", "perchlorate", "chlorophyll",
+                 "chloroform", "dioxide", "clo2", "monochloramine", "dichloramine", "trichloramine", "combined"}
+_NOT_READING_WORDS = {"method", "methods", "note", "notes", "unit", "units", "qualifier", "qual", "flag", "flags",
+                      "comment", "comments", "remark", "remarks", "dose", "date", "time", "analyst", "instrument",
+                      "id", "code", "type", "demand", "pressure", "psi", "temperature", "temp"}
+# a detection or reporting limit is no reading, even when its header names chlorine ('Free Chlorine MDL', 'Free
+# Chlorine (RL)'): looked for with the bracket contents kept (the final verification of task 16)
+_LIMIT_WORDS = {"mdl", "mrl", "rl", "lod", "loq", "pql", "dl", "limit", "limits", "detection"}
+# the species, read with the bracket contents kept ('Chlorine (Free)', 'Cl2 (total)'; the final verification):
+# chloramine is measured as total chlorine; 'combined' is total minus free, never read as a reading (_NOT_CHLORINE)
+# but never free either
+_FREE_WORDS = {"free", "fac", "frc", "fcl2", "cl2f"}                # free available, free residual; LIMS codes
+_TOTAL_WORDS = {"total", "trc", "tcl2", "cl2t", "chloramine", "chloramines", "combined"}
+_CHLORINE_CODES = {"fcl2", "cl2f", "tcl2", "cl2t"}  # LIMS codes that name chlorine and its species by themselves
+_UNIT_WORDS = {"mg", "l", "mgl", "ug", "µg", "ugl", "µgl", "mcg", "mcgl", "ppm", "ppb", "as", "per", "liter", "litre",
+               "1"}                             # left out of the species words ('mg/L', 'ug per L', 'mg L-1')
+# a long-format export (one row per analyte): the column that names each row's analyte, and the one with its unit
+_ANALYTE_WORDS = {"analyte", "analytes", "parameter", "parameters", "param", "determinand", "characteristic",
+                  "constituent", "analysis", "test", "component", "measurand", "compound"}
+_ANALYTE_NOT = {"date", "time", "result", "results", "value", "values", "unit", "units", "id", "code", "method"}
+_UNIT_EXACT = ("unit", "units", "uom", "unit of measure", "units of measure", "result unit", "result units",
+               "reporting unit", "reporting units")
+_RESULT_EXACT = ("result", "results", "value", "result value", "reported value", "final result", "measurement",
+                 "concentration", "conc", "reading", "numeric result", "result numeric", "result num")
+# units, on the text as _unit_text writes it (lower case, a camel-case join split, µ written one way): 'ug/L',
+# 'ugL', '_ugl', 'µg L-1', 'ug per L', 'mcg/L', 'micrograms per litre', 'ppb' are micro; 'mg/L', 'mgL', 'mg Cl2/L',
+# 'mgCl2/L', 'mg/litre', 'ppm' are milli (the final verification of task 16: 'ugL' and 'mg Cl2/L' were not read)
+_UNIT_TAIL = r"[\s_./]*(?:cl2[\s_./]*)?(?:per[\s_]*)?(?:l|lit(?:er|re)s?)(?:[\s_]*-\s*1)?(?![a-z])"
+_MICRO = re.compile(r"(?<![a-z])(?:u|µ|mc|micro)g(?:rams?)?" + _UNIT_TAIL + r"|(?<![a-z])ppb(?![a-z])")
+_MILLI = re.compile(r"(?<![a-z])(?:mg|milligrams?)" + _UNIT_TAIL + r"|(?<![a-z])ppm(?![a-z])")
+_CAMEL = re.compile(r"(?<=[a-z0-9µ])(?=[A-Z])")
+_MOJIBAKE_MU = (("Âµ", "µ"), ("Î¼", "µ"), ("μ", "µ"))     # µ in UTF-8 read back as cp1252, and the Greek mu
+_SEP_HINT = re.compile(r"^\s*sep\s*=\s*(.)\s*$", re.I)
+_MONTHS = {m: i for i, ms in enumerate((("jan", "january"), ("feb", "february"), ("mar", "march"), ("apr", "april"),
+                                        ("may",), ("jun", "june"), ("jul", "july"), ("aug", "august"),
+                                        ("sep", "sept", "september"), ("oct", "october"), ("nov", "november"),
+                                        ("dec", "december")), start=1) for m in ms}
+_TAP_EXACT = ("tap id", "tap", "tapid", "tap name", "sample point", "sample point id", "sampling point",
+              "sampling point id", "sample site", "sample site id", "site", "site id", "site name", "sample location",
+              "location", "location id", "station", "station id", "point id", "sample tap", "sp id", "loc id")
+_TAP_WORDS = ("tap", "point", "site", "location", "station", "loc")
+_JUNCTION_EXACT = ("junction id", "junction", "junctionid", "node id", "node", "nodeid", "model node", "model node id",
+                   "model id", "model junction", "epanet id", "epanet node")
+_ISO_DATE = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:(?:[T ]|,\s*)+(.*))?$")
+_NUM_DATE = re.compile(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})(?:(?:[T ]|,\s*)+(.*))?$")
+# month names (an Excel or Oracle export's '10-Mar-26', 'Mar 10, 2026'): the name settles the order
+_MON_DATE = re.compile(r"^(\d{1,2})[-/. ]([A-Za-z]{3,9})\.?[-/. ](\d{4}|\d{2})(?:(?:[T ]|,\s*)+(.*))?$")
+_MON_FIRST = re.compile(r"^([A-Za-z]{3,9})\.?[- ](\d{1,2})(?:st|nd|rd|th)?,?[- ](\d{4})(?:(?:[T ]|,\s*)+(.*))?$")
+# a time: '9:15', '09:15:30', '9:15 AM', or with dots, as European and Oracle exports write it ('09.15', '09.15.00 AM')
+_CLOCK = re.compile(r"^(\d{1,2})[:.](\d{2})(?:[:.](\d{2})(?:[.,]\d+)?)?\s*(?:([AaPp])\.?\s*[Mm]\.?)?$")
+_HHMM = re.compile(r"^(\d{1,2})(\d{2})$")
+_ZONE = re.compile(r"(?:\s*[Zz]|\s*(?:UTC|GMT)|\s*[+\-]\d{2}:?\d{2})$")
+
+
+class LogRefused(ValueError):
+    """A grab log or tap map that cannot be read as it is.  The message says why in plain words, and asks a question
+    when the file leaves one open (a date that reads two ways); nothing is guessed in its place."""
+
+
+def have_openpyxl() -> bool:
+    """openpyxl (task 16: Excel grab logs and the .xlsx template) is in this environment."""
+    import importlib.util
+    return importlib.util.find_spec("openpyxl") is not None
+
+
+if not have_openpyxl():         # task 16: without openpyxl an Excel grab log is refused, and the sniff says so
+    KINDS["xlsx"] = (KINDS["xlsx"][0], KINDS["xlsx"][1],
+                     "Excel workbooks need openpyxl, which is not installed here: save the sheet as CSV (File, Save As, "
+                     "CSV UTF-8) and upload that. It is not a model.")
+
+
+@dataclass
+class LogTable:
+    header: list                       # the header row's names, made unique ('name (2)' for a repeat)
+    rows: list                         # data rows: lists of cells (str, or Excel's typed date, time and number cells)
+    row_numbers: list                  # each data row's line in the file (or row of the sheet), 1-based
+    how: str                           # how it was read, in plain words
+
+
+def _unique(names: list[str]) -> list[str]:
+    seen, out = {}, []
+    for n in names:
+        n = n.strip() or "column"
+        seen[n] = seen.get(n, 0) + 1
+        out.append(n if seen[n] == 1 else f"{n} ({seen[n]})")
+    return out
+
+
+def _cell_text(v) -> str:
+    """A cell as text: an integral number without '.0' (Excel keeps tap 7 as 7.0 in some exports)."""
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        if math.isnan(v):
+            return ""
+        return str(int(v)) if v.is_integer() else repr(v)
+    return str(v).strip()
+
+
+def _iter_lines(text: str):
+    """The text's lines, as _LINE_BREAK.split(text) gives them, one at a time (no list of every line is built: the
+    final verification of task 16 measured about 0.3 GB per million short rows before a long file was refused)."""
+    pos = 0
+    for m in _LINE_BREAK.finditer(text):
+        yield text[pos:m.start()]
+        pos = m.end()
+    yield text[pos:]
+
+
+def _records(lines, d: str, limit: int | None = None) -> list[tuple[int, list]]:
+    """(line, cells) of each record of the text that is not blank, read with delimiter d: line is the record's first
+    line in the file, 1-based (csv.reader's line_num, so a quoted field that runs over several lines, a LIMS comment,
+    does not shift the rows after it; the review of task 16).  lines is any iterable of lines (_iter_lines).  Stops
+    after `limit` records."""
+    out, prev = [], 0
+    rd = csv.reader(lines, delimiter=d)
+    for row in rd:
+        start, prev = prev + 1, rd.line_num
+        if not any(c.strip() for c in row):
+            continue
+        out.append((start, row))
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+def _table_layout(text: str) -> tuple[str, int, str | None] | None:
+    """(delimiter, how many records come before the header, a note) of a delimited text (',', ';', tab or '|').
+    A first line 'sep=;' (Excel's hint, common in European exports) names the delimiter and is skipped.  Otherwise,
+    first as before task 16's review: the delimiter that splits the first record into two or more cells and gives at
+    least 80% of the first 25 records its count, csv.Sniffer only ordering the candidates (on a sample with its quote
+    characters taken out, as _sniff_table does); every file read before is read the same way.  When no delimiter
+    passes, the file may open with a title or a 'Lab:/Exported' block: each delimiter's most common cell count over the
+    first LOG_LAYOUT_RECORDS records (two or more cells) is tried, the header being the first record with that count
+    and two filled cells, and at least 80% of the records from it on must have that count; the delimiter that skips
+    the fewest lines wins (then the larger count, then csv.Sniffer's order).  Since the final verification, a delimiter
+    that passes the first test gives way to one whose most common count is larger, when the records up to that one's
+    header do not all have the first delimiter's count: a title with a comma ('Residuals report, March 2026') before a
+    semicolon export with decimal commas splits the title and every row into 2 cells at a comma, which passed, while
+    the header line, with no comma, did not.  None when nothing fits.  The text is read line by line, never split
+    into a list of every line."""
+    from collections import Counter
+    from itertools import islice
+    nonblank = lambda: (ln for ln in _iter_lines(text) if ln.strip())       # noqa: E731
+    first_line = next(nonblank(), "")
+    m = _SEP_HINT.match(first_line)
+    if m and m.group(1) in _DELIMS:
+        return m.group(1), 1, f"its first line, {first_line.strip()!r}, names the separator"
+    sample = "\n".join(islice(nonblank(), 25))
+    order = list(_DELIMS)
+    try:
+        sniffed = csv.Sniffer().sniff(_sniffer_sample(sample), delimiters="".join(_DELIMS)).delimiter
+        order = [sniffed] + [x for x in _DELIMS if x != sniffed]
+    except csv.Error:
+        pass
+    recs, fast = {}, None
+    for d in order:
+        try:
+            recs[d] = _records(_iter_lines(text), d, LOG_LAYOUT_RECORDS)
+        except csv.Error:
+            continue
+        rows = [r for _, r in recs[d][:25]]
+        if rows and len(rows[0]) >= 2 and sum(len(r) == len(rows[0]) for r in rows) / len(rows) >= 0.8:
+            fast = d
+            break
+    modal = {}
+    for rank, d in enumerate(order):
+        if d not in recs and fast is not None:
+            try:
+                recs[d] = _records(_iter_lines(text), d, LOG_LAYOUT_RECORDS)
+            except csv.Error:
+                continue
+        rows = [r for _, r in recs.get(d, [])]
+        counts = [len(r) for r in rows]
+        if len(counts) < 2:
+            continue
+        n = max(Counter(counts).items(), key=lambda kv: (kv[1], kv[0]))[0]
+        k = next((i for i, r in enumerate(rows) if len(r) == n and sum(c.strip() != "" for c in r) >= 2), None)
+        if n < 2 or k is None or len(counts) - k < 2:
+            continue
+        if sum(x == n for x in counts[k:]) / (len(counts) - k) < 0.8:
+            continue
+        modal[d] = (k, n, rank)
+    if fast is not None:
+        n0 = len(recs[fast][0][1])
+        head = [len(r) for _, r in recs[fast]]
+        better = [(k, -n, rank, d) for d, (k, n, rank) in modal.items()
+                  if d != fast and n > n0 and any(x != n0 for x in head[:k + 1])]
+        if not better:
+            return fast, 0, None
+        k, _, _, d = min(better)
+    elif modal:
+        k, _, _, d = min((k, -n, rank, d) for d, (k, n, rank) in modal.items())
+    else:
+        return None
+    if k == 0:
+        return d, 0, None
+    want = {n for n, _ in recs[d][:k][:3]}
+    texts = {i: ln for i, ln in enumerate(islice(_iter_lines(text), max(want)), start=1) if i in want}
+    skipped = "; ".join(texts[n].strip()[:60] for n, _ in recs[d][:k][:3])
+    return d, k, (f"the {k} line{'s' if k != 1 else ''} before its header {'were' if k != 1 else 'was'} skipped "
+                  f"({skipped!r}{', ...' if k > 3 else ''})")
+
+
+def _xlsx_cells(data: bytes) -> tuple[list, list, str]:
+    """The rows of a workbook's first sheet that holds a table (a cover sheet before it is passed over), through
+    openpyxl in read-only mode: at most LOG_MAX_COLS columns and LOG_MAX_ROWS + LOG_LAYOUT_RECORDS rows are read, so a
+    small file with one stray cell far down or far right (which pandas.read_excel padded to rows x columns cells) is
+    cut, not unpacked.  Returns (rows, each row's number in the sheet, how)."""
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True, keep_links=False)
+    try:
+        sheets = list(wb.worksheets)
+        for k, ws in enumerate(sheets):
+            cells, numbers, empty, wide = [], [], None, False
+            for i, row in enumerate(ws.iter_rows(max_col=LOG_MAX_COLS, max_row=LOG_MAX_ROWS + LOG_LAYOUT_RECORDS,
+                                                 values_only=True), start=1):
+                if row is empty:                     # openpyxl yields one shared tuple for each missing row
+                    continue
+                r = list(row)
+                while r and (r[-1] is None or (isinstance(r[-1], str) and not r[-1].strip())):
+                    r.pop()
+                if not r:
+                    empty = row
+                    continue
+                wide = wide or len(r) >= LOG_MAX_COLS
+                cells.append(r)
+                numbers.append(i)
+            # a table: two or more rows with two filled cells (a cover sheet's 'Report | March 2026' is not one)
+            if sum(sum(_cell_text(c) != "" for c in r) >= 2 for r in cells[:LOG_LAYOUT_RECORDS]) >= 2:
+                how = ("an Excel workbook (.xlsx), its first sheet, typed cells kept" if k == 0 else
+                       f"an Excel workbook (.xlsx), its sheet {ws.title!r} (the first that holds a table), typed "
+                       f"cells kept")
+                if wide:
+                    how += f", read up to column {LOG_MAX_COLS}"
+                return cells, numbers, how
+        return [], [], "an Excel workbook (.xlsx)"
+    finally:
+        wb.close()
+
+
+def read_table(data: bytes, name: str = "") -> LogTable:
+    """A grab log or tap map as a table: delimited text in any encoding decode_text reads (a byte-order mark, UTF-16, a
+    Windows code page), separated by commas, semicolons, tabs or vertical bars (found by _table_layout, which also
+    passes over a title or 'Lab:/Exported' lines before the header and Excel's 'sep=;' line), or an Excel workbook
+    (.xlsx, its first sheet that holds a table, through openpyxl with the row and column caps of _xlsx_cells, typed
+    cells kept).  The header is the first row with two or more filled cells (for text, the header _table_layout
+    finds).  Each row's number is its line in the file (or its row in the sheet).  Raises LogRefused for anything else
+    (a legacy .xls, a PDF, a model), with the sniff's advice."""
+    if len(data) > LOG_MAX_BYTES:
+        raise LogRefused(f"The file is {len(data) / 1e6:.0f} MB, more than the {LOG_MAX_BYTES / 1e6:.0f} MB a log is read "
+                         f"up to. Send the last few months only.")
+    s = sniff(data, name)
+    skip = 0
+    if s.kind == "xlsx":
+        if not have_openpyxl():
+            raise LogRefused("This is an Excel workbook, and openpyxl, which reads one, is not installed here. Save "
+                             "the sheet as CSV (File, Save As, CSV UTF-8) and upload that.")
+        try:
+            zip_listing(data)                      # the size limits of a zip, before openpyxl unpacks anything
+            cells, numbers, how = _xlsx_cells(data)
+        except ZipRefused as e:
+            raise LogRefused(f"The workbook is refused: {e}.") from None
+        except Exception as e:  # noqa: BLE001  (a damaged workbook)
+            raise LogRefused(f"The workbook could not be read ({type(e).__name__}). Save the sheet as CSV and upload "
+                             f"that.") from None
+    elif s.category == "table" or s.kind in ("text_other", "empty"):
+        if s.kind == "xls_legacy":
+            raise LogRefused("This is a legacy Excel workbook (.xls), which is not read here. Save it as .xlsx or as "
+                             "CSV and upload that.")
+        text, enc = decode_text(data)
+        # the final verification of task 16: the lines are counted before anything is split or built, and records
+        # are read only up to the row limit, so a small file of very short rows is refused without its memory
+        n_lines = text.count("\n") + text.count("\r") - text.count("\r\n") + 1
+        if n_lines > LOG_MAX_LINES:
+            raise LogRefused(f"The file has {n_lines:,} lines, more than the {LOG_MAX_ROWS:,} rows a log is read up to. "
+                             f"Send the last few months only.")
+        if sum(1 for _ in zip(range(2), (ln for ln in _iter_lines(text) if ln.strip()))) < 2:
+            raise LogRefused("The file has fewer than two lines: a header row and at least one reading are needed.")
+        try:
+            layout = _table_layout(text)
+        except csv.Error as e:
+            raise LogRefused(f"The file could not be read as a table ({e}). Save it again as CSV.") from None
+        if layout is None:
+            raise LogRefused("The file is text, but no separator (comma, semicolon, tab or vertical bar) splits it into "
+                             "the same columns on every line. Save it again as CSV.")
+        d, skip, layout_note = layout
+        limit = skip + LOG_MAX_ROWS + LOG_LAYOUT_RECORDS + 1
+        try:
+            recs = _records(_iter_lines(text), d, limit)
+        except csv.Error as e:
+            raise LogRefused(f"The file could not be read as a table ({e}). Save it again as CSV.") from None
+        if len(recs) >= limit:
+            raise LogRefused(f"The file has more than {LOG_MAX_ROWS:,} rows. Send the last few months only.")
+        numbers, cells = [n for n, _ in recs[skip:]], [r for _, r in recs[skip:]]
+        how = f"text separated by {_DELIMS[d]}" + ("" if enc == "utf-8" else f", decoded as {enc}")
+        if layout_note:
+            how += f"; {layout_note}"
+    else:
+        raise LogRefused(f"{s.sentence()} A grab log or tap map is a table: CSV, or an Excel workbook (.xlsx). "
+                         f"{s.advice}")
+    k = next((i for i, r in enumerate(cells) if sum(_cell_text(c) != "" for c in r) >= 2), None)
+    if s.kind == "xlsx" and k is not None:
+        # the final verification of task 16: a title row with two filled cells ('Residuals report | March 2026') is
+        # no header: the header is the first row with more filled cells than half the most common count of the
+        # sheet's first rows (two or more filled cells each), and the rows before it are named in the notes
+        from collections import Counter
+        filled = [sum(_cell_text(c) != "" for c in r) for r in cells[:LOG_LAYOUT_RECORDS]]
+        two = [x for x in filled if x >= 2]
+        n = max(Counter(two).items(), key=lambda kv: (kv[1], kv[0]))[0] if two else 2
+        k = next((i for i, x in enumerate(filled) if x >= 2 and x > n / 2), k)
+        if k:
+            shown = "; ".join(" | ".join(_cell_text(c) for c in r if _cell_text(c) != "")[:60] for r in cells[:k][:3])
+            how += (f"; the {k} row{'s' if k != 1 else ''} before its header {'were' if k != 1 else 'was'} skipped "
+                    f"({shown!r}{', ...' if k > 3 else ''})")
+    if k is None:
+        raise LogRefused("No row of the file has two or more filled cells, so no header row was found.")
+    header = _unique([_cell_text(c).replace("﻿", "") for c in cells[k]])
+    body, nums = [], []
+    for r, n in zip(cells[k + 1:], numbers[k + 1:]):
+        if all(_cell_text(c) == "" for c in r):
+            continue
+        r = list(r)[:len(header)] + [None] * max(0, len(header) - len(r))
+        body.append(r)
+        nums.append(n)
+        if len(body) > LOG_MAX_ROWS:
+            raise LogRefused(f"The file has more than {LOG_MAX_ROWS:,} rows. Send the last few months only.")
+    return LogTable(header=header, rows=body, row_numbers=nums, how=how)
+
+
+def _norm_header(h: str) -> str:
+    """'Total Chlorine (mg/L)' -> 'total chlorine'; 'tap_id' -> 'tap id'; 'Sample Date/Time' -> 'sample date time'."""
+    s = re.sub(r"\(.*?\)|\[.*?\]", " ", str(h).replace("﻿", ""))
+    return re.sub(r"[^0-9a-z]+", " ", s.lower()).strip()
+
+
+def _words(h, keep_brackets: bool) -> list[str]:
+    """The words of a header or a cell, in lower case, a camel-case join split ('FreeCl' -> free, cl), with the
+    contents of brackets kept or left out."""
+    s = str(h).replace("\ufeff", "")
+    if not keep_brackets:
+        s = re.sub(r"\(.*?\)|\[.*?\]", " ", s)
+    return re.sub(r"[^0-9a-zµ]+", " ", _CAMEL.sub(" ", s).lower()).split()
+
+
+def _species_words(h) -> list[str]:
+    """The words a species is read from: the bracket contents kept ('Chlorine (Free)', 'Cl2 (total)'), the unit
+    words left out (the final verification of task 16: brackets were stripped first, so their species was lost)."""
+    return [w for w in _words(h, True) if w not in _UNIT_WORDS]
+
+
+def reading_species(h: str) -> str | None:
+    """'free' or 'total' when a reading column's header (or a long-format row's analyte) names the species, None when
+    it does not (a plain 'Chlorine Residual') or names both.  Read with the bracket contents kept, so 'Chlorine
+    (Free)' is free and 'Cl2 (total)' total; 'Chloramine' is total chlorine (what a chloraminated system measures);
+    the LIMS codes FCL2, CL2-F, TCL2 and CL2-T name their species."""
+    w = _species_words(h)
+    ws = set(w) | ({a + b for a, b in zip(w, w[1:])} & _CHLORINE_CODES)
+    free, total = bool(ws & _FREE_WORDS), bool(ws & _TOTAL_WORDS)
+    if free != total:
+        return "free" if free else "total"
+    return None
+
+
+def _names_chlorine(words: list[str]) -> bool:
+    """The words name chlorine: a word containing 'chlorine' ('free_chlorine_mgL', 'FreeChlorine'), or 'cl2', 'chlor',
+    'chloramine', 'residual' or a LIMS code (FCL2, TCL2) as a whole word, and none of chloride, chlorate, chlorite,
+    chlorophyll, dioxide and the like (task 16's review: 'chlor' matched inside 'Chloride', which was then fitted as
+    chlorine)."""
+    return (any("chlorine" in x or x in _READING_WORDS or x in _CHLORINE_CODES for x in words)
+            and not (_NOT_CHLORINE & set(words))
+            and not any(x.startswith(("chlorid", "chlorat", "chlorit")) for x in words))
+
+
+def names_chlorine(h) -> bool:
+    """A header or an analyte names chlorine: _names_chlorine on its words outside brackets, or 'Cl' with a species
+    ('Free Cl', 'Cl (total)'; 'Cl' alone may be chloride); never when a word of it, brackets included, is chloride,
+    combined or the like ('Chlorine (Combined)')."""
+    ws = _species_words(h)
+    if _NOT_CHLORINE & set(ws) or any(x.startswith(("chlorid", "chlorat", "chlorit")) for x in ws):
+        return False
+    return _names_chlorine(_norm_header(h).split()) or ("cl" in ws and reading_species(h) is not None)
+
+
+def is_reading_header(h: str) -> bool:
+    """A column of chlorine readings, by its header: it names chlorine (names_chlorine), and is no method, unit,
+    note, pressure or temperature column (words outside brackets) and no detection or reporting limit ('Free Chlorine
+    MDL', 'Free Chlorine (RL)', words inside brackets too)."""
+    return (names_chlorine(h) and not (_NOT_READING_WORDS & set(_norm_header(h).split()))
+            and not (_LIMIT_WORDS & set(_species_words(h))))
+
+
+def _unit_text(s) -> str:
+    s = str(s or "")
+    for a, b in _MOJIBAKE_MU:
+        s = s.replace(a, b)
+    return _CAMEL.sub(" ", s).lower()
+
+
+def header_unit(h: str) -> float | None:
+    """The factor to mg/L of a unit a header (or a units cell) names: 1 for mg/L or ppm, 0.001 for µg/L, ug/L, mcg/L
+    or ppb, None when it names neither (a header with no unit is read as mg/L).  Since the final verification of task
+    16 the unit may be written without a slash or with Cl2 ('ugL', 'free_chlorine_ugl', 'µg L-1', 'ug per L', 'mg
+    Cl2/L', 'mgCl2/L', 'mg/litre'), and a µ that an Excel round trip turned into 'Âµ' is read as µ."""
+    s = _unit_text(h)
+    if _MICRO.search(s):
+        return 0.001
+    if _MILLI.search(s):
+        return 1.0
+    return None
+
+
+def analyte_kind(v) -> str:
+    """What a long-format row's analyte names: 'free' or 'total' chlorine, 'chlorine' with no species ('Chlorine
+    Residual'), or 'other' (pH, temperature, chloride, monochloramine).  Since the final verification of task 16 the
+    species is read with the bracket contents kept ('Chlorine (Free)'), and 'Free Cl', 'Total Cl' and the codes FCL2
+    and TCL2 name chlorine."""
+    s = _cell_text(v)
+    if not names_chlorine(s) or {"pressure", "psi", "temperature", "temp"} & set(_species_words(s)):
+        return "other"
+    return reading_species(s) or "chlorine"
+
+
+def _guess(header: list[str], exact: tuple, words: tuple = ()) -> str | None:
+    norm = {h: _norm_header(h) for h in header}
+    for e in exact:
+        for h in header:
+            if norm[h] == e:
+                return h
+    for h in header:
+        w = norm[h].split()
+        if any(x in w for x in words) and not {"date", "time", "chlorine", "cl2"} & set(w):
+            return h
+    return None
+
+
+def guess_log_columns(header: list[str], disinfectant: str = "free_chlorine") -> dict:
+    """The columns of a grab log, guessed from its header: {'tap', 'reading', 'date', 'time'} (header names, or None)
+    and the reading columns by species ('free_columns', 'total_columns', 'other_columns'; 'reading_columns' all of
+    them).  'both_species' is True when the reading column must be chosen: the header has two or more reading columns
+    and they are not all of one named species (a free and a total column, or a column whose header names no species
+    beside another reading column; since the final verification of task 16, and the species is read inside brackets
+    too, 'Chlorine (Free)').  The reading guess is the first reading column of the disinfectant's species, else the
+    first whose header names no species, a header naming chlorine before one that says only 'residual'.  'time' is None when there is no separate time column (one datetime column, or a date column
+    that holds the time).  For a long-format export (one row per analyte, the review of task 16), 'analyte' is the
+    column that names each row's analyte ('Analyte', 'Parameter', 'Test'), 'unit' its units column, and the reading
+    guess, when no header names chlorine, its result column ('Result', 'Value')."""
+    want = "total" if disinfectant == "chloramine" else "free"
+    norm = {h: _norm_header(h).split() for h in header}
+    # a header that names chlorine comes before one that says only 'residual' (task 16's review)
+    readings = sorted((h for h in header if is_reading_header(h)),
+                      key=lambda h: not any("chlorine" in x or x in ("cl", "cl2", "chlor", "chloramine", "chloramines")
+                                            or x in _CHLORINE_CODES for x in norm[h]))
+    by = {"free": [h for h in readings if reading_species(h) == "free"],
+          "total": [h for h in readings if reading_species(h) == "total"],
+          None: [h for h in readings if reading_species(h) is None]}
+    other = "free" if want == "total" else "total"
+    reading = (by[want] or by[None] or by[other] or [None])[0]
+    # a long-format export (one row per analyte): the analyte column, its units column, and its result column
+    analyte = next((h for h in header if set(norm[h]) & _ANALYTE_WORDS
+                    and not set(norm[h]) & (_ANALYTE_NOT | set(_TAP_WORDS)) and h != reading), None)
+    unit = next((h for h in header if " ".join(norm[h]) in _UNIT_EXACT), None)
+    if reading is None and analyte is not None:
+        reading = next((h for e in _RESULT_EXACT for h in header if " ".join(norm[h]) == e), None)
+    both = [h for h in header if "date" in norm[h] and "time" in norm[h] or "datetime" in norm[h]
+            or "timestamp" in norm[h]]
+    dates = [h for h in header if "date" in norm[h] and "time" not in norm[h]
+             or norm[h] in (["collected"], ["sampled"], ["collection"])]
+    times = [h for h in header if "time" in norm[h] and "date" not in norm[h] and "zone" not in norm[h]]
+    if dates and times:
+        date, time_ = dates[0], times[0]
+    elif both:
+        date, time_ = both[0], None
+    else:
+        date, time_ = (dates or [None])[0], (times or [None])[0] if dates else None
+    return {"tap": _guess(header, _TAP_EXACT, _TAP_WORDS), "reading": reading, "date": date, "time": time_,
+            "analyte": analyte, "unit": unit, "free_columns": by["free"], "total_columns": by["total"],
+            "other_columns": by[None], "reading_columns": readings,
+            "both_species": len(readings) >= 2 and (bool(by[None]) or bool(by["free"] and by["total"]))}
+
+
+def guess_tap_columns(header: list[str]) -> dict:
+    """The tap map's columns: {'tap', 'junction'}.  With two columns: when neither header is recognised, the first is
+    the tap and the second the junction; when one is, the other column takes the missing role, except that a column
+    that names a junction or a node is never the tap (the final verification of task 16: 'Node ID,Elevation', a
+    junction export, was offered as a tap map whose junction column was 'Elevation')."""
+    tap = _guess(header, _TAP_EXACT, _TAP_WORDS)
+    junction = _guess([h for h in header if h != tap], _JUNCTION_EXACT, ("junction", "node"))
+    if len(header) == 2:
+        if tap is None and junction is None:
+            tap, junction = header
+        elif junction is None:
+            junction = next(h for h in header if h != tap)
+    return {"tap": tap, "junction": junction}
+
+
+def parse_reading(v) -> tuple[float | None, str | None]:
+    """(value, None) for a reading; (None, reason) when it is not used.  A reason starting 'censored' marks a reading
+    below detection ('<0.02', 'ND', 'BDL'), and one starting 'above' a reading above the measuring range ('>2.2');
+    both are kept and listed, never fitted.  Decimal commas ('0,45') and a trailing 'mg/L' or 'ppm' are read."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, float) and math.isnan(v):
+            return None, "blank reading"
+        return (float(v), None) if v >= 0 else (None, f"negative reading: {v!r}")
+    s = _cell_text(v)
+    low = re.sub(r"\s+", " ", s.lower()).strip()
+    if low in _BLANK_READINGS:
+        return None, "blank reading"
+    if low in _ND_WORDS:
+        return None, f"censored, not detected ({s!r}): kept and listed, not used in the fit"
+    m = re.fullmatch(r"([<>])\s*=?\s*(\d+(?:[.,]\d+)?)\s*(?:mg\s*/?\s*l|ppm)?", low)
+    if m:
+        if m.group(1) == "<":
+            return None, f"censored, below detection ({s!r}): kept and listed, not used in the fit"
+        return None, f"above the measuring range ({s!r}): not used in the fit"
+    m = re.fullmatch(r"(-?\d+(?:[.,]\d+)?|-?[.,]\d+)\s*(?:mg\s*/?\s*l|ppm)?", low)
+    if not m:
+        return None, f"not a number: {s!r}"
+    x = float(m.group(1).replace(",", "."))
+    if x < 0:
+        return None, f"negative reading: {s!r}"
+    return x, None
+
+
+def _clock_text(s: str) -> int | None:
+    """Minutes of the day of a time written as text ('9:15', '09:15:30', '9:15 AM', '0915'), seconds truncated."""
+    s = s.strip()
+    m = _CLOCK.fullmatch(s)
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2))
+        ap = (m.group(4) or "").lower()
+        if ap:
+            if not 1 <= h <= 12:
+                return None
+            h = h % 12 + (12 if ap == "p" else 0)
+        return h * 60 + mi if h < 24 and mi < 60 else None
+    m = _HHMM.fullmatch(s)
+    if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
+        return int(m.group(1)) * 60 + int(m.group(2))
+    return None
+
+
+def _time_cell(v) -> int | None:
+    """Minutes of the day of a time cell: Excel's typed time or datetime, a fraction of a day, or text.  Text that
+    holds a date and a time ('1899-12-30 09:15:00', as an Access or SQL time field exports it) gives its time of day,
+    as a typed datetime does (the final verification of task 16)."""
+    import datetime as _dt
+    if isinstance(v, _dt.datetime):
+        return v.hour * 60 + v.minute
+    if isinstance(v, _dt.time):
+        return v.hour * 60 + v.minute
+    if isinstance(v, float) and 0 <= v < 1:
+        return int(round(v * 86400)) // 60 % 1440
+    s = _cell_text(v)
+    t = _clock_text(s)
+    if t is None:
+        m = _ISO_DATE.match(s) or _NUM_DATE.match(s)
+        if m and m.group(4):
+            z = _ZONE.search(m.group(4))
+            t = _clock_text(m.group(4)[:z.start()] if z else m.group(4))
+    return t
+
+
+def _date_order(parts: list[tuple[int, int]], column: str, example: str, date_format: str | None) -> str:
+    """'MDY' or 'DMY' for the numeric dates of a column ((first, second) number of each): the given format, or what
+    the dates themselves settle (a first number above 12 is a day, a second above 12 is a day).  A column where no date
+    settles it, and some date reads two ways, is refused with the question."""
+    if date_format in ("MDY", "DMY"):
+        return date_format
+    a = any(p > 12 for p, _ in parts)
+    b = any(q > 12 for _, q in parts)
+    if a and b:
+        raise LogRefused(f"The dates in column '{column}' are written both ways: some have a day above 12 first and some "
+                         f"second. Export the log again with one date format.")
+    if a:
+        return "DMY"
+    if b:
+        return "MDY"
+    if all(p == q for p, q in parts):
+        return "MDY"
+    p, q = next((p, q) for p, q in parts if p != q)
+    raise LogRefused(f"The dates in column '{column}' can be read two ways: {example} is month {p}, day {q} with the "
+                     f"month first (MM/DD/YYYY), or day {p}, month {q} with the day first (DD/MM/YYYY), and no date in "
+                     f"the file has a day above 12 to settle it. Which is it? Choose the date format (in the app, "
+                     f"'Date format' with the grab log's columns; in the pilot, --date-format MDY or DMY).")
+
+
+def _parse_dates(cells: list, column: str, date_format: str | None,
+                 midnight: set | None = None) -> tuple[list, int]:
+    """Each date cell as (date or None, minutes of the day written in it or None), and how many carried a time zone
+    mark (Z, UTC or an offset), which is dropped: the time is read as written.  date_format is 'MDY', 'DMY' or 'YMD'
+    (how numeric dates are ordered), a strptime format (with '%'), or None to let the dates settle it.  A date with
+    its month's name ('10-Mar-26', '10 March 2026', 'Mar 10, 2026') needs no format.  An Excel datetime at exactly
+    midnight in a column where another datetime carries a time is given 00:00 and its index is added to midnight
+    (when a set is passed): read_grab_log keeps it only at an online analyzer's tap."""
+    import datetime as _dt
+    out: list = [None] * len(cells)
+    zoned = 0
+    numeric = []
+    # an Excel datetime at exactly midnight is 00:00 when another datetime cell of the column carries a time (an
+    # analyzer's series exported to Excel, the review of task 16), and a date only when every one is at midnight;
+    # since the final verification read_grab_log keeps such a 00:00 only at an analyzer's tap (a date typed with no
+    # time, in a column of datetimes, is no midnight sample)
+    timed = any(isinstance(v, _dt.datetime) and (v.hour or v.minute or v.second) for v in cells)
+    for i, v in enumerate(cells):
+        if isinstance(v, _dt.datetime):
+            try:
+                t = v.hour * 60 + v.minute
+                exact = not (v.hour or v.minute or v.second)
+                out[i] = (v.date(), t if (timed or not exact) else None)
+                if timed and exact and midnight is not None:
+                    midnight.add(i)
+            except (ValueError, TypeError):      # pandas' NaT is a datetime with no date
+                pass
+            continue
+        if isinstance(v, _dt.date):
+            out[i] = (v, None)
+            continue
+        s = _cell_text(v)
+        if not s:
+            continue
+        if date_format and "%" in date_format:
+            try:
+                d = _dt.datetime.strptime(s, date_format)
+            except ValueError:
+                continue
+            has_t = any(x in date_format for x in ("%H", "%I", "%M"))
+            out[i] = (d.date(), d.hour * 60 + d.minute if has_t else None)
+            continue
+        z = _ZONE.search(s) if ":" in s or "T" in s else None
+        if z and (_ISO_DATE.match(s[:z.start()]) or _NUM_DATE.match(s[:z.start()])):
+            s = s[:z.start()]
+            zoned += 1
+        m = _ISO_DATE.match(s)
+        if m:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            t = _clock_text(m.group(4)) if m.group(4) else None
+            if m.group(4) and t is None:
+                continue
+            try:
+                out[i] = (_dt.date(y, mo, d), t)
+            except ValueError:
+                pass
+            continue
+        m = _NUM_DATE.match(s)
+        if m:
+            t = _clock_text(m.group(4)) if m.group(4) else None
+            if m.group(4) and t is None:
+                continue
+            numeric.append((i, int(m.group(1)), int(m.group(2)), int(m.group(3)), t, s))
+            continue
+        m = _MON_DATE.match(s)               # '10-Mar-26', '10 March 2026': the month's name settles the order
+        n = None if m else _MON_FIRST.match(s)
+        if m or n:
+            d, mon, y, rest = ((int(m.group(1)), m.group(2), int(m.group(3)), m.group(4)) if m else
+                               (int(n.group(2)), n.group(1), int(n.group(3)), n.group(4)))
+            mo = _MONTHS.get(mon.lower())
+            t = _clock_text(rest) if rest else None
+            if mo is None or (rest and t is None):
+                continue
+            try:
+                out[i] = (_dt.date(y + 2000 if y < 100 else y, mo, d), t)
+            except ValueError:
+                pass
+    if numeric:
+        if date_format == "YMD":
+            raise LogRefused(f"The dates in column '{column}' are written like {numeric[0][5]!r}, with the year last, "
+                             f"not first as the chosen format says. Choose month first or day first.")
+        order = _date_order([(a, b) for _, a, b, _, _, _ in numeric], column, numeric[0][5], date_format)
+        for i, a, b, y, t, _ in numeric:
+            y = y + 2000 if y < 100 else y
+            mo, d = (a, b) if order == "MDY" else (b, a)
+            try:
+                out[i] = (_dt.date(y, mo, d), t)
+            except ValueError:
+                pass
+    return out, zoned
+
+
+def model_hour(clock_minute: int, start_clock_h: float = 0.0) -> int:
+    """The model hour of a time of day, in minutes: (clock time - START CLOCKTIME) mod 24 h, truncated to the hour
+    (minutes are truncated, as the pilot always did).  The start is taken to the minute once, as the readiness row
+    shows it (importers._clock_minute), so a sample gets the hour the report's start time implies; readiness.flags
+    keeps start_clock_h unrounded."""
+    return ((int(clock_minute) - _clock_minute(start_clock_h)) % 1440) // 60
+
+
+def clock_minute_of(h: int, start_clock_h: float = 0.0) -> int:
+    """The time of day, in minutes, of model hour h of a file that starts at start_clock_h."""
+    return (int(h) * 60 + _clock_minute(start_clock_h)) % 1440
+
+
+def clock_label(h: int, start_clock_h: float = 0.0) -> str:
+    """'HH:MM', the time of day of model hour h ('09:00' for model hour 3 of a file that starts at 06:00)."""
+    m = clock_minute_of(h, start_clock_h)
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def shows_clock(start_clock_h: float | None) -> bool:
+    """True when a file's hours need converting for display: its start, to the minute, is not midnight."""
+    return bool(start_clock_h) and _clock_minute(float(start_clock_h)) != 0
+
+
+def daytime_model_hours(start_clock_h: float = 0.0) -> list[int]:
+    """The model hours whose time of day falls in the sampling day, 07:00 to 17:00 (the hour starting at 17:00
+    included, as in simgp.DAY_HOURS), in order of the time of day; for a file that starts at midnight, DAY_HOURS."""
+    hours = sorted(range(24), key=lambda h: clock_minute_of(h, start_clock_h))
+    return [h for h in hours if DAY_START_H * 60 <= clock_minute_of(h, start_clock_h) < (DAY_END_H + 1) * 60]
+
+
+@dataclass
+class GrabLog:
+    """A grab log read for the model.  frame has load_log's columns (junction, hour as a model hour, y in mg/L,
+    month YYYY-MM, date YYYY-MM-DD, tap_id), one row per reading that is used; clock_min is each row's time of day in
+    minutes (same index).  censored lists the censored readings, kept and never fitted, its column 'kind' 'below'
+    for a reading below detection ('<0.02', 'ND') and 'above' for one above the measuring range ('>2.2'), which the
+    app and the pilot never call below detection (the review of task 16); dropped lists every other row that is not
+    used, with its reason; notes say how the file was read, warnings what to check."""
+    frame: object
+    clock_min: object
+    censored: object
+    dropped: list = field(default_factory=list)
+    notes: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    mapping: dict = field(default_factory=dict)
+    analyzer: dict = field(default_factory=dict)
+    start_clock_h: float = 0.0
+    n_rows: int = 0                     # data rows in the file
+    row_no: object = None               # each frame row's line in the file (same index as frame)
+
+    def only_junctions(self, junctions) -> "GrabLog":
+        """The same log with the rows whose junction is not in the model moved to dropped (and censored readings at
+        such a junction too), with the reason."""
+        import pandas as pd
+        js = set(map(str, junctions))
+        keep = self.frame.junction.isin(js)
+        dropped = list(self.dropped)
+        for (_, r), row_no in zip(self.frame[~keep].iterrows(), self.row_no[~keep]):
+            dropped.append({"row": int(row_no), "tap_id": r.tap_id,
+                            "reason": f"junction {r.junction} (tap {r.tap_id}) is not in the model"})
+        c = self.censored
+        ck = c.junction.isin(js) if len(c) else pd.Series(dtype=bool)
+        for _, r in (c[~ck].iterrows() if len(c) else []):
+            dropped.append({"row": int(r.row), "tap_id": r.tap_id,
+                            "reason": f"junction {r.junction} (tap {r.tap_id}) is not in the model"})
+        out = GrabLog(frame=self.frame[keep].reset_index(drop=True), clock_min=self.clock_min[keep].reset_index(drop=True),
+                      censored=c[ck].reset_index(drop=True) if len(c) else c, dropped=sorted(dropped, key=lambda d: d["row"]),
+                      notes=list(self.notes), warnings=list(self.warnings), mapping=dict(self.mapping),
+                      analyzer=dict(self.analyzer), start_clock_h=self.start_clock_h, n_rows=self.n_rows,
+                      row_no=self.row_no[keep].reset_index(drop=True))
+        return out
+
+    def window(self, months: int = LOG_WINDOW_MONTHS) -> tuple:
+        """(rows, censored rows, info) of the last `months` calendar months that hold a reading (used or censored),
+        as the pilot's --window counts them; info gives the months, the window's first and last date, and the log's,
+        and 'outside': every row before the window (a reading or a censored one), with its line and the reason, so
+        the not-used list can hold it (the review of task 16); n_outside counts them."""
+        all_months = sorted(set(self.frame.month) | (set(self.censored.month) if len(self.censored) else set()))
+        use = all_months[-months:]
+        inside = self.frame.month.isin(use)
+        f = self.frame[inside].reset_index(drop=True)
+        c = self.censored[self.censored.month.isin(use)].reset_index(drop=True) if len(self.censored) else self.censored
+        dates = sorted(set(f.date) | (set(c.date) if len(c) else set()))
+        all_dates = sorted(set(self.frame.date) | (set(self.censored.date) if len(self.censored) else set()))
+        why = f"dated before the window (the last {months} months that hold a reading, from {use[0] if use else ''})"
+        outside = [{"row": int(n), "tap_id": t, "reason": why}
+                   for n, t in zip(self.row_no[~inside], self.frame.tap_id[~inside])]
+        if len(self.censored):
+            outside += [{"row": int(r.row), "tap_id": r.tap_id, "reason": why}
+                        for r in self.censored[~self.censored.month.isin(use)].itertuples()]
+        info = {"months": use, "n_months_in_log": len(all_months), "first": dates[0] if dates else None,
+                "last": dates[-1] if dates else None, "log_first": all_dates[0] if all_dates else None,
+                "log_last": all_dates[-1] if all_dates else None, "n_used": len(f), "n_censored": len(c),
+                "n_outside": len(outside), "outside": sorted(outside, key=lambda d: d["row"])}
+        return f, c, info
+
+
+def read_tap_map(data: bytes, name: str = "tap_map.csv", mapping: dict | None = None) -> tuple[dict, LogTable, dict]:
+    """(tap ID -> junction ID, the table, the columns used).  IDs are kept as text, leading zeros included.  A tap
+    listed twice with two different junctions is refused; listed twice with one junction, it is kept once."""
+    t = read_table(data, name)
+    cols = dict(guess_tap_columns(t.header))
+    cols.update({k: v for k, v in (mapping or {}).items() if v})
+    if cols["tap"] not in t.header or cols["junction"] not in t.header:
+        raise LogRefused(f"The tap map needs a tap column and a junction column; its header is "
+                         f"{', '.join(t.header[:8])}. Name them tap_id and junction_id.")
+    it, ij = t.header.index(cols["tap"]), t.header.index(cols["junction"])
+    out, clash = {}, []
+    for r in t.rows:
+        tap, j = _cell_text(r[it]), _cell_text(r[ij])
+        if not tap or not j:
+            continue
+        if tap in out and out[tap] != j:
+            clash.append(tap)
+        out[tap] = out.get(tap, j)
+    if clash:
+        raise LogRefused(f"The tap map lists {len(clash)} tap{'s' if len(clash) > 1 else ''} with two different "
+                         f"junctions: {', '.join(sorted(set(clash))[:6])}. Keep one junction per tap.")
+    return out, t, cols
+
+
+def _analyte_by_values(t: LogTable, skip: set) -> str | None:
+    """A long-format log's analyte column found by its values when its header says nothing ('Description', 'Name'):
+    the first column (not in skip) filled on at least 90% of the first 2,000 rows, with at most 50 distinct values,
+    one of which names free or total chlorine."""
+    for i, h in enumerate(t.header):
+        if h in skip:
+            continue
+        vals = [_cell_text(r[i]) for r in t.rows[:2000]]
+        filled = [v for v in vals if v]
+        distinct = set(filled)
+        if (vals and len(filled) >= 0.9 * len(vals) and 0 < len(distinct) <= 50
+                and any(analyte_kind(v) in ("free", "total") for v in distinct)):
+            return h
+    return None
+
+
+def distinct_values(t: LogTable, column: str, cap: int = 200) -> list[str]:
+    """The distinct filled values of one column, as read_grab_log compares them (the app's 'Analyte value' choice),
+    sorted, at most cap of them."""
+    if column not in t.header:
+        return []
+    i = t.header.index(column)
+    return sorted({_cell_text(r[i]) for r in t.rows} - {""}, key=str.lower)[:cap]
+
+
+def guess_columns(t: LogTable, disinfectant: str = "free_chlorine") -> dict:
+    """guess_log_columns on a table's header, and, when no header names an analyte column, the analyte column found
+    by its values (_analyte_by_values), so the app's guesses and read_grab_log's agree."""
+    g = guess_log_columns(t.header, disinfectant)
+    if g["analyte"] is None:
+        g["analyte"] = _analyte_by_values(t, {g[k] for k in ("tap", "reading", "date", "time", "unit")} - {None})
+        if g["reading"] is None and g["analyte"] is not None:
+            norm = {h: " ".join(_norm_header(h).split()) for h in t.header}
+            g["reading"] = next((h for e in _RESULT_EXACT for h in t.header if norm[h] == e), None)
+    return g
+
+
+_CHOOSE_READING = ("Which column is the reading? Choose it (in the app, 'Reading column' with the grab log's columns; in "
+                   "the pilot, --columns 'reading=<its header>'), and only that column is read; or drop or rename the "
+                   "other column (or, if the log mixes a free-chlorine and a chloraminated system, split it by "
+                   "disinfectant).")
+_CHOOSE_VALUE = ("Which value is the chlorine reading? Choose it (in the app, 'Analyte value' with the grab log's "
+                 "columns; in the pilot, --columns 'analyte=<the column>;analyte_value=<the value>'), and only the rows "
+                 "of that value are read; or, if every row is a chlorine reading and the column names something else, "
+                 "choose '(every row)' (analyte_value=*).")
+EVERY_ROW = "*"                  # analyte_value: the analyte column does not pick the rows, every row is a reading
+_ANALYTE_LIKE_NOT = {"date", "time", "result", "results", "value", "values", "unit", "units", "id", "method"}
+
+
+def _species_question(guess: dict, what: str) -> str:
+    """The question for a log with two or more reading columns that are not all of one named species: a free and a
+    total column, or a column whose header names no species beside another (the final verification of task 16)."""
+    cols = guess["reading_columns"]
+    if guess["free_columns"] and guess["total_columns"]:
+        head = (f"The grab log has both a free chlorine column ({guess['free_columns'][0]}) and a total chlorine "
+                f"column ({guess['total_columns'][0]}).")
+    else:
+        unnamed = guess["other_columns"]
+        head = (f"The grab log has {len(cols)} chlorine columns ({', '.join(cols[:4])}), and "
+                + (f"the header of '{unnamed[0]}' does not say whether it is free or total chlorine."
+                   if len(unnamed) == 1 else "their headers do not say which is free and which is total chlorine."))
+    return (f"{head} Free and total chlorine are different measurements and one model never mixes them: {what}. "
+            + _CHOOSE_READING)
+
+
+def _values_text(values) -> str:
+    vs = sorted(values, key=lambda v: (v == "", v.lower()))
+    return ", ".join(repr(v) for v in vs[:6]) + (f" and {len(vs) - 6} more" if len(vs) > 6 else "")
+
+
+def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: bytes | None = None,
+                  taps_name: str = "tap_map.csv", disinfectant: str = "free_chlorine", date_format: str | None = None,
+                  mapping: dict | None = None, start_clock_h: float = 0.0, analyzer_hour: float = ANALYZER_HOUR,
+                  tap_mapping: dict | None = None, thin_analyzers: bool = True) -> GrabLog:
+    """A grab log and its tap map read for the model (task 16).  The columns are guessed (guess_columns) and any
+    given in mapping ({'tap', 'reading', 'date', 'time', 'analyte', 'unit'}, header names; 'time' None for one datetime
+    column, 'analyte' or 'unit' None for none; and 'analyte_value', the one analyte whose rows are read) replace the
+    guess.  Free and total chlorine are never mixed: a log with two reading columns that are not both of one named
+    species (a free and a total column, or one whose header names no species) is refused unless mapping names the
+    reading column, and then only that column is read; a reading column that names the other species is refused; in a
+    long-format export (one row per analyte) only the rows whose analyte is the disinfectant's species are read, and
+    the rest are listed with their reason; a long-format export whose analytes do not pick the species (two chlorine
+    analytes that name no species, or none that names chlorine while the reading column is a plain 'Result') is
+    refused with the question until analyte_value is given, and so is a plain 'Result' column beside an analyte-like
+    column ('Parameter Code') that is not chosen; a reading column that names neither species is read as the
+    disinfectant chosen, with a warning.  A
+    reading's unit is the one its header or the units column names (µg/L, ug/L and ppb are divided by 1000, with a
+    warning; mg/L, ppm or none are mg/L), and a reading above READING_MAX_MGL is listed, not used.  Each time of day
+    becomes a model hour (model_hour: the time minus START CLOCKTIME, mod 24 h, minutes truncated); start_clock_h is
+    0 for every bundled example, so their hours are unchanged.  A tap with ANALYZER_MIN_PER_DAY or more readings a
+    day at a median step of ANALYZER_MAX_STEP_MIN minutes or less on ANALYZER_MIN_DAYS days or more (or with that
+    many readings a day on ANALYZER_DENSE_DAYS days or more) is an online analyzer: it keeps one reading per day, the
+    one nearest analyzer_hour, unless thin_analyzers is False (a sampling study the operator wants kept whole).  Tap
+    IDs that are numbers in the log and not found as written are matched by number (Excel drops leading zeros), with
+    a warning.  taps_data None reads each tap ID as its own junction (the Get started page's check of a log alone).
+    Raises LogRefused when the log cannot be read as it is (with a question when a date reads two ways or a log has
+    both species and no reading column was chosen)."""
+    import pandas as pd
+    if disinfectant not in DISINFECTANT_WORDS:
+        raise ValueError(f"disinfectant must be one of {sorted(DISINFECTANT_WORDS)}")
+    if date_format is not None and "%" not in date_format and date_format not in DATE_ORDERS:
+        raise ValueError(f"date_format must be one of {sorted(DATE_ORDERS)} or a strptime format with '%'")
+    t = read_table(log_data, log_name)
+    guess = guess_columns(t, disinfectant)
+    cols = {k: guess[k] for k in ("tap", "reading", "date", "time", "analyte", "unit")}
+    for k, v in (mapping or {}).items():
+        if k in cols:
+            cols[k] = v or None
+    want = "total" if disinfectant == "chloramine" else "free"
+    other = "free" if want == "total" else "total"
+    word = {"free": "free chlorine", "total": "total chlorine"}
+    what = ("the free-chlorine model reads free chlorine only" if want == "free" else
+            "the chloramine mode reads total chlorine only")
+    chosen = bool((mapping or {}).get("reading"))
+    if guess["both_species"] and not chosen:
+        raise LogRefused(_species_question(guess, what))
+    missing = [k for k in ("tap", "reading", "date") if not cols[k] or cols[k] not in t.header]
+    missing += [k for k in ("time", "analyte", "unit") if cols[k] and cols[k] not in t.header]
+    if missing:
+        raise LogRefused(f"No {', '.join(missing)} column was found in the grab log's header ({', '.join(t.header[:10])}"
+                         f"). Choose the columns (in the app, with the grab log's columns; in the pilot, --columns), "
+                         f"or name them date, time, tap_id and {'total' if want == 'total' else 'free'}_chlorine_mgL.")
+    sp = reading_species(cols["reading"])
+    if sp is not None and sp != want:
+        raise LogRefused(f"The reading column '{cols['reading']}' is {word[sp]}, and "
+                         + ("the free-chlorine model reads free chlorine only: choose 'Chloramine (total chlorine)' "
+                            "(--disinfectant chloramine) for a chloraminated system." if want == "free" else
+                            "the chloramine mode reads total chlorine only: choose 'Free chlorine' for a free-chlorine "
+                            "system."))
+    warns, notes = [], [f"Read as {t.how}; {len(t.rows)} data row{'s' if len(t.rows) != 1 else ''}."]
+    notes.append(f"Columns: tap '{cols['tap']}', reading '{cols['reading']}', date '{cols['date']}'"
+                 + (f", time '{cols['time']}'" if cols["time"] else " (the time is in the date column)")
+                 + (f", analyte '{cols['analyte']}'" if cols["analyte"] else "")
+                 + (f", unit '{cols['unit']}'" if cols["unit"] else "") + ".")
+    if guess["both_species"]:
+        rest = [h for h in guess["reading_columns"] if h != cols["reading"]]
+        notes.append(f"The log's other chlorine column{'s' if len(rest) != 1 else ''} ({', '.join(rest)}) "
+                     f"{'are' if len(rest) != 1 else 'is'} not read: the reading column chosen is "
+                     f"'{cols['reading']}', and one model never mixes free and total chlorine.")
+    ix = {k: (t.header.index(v) if v else None) for k, v in cols.items()}
+    # a long-format export: which rows are the disinfectant's species (the final verification of task 16: rows are
+    # never all read when the analytes cannot say which are the reading)
+    value = (mapping or {}).get("analyte_value") or None
+    generic = not is_reading_header(cols["reading"])     # 'Result', 'Value': the header does not say what it holds
+    kinds, pick = {}, None
+    if value is not None and not cols["analyte"]:
+        raise LogRefused(f"An analyte value ({value!r}) was chosen, but no analyte column: choose the column that names "
+                         f"each row's analyte too.")
+    if cols["analyte"] and value == EVERY_ROW:
+        warns.append(f"The column '{cols['analyte']}' was chosen as not picking the rows (every row): every row of "
+                     f"'{cols['reading']}' is read as {word[want]}, whatever that column says. Check that it is.")
+        cols["analyte"], ix["analyte"] = None, None
+    elif cols["analyte"]:
+        values = {_cell_text(r[ix["analyte"]]) for r in t.rows}
+        kinds = {v: analyte_kind(v) for v in values}
+        A = cols["analyte"]
+        if value is not None:
+            if value not in values:
+                raise LogRefused(f"No row's analyte in column '{A}' is {value!r}; its values are {_values_text(values)}.")
+            vsp = reading_species(value)
+            if vsp is not None and vsp != want:
+                raise LogRefused(f"The analyte chosen, {value!r}, is {word[vsp]}, and "
+                                 + ("the free-chlorine model reads free chlorine only: choose 'Chloramine (total "
+                                    "chlorine)' (--disinfectant chloramine) for a chloraminated system." if want == "free"
+                                    else "the chloramine mode reads total chlorine only: choose 'Free chlorine' for a "
+                                         "free-chlorine system."))
+            pick = value
+        elif all(k == "other" for k in kinds.values()):
+            if generic:
+                raise LogRefused(f"The column '{A}' names each row's analyte ({_values_text(values)}), and none of its "
+                                 f"values names chlorine in words ResidualMap reads (such as 'Free Chlorine', 'Total "
+                                 f"Cl', 'Chlorine (Free)' or FCL2), so it cannot tell which rows of '{cols['reading']}' "
+                                 f"are the reading; reading every row would mix in every other analyte. "
+                                 + _CHOOSE_VALUE)
+            warns.append(f"The column '{A}' looks like an analyte column, but none of its values names "
+                         f"chlorine, so it does not pick the rows.")
+            kinds, cols["analyte"], ix["analyte"] = {}, None, None
+        elif want not in kinds.values():
+            unnamed = [v for v, k in kinds.items() if k == "chlorine"]
+            others = [v for v, k in kinds.items() if k == other]
+            if len(unnamed) > 1 or (unnamed and others):
+                raise LogRefused(f"The analyte column '{A}' names chlorine in {len(unnamed) + len(others)} ways "
+                                 f"({_values_text(unnamed + others)}), and "
+                                 + ("none of them says" if not others else
+                                    f"{_values_text(unnamed)} {'does' if len(unnamed) == 1 else 'do'} not say")
+                                 + f" whether it is free or total chlorine. Free and total chlorine are different "
+                                   f"measurements and one model never mixes them: {what}. " + _CHOOSE_VALUE)
+    elif generic:
+        used = {v for v in cols.values() if v}
+        for i, h in enumerate(t.header):
+            w = set(_norm_header(h).split())
+            if h in used or not w & _ANALYTE_WORDS or w & (_ANALYTE_LIKE_NOT | set(_TAP_WORDS)):
+                continue
+            vals = {_cell_text(r[i]) for r in t.rows[:2000]} - {""}
+            if len(vals) >= 2:
+                raise LogRefused(f"The column '{h}' looks like it names each row's analyte ({_values_text(vals)}), and "
+                                 f"the reading column '{cols['reading']}' does not say what it measures, so every row "
+                                 f"would be read, whatever its analyte. Choose '{h}' as the analyte column (in the app, "
+                                 f"'Analyte column'; in the pilot, --columns 'analyte={h}'), then the analyte value of "
+                                 f"the chlorine reading if it is not found by its name, or '(every row)' "
+                                 f"(analyte_value=*) if every row is a chlorine reading.")
+    if not guess["both_species"] and not chosen and len(guess["reading_columns"]) > 1:
+        rest = [h for h in guess["reading_columns"] if h != cols["reading"]]
+        notes.append(f"The log has {len(guess['reading_columns'])} {word.get(sp, 'chlorine')} columns: "
+                     f"'{cols['reading']}', the first, is read, and {', '.join(repr(h) for h in rest)} "
+                     f"{'is' if len(rest) == 1 else 'are'} not; choose the reading column if it is another.")
+    named = [k for k in kinds.values() if k in ("free", "total")]
+    if pick is not None:
+        if reading_species(pick) is None:
+            warns.append(f"The analyte chosen, {pick!r} (column '{cols['analyte']}'), does not say free or total "
+                         f"chlorine{'' if names_chlorine(pick) else ', nor name chlorine in words ResidualMap reads'}; "
+                         f"its rows are read as {word[want]}, the disinfectant chosen. Check that it is.")
+    elif sp is None and not (kinds and want in named) and value != EVERY_ROW:
+        warns.append(f"The reading column '{cols['reading']}' does not say free or total chlorine; it is read as "
+                     f"{word[want]}, the disinfectant chosen. Check that it is.")
+    head_factor = header_unit(cols["reading"]) or 1.0
+    midnight: set = set()
+    dates, zoned = _parse_dates([r[ix["date"]] for r in t.rows], cols["date"], date_format, midnight)
+    if zoned:
+        warns.append(f"{zoned} date{'s' if zoned != 1 else ''} carry a time zone mark (Z, UTC or an offset): each time "
+                     f"is read as written. If the log's times are UTC, export them in local time.")
+    taps, tmap_cols = (None, {}) if taps_data is None else read_tap_map(taps_data, taps_name, tap_mapping)[0::2]
+    by_number = {}
+    if taps is not None:
+        for k in taps:
+            if k.isascii() and k.isdigit():         # '1²' passes isdigit() and fails int() (the final verification)
+                by_number.setdefault(int(k), []).append(k)
+    rows, dropped, cens, matched_by_number, commas, micro, n_other = [], [], [], {}, 0, 0, 0
+    for i_row, (r, row_no, dt_) in enumerate(zip(t.rows, t.row_numbers, dates)):
+        tap = _cell_text(r[ix["tap"]])
+        raw = r[ix["reading"]]
+        if kinds:
+            a = _cell_text(r[ix["analyte"]])
+            k = kinds[a]
+            keep = a == pick if pick is not None else (k == want or (k == "chlorine" and not named))
+            if not keep:
+                why = (f"{word[k]}, not {word[want]} ({a!r}): one model never mixes them" if k in word and k != want
+                       else f"another analyte ({a!r}), not the one chosen ({pick!r})" if pick is not None and k != "other"
+                       else f"the analyte does not say free or total chlorine ({a!r})" if k == "chlorine" else
+                       f"another analyte ({a!r})")
+                dropped.append({"row": row_no, "tap_id": tap, "reason": why})
+                n_other += 1
+                continue
+        if not tap:
+            dropped.append({"row": row_no, "tap_id": "", "reason": "no tap ID"})
+            continue
+        junction = tap if taps is None else taps.get(tap)
+        if junction is None and tap.isascii() and tap.isdigit() and len(by_number.get(int(tap), [])) == 1:
+            key = by_number[int(tap)][0]
+            junction = taps[key]
+            matched_by_number[tap] = key
+        if junction is None:
+            dropped.append({"row": row_no, "tap_id": tap, "reason": f"tap {tap} is not in the tap map"})
+            continue
+        if dt_ is None:
+            dropped.append({"row": row_no, "tap_id": tap, "reason": "date not read",
+                            "example": _cell_text(r[ix["date"]])})
+            continue
+        day, minute = dt_
+        if ix["time"] is not None:
+            minute = _time_cell(r[ix["time"]])
+        if minute is None:
+            dropped.append({"row": row_no, "tap_id": tap, "reason": "no time of day",
+                            "example": _cell_text(r[ix["time"]]) if ix["time"] is not None else
+                            _cell_text(r[ix["date"]])})
+            continue
+        factor = head_factor
+        if ix["unit"] is not None and _cell_text(r[ix["unit"]]):
+            u = _cell_text(r[ix["unit"]])
+            factor = header_unit(u)
+            if factor is None:
+                dropped.append({"row": row_no, "tap_id": tap, "reason": f"the unit is {u!r}, not mg/L"})
+                continue
+        y, why = parse_reading(raw)
+        rec = {"row": row_no, "tap_id": matched_by_number.get(tap, tap), "junction": str(junction),
+               "date": day.isoformat(), "month": day.isoformat()[:7], "clock_min": int(minute),
+               "hour": model_hour(minute, start_clock_h)}
+        if ix["time"] is None and i_row in midnight:     # an Excel 00:00 that may be a date typed with no time
+            rec.update(midnight=True, date_text=_cell_text(r[ix["date"]]))
+        if y is None and why.startswith(("censored", "above")):
+            cens.append({**rec, "raw": _cell_text(raw), "reason": why,
+                         "kind": "above" if why.startswith("above") else "below"})
+        elif y is None:
+            dropped.append({"row": row_no, "tap_id": tap, "reason": why})
+        elif y * factor > READING_MAX_MGL:
+            dropped.append({"row": row_no, "tap_id": tap,
+                            "reason": f"above {READING_MAX_MGL:g} mg/L, more than any chlorine residual: check the "
+                                      f"reading column and its unit", "example": _cell_text(raw)})
+        else:
+            rows.append({**rec, "y": y * factor if factor != 1.0 else y})
+            commas += isinstance(raw, str) and "," in raw
+            micro += factor != 1.0
+    if commas:
+        notes.append(f"{commas} reading{'s' if commas != 1 else ''} written with a decimal comma (0,45) "
+                     f"{'were' if commas != 1 else 'was'} read as decimals (0.45).")
+    if micro:
+        warns.append(f"{micro} reading{'s are' if micro != 1 else ' is'} in µg/L (micrograms per litre), as the "
+                     f"{'units column' if ix['unit'] is not None and head_factor == 1.0 else 'reading column'} says: "
+                     f"each was divided by 1000 to mg/L. Check that the unit is right.")
+    if pick is not None:
+        notes.append(f"Each row's analyte is in column '{cols['analyte']}': the rows of {pick!r}, the analyte chosen, are "
+                     f"read, and the {n_other} other row{'s' if n_other != 1 else ''} are listed as not used.")
+    elif kinds and want in named:
+        notes.append(f"Each row's analyte is in column '{cols['analyte']}': the rows of {word[want]} are read, and the "
+                     f"{n_other} row{'s' if n_other != 1 else ''} of other analytes or of {word[other]} are listed as "
+                     f"not used.")
+    n_high = sum(d["reason"].startswith(f"above {READING_MAX_MGL:g} mg/L") for d in dropped)
+    if n_high and rows and not micro:      # the final verification of task 16: a µg/L log its header does not name
+        warns.append(f"{n_high} reading{'s are' if n_high != 1 else ' is'} above {READING_MAX_MGL:g} mg/L and "
+                     f"{len(rows)} {'are' if len(rows) != 1 else 'is'} not: a log in µg/L (micrograms per litre) whose "
+                     f"header and units do not say so looks like this, and its readings of {READING_MAX_MGL:g} or less "
+                     f"would be fitted 1000 times too high. Check the unit: if it is µg/L, name it in the reading "
+                     f"column's header (such as 'Free Chlorine (ug/L)') or in a units column.")
+    if matched_by_number:
+        ex = ", ".join(f"{a} is {b}" for a, b in sorted(matched_by_number.items())[:6])
+        warns.append(f"{len(matched_by_number)} tap ID{'s' if len(matched_by_number) != 1 else ''} in the log "
+                     f"{'are numbers' if len(matched_by_number) != 1 else 'is a number'} with no leading zeros, as "
+                     f"Excel stores them; matched by number to the tap map ({ex}). Check that these are the same taps.")
+    # online analyzers (by their cadence: many readings a day, minutes apart, on several days): one reading per tap
+    # per day, the one nearest analyzer_hour
+    analyzer = {}
+    if rows:
+        per_day = {}
+        for x in rows:
+            per_day.setdefault(x["tap_id"], {}).setdefault(x["date"], []).append(x)
+        target = int(round(analyzer_hour * 60))
+        keep_ids = set()
+        for tap_, days in per_day.items():
+            dense = fast = 0
+            for xs in days.values():
+                if len(xs) < ANALYZER_MIN_PER_DAY:
+                    continue
+                dense += 1
+                ms = sorted(x["clock_min"] for x in xs)
+                steps = sorted(b - a for a, b in zip(ms, ms[1:]))
+                fast += steps[len(steps) // 2] <= ANALYZER_MAX_STEP_MIN
+            if fast < ANALYZER_MIN_DAYS and dense < ANALYZER_DENSE_DAYS:
+                continue
+            counts = sorted(len(v) for v in days.values())
+            n = sum(counts)
+            if not thin_analyzers:
+                analyzer[tap_] = {"readings": n, "days": len(days), "kept": n, "days_without": 0,
+                                  "per_day": counts[len(counts) // 2], "thinned": False}
+                continue
+            kept, gaps = [], 0
+            for day, xs in sorted(days.items()):
+                best = min(xs, key=lambda x: (abs(x["clock_min"] - target), x["clock_min"]))
+                if abs(best["clock_min"] - target) <= ANALYZER_MAX_GAP_MIN:
+                    kept.append(id(best))
+                else:
+                    gaps += 1
+            analyzer[tap_] = {"readings": n, "days": len(days), "kept": len(kept), "days_without": gaps,
+                              "per_day": counts[len(counts) // 2], "thinned": True}
+            keep_ids |= set(kept)
+            if gaps:
+                dropped.append({"row": min(x["row"] for v in days.values() for x in v), "tap_id": tap_,
+                                "reason": f"analyzer series: no reading within {ANALYZER_MAX_GAP_MIN} min of "
+                                          f"{_clock(analyzer_hour)} on {gaps} day{'s' if gaps != 1 else ''}"})
+        if analyzer:
+            names = f"{len(analyzer)} tap{'s' if len(analyzer) != 1 else ''} ({', '.join(sorted(analyzer)[:6])})"
+            look = "look" if len(analyzer) != 1 else "looks"
+            n_in = sum(a["readings"] for a in analyzer.values())
+            per = sorted(a["per_day"] for a in analyzer.values())[len(analyzer) // 2]
+            if thin_analyzers:
+                for x in rows:
+                    if x["tap_id"] in analyzer and id(x) not in keep_ids:
+                        dropped.append({"row": x["row"], "tap_id": x["tap_id"],
+                                        "reason": f"analyzer series at tap {x['tap_id']}: thinned to one reading a "
+                                                  f"day, the one nearest {_clock(analyzer_hour)}"})
+                rows = [x for x in rows if x["tap_id"] not in analyzer or id(x) in keep_ids]
+                n_out = sum(a["kept"] for a in analyzer.values())
+                n_grab = sum(x["tap_id"] not in analyzer for x in rows)
+                notes.append(f"{names} {look} like an online analyzer ({n_in:,} readings, {per} a day on the median "
+                             f"day, minutes apart): thinned to one reading per tap per day, the one nearest "
+                             f"{_clock(analyzer_hour)}, so each series counts once a day, not {per} times: {n_out:,} "
+                             f"analyzer reading{'s' if n_out != 1 else ''} and {n_grab:,} grab "
+                             f"sample{'s' if n_grab != 1 else ''} kept.")
+            else:
+                notes.append(f"{names} {look} like an online analyzer ({n_in:,} readings, {per} a day on the median "
+                             f"day): every reading is kept, as asked (a sampling study, not thinned), so each counts in "
+                             f"the fit.")
+    # an Excel datetime at exactly 00:00 among timed ones: kept at an online analyzer's tap (its midnight reading),
+    # listed as 'no time of day' elsewhere, a date typed without its time (the final verification of task 16)
+    late = [x for x in rows + cens if x.get("midnight") and x["tap_id"] not in analyzer]
+    if late:
+        gone = {id(x) for x in late}
+        rows = [x for x in rows if id(x) not in gone]
+        cens = [x for x in cens if id(x) not in gone]
+        for x in late:
+            dropped.append({"row": x["row"], "tap_id": x["tap_id"], "reason": "no time of day",
+                            "example": x["date_text"]})
+        notes.append(f"{len(late)} Excel date{'s' if len(late) != 1 else ''} at exactly 00:00 in a column of dates "
+                     f"with times, at taps that are not online analyzers, {'are' if len(late) != 1 else 'is'} read as "
+                     f"a date whose time was not typed and listed as 'no time of day'; an online analyzer's 00:00 "
+                     f"readings are kept.")
+    grab = [x for x in rows if x["tap_id"] not in analyzer]
+    if grab:
+        out_ = sum(not (UTC_DAY_MIN[0] <= x["clock_min"] <= UTC_DAY_MIN[1]) for x in grab)
+        if out_ > len(grab) / 2:
+            warns.append(f"{out_} of {len(grab)} sample times fall outside 06:00 to 18:00, when grab samples are "
+                         f"usually taken. The times may have been exported in UTC rather than local time: check one "
+                         f"sample against its field sheet, and export the log in local time if so.")
+    if rows:
+        ys = sorted(x["y"] for x in rows)
+        med = ys[len(ys) // 2]
+        if med > READING_HIGH_MEDIAN_MGL:
+            warns.append(f"The readings' median is {med:g} mg/L, above {READING_HIGH_MEDIAN_MGL:g} mg/L, higher than a "
+                         f"distribution residual usually is: check that the reading column is chlorine and in mg/L.")
+    if shows_clock(start_clock_h):
+        notes.append(f"Times of day are converted to model hours: the model starts at {_clock(start_clock_h)} (START "
+                     f"CLOCKTIME), so a sample taken at {clock_label(3, start_clock_h)} is model hour 3. Minutes are "
+                     f"truncated.")
+    cols_out = ["junction", "hour", "y", "month", "date", "tap_id"]
+    frame = pd.DataFrame({"junction": [x["junction"] for x in rows], "hour": [int(x["hour"]) for x in rows],
+                          "y": [float(x["y"]) for x in rows], "month": [x["month"] for x in rows],
+                          "date": [x["date"] for x in rows], "tap_id": [x["tap_id"] for x in rows]},
+                         columns=cols_out)
+    frame["hour"] = frame["hour"].astype(int)
+    frame["y"] = frame["y"].astype(float)
+    censored = pd.DataFrame(cens, columns=["row", "tap_id", "junction", "date", "month", "clock_min", "hour", "raw",
+                                           "reason", "kind"])
+    gl = GrabLog(frame=frame, clock_min=pd.Series([x["clock_min"] for x in rows], dtype=int), censored=censored,
+                 dropped=sorted(dropped, key=lambda d: d["row"]), notes=notes, warnings=warns,
+                 mapping={**cols, "analyte_value": EVERY_ROW if value == EVERY_ROW else pick, "date_format": date_format,
+                          "tap_map": tmap_cols},
+                 analyzer=analyzer,
+                 start_clock_h=float(start_clock_h or 0.0), n_rows=len(t.rows),
+                 row_no=pd.Series([x["row"] for x in rows], dtype=int))
+    return gl
+
+
+def _row_runs(rows: list[int]) -> list[str]:
+    """['3', '5 to 9', '12']: every row, a run of consecutive rows written as a range."""
+    rs, out, i = sorted(set(rows)), [], 0
+    while i < len(rs):
+        j = i
+        while j + 1 < len(rs) and rs[j + 1] == rs[j] + 1:
+            j += 1
+        out.append(str(rs[i]) if j == i else f"{rs[i]} to {rs[j]}")
+        i = j + 1
+    return out
+
+
+def _row_ranges(rows: list[int]) -> str:
+    """'3, 5 to 9, 12': every row, with a run of consecutive rows written as a range."""
+    return ", ".join(_row_runs(rows))
+
+
+# the reasons that name a value, and the words of their group: when more than DROPPED_MAX_VALUES values of one group
+# are listed (a lab qualifier on every reading, '0.452 J'; a tap map from another system), dropped_lines gives the
+# group one line, with its count of values and a few examples (the final verification of task 16)
+_REASON_GROUPS = (
+    (re.compile(r"^tap (.+) is not in the tap map$"), "a tap that is not in the tap map"),
+    (re.compile(r"^junction (.+) \(tap .+\) is not in the model$"), "a junction that is not in the model"),
+    (re.compile(r"^not a number: (.+)$"), "not a number"),
+    (re.compile(r"^negative reading: (.+)$"), "a negative reading"),
+    (re.compile(r"^the unit is (.+), not mg/L$"), "a unit that is not mg/L"),
+    (re.compile(r"^another analyte \((.+?)\)(, not the one chosen .*)?$"), "another analyte"),
+    (re.compile(r"^the analyte does not say free or total chlorine \((.+)\)$"),
+     "an analyte that does not say free or total chlorine"),
+    (re.compile(r"^(free chlorine|total chlorine), not (?:free|total) chlorine \((.+)\): one model never mixes them$"),
+     None),
+    (re.compile(r"^censored, (below detection|not detected) \((.+)\): kept and listed, not used in the fit$"), None),
+    (re.compile(r"^above the measuring range \((.+)\): not used in the fit$"),
+     "above the measuring range: not used in the fit"),
+)
+
+
+def _reason_group(reason: str) -> tuple[str, str] | None:
+    """(the group's words, the value) of a reason that names a value, None for a reason that does not."""
+    for rx, words in _REASON_GROUPS:
+        m = rx.match(reason)
+        if m:
+            if words is None:            # the species and censored reasons keep their first words
+                head, val = m.group(1), m.group(2)
+                words = (f"{head}, not {'total' if head.startswith('free') else 'free'} chlorine: one model never "
+                         f"mixes them" if head.endswith("chlorine") else
+                         f"censored, {head}: kept and listed, not used in the fit")
+                return words, val
+            return words, m.group(1)
+    return None
+
+
+def dropped_lines(dropped: list[dict], max_runs: int = DROPPED_MAX_RUNS) -> list[str]:
+    """Every row that is not used, grouped by its reason, with one example of what the file holds when the reason has
+    one ('date not read (for example '24-Jan-26')'), and its rows (a run of consecutive rows as a range):
+    'tap T99 is not in the tap map: rows 5, 9 to 12'.  A reason with more than max_runs runs of rows (an analyzer
+    export interleaved by time) gives its count, its first and last row and its first max_runs runs, so the list
+    stays short; the count still covers every row (the review of task 16).  Since the final verification, a reason
+    that names a value ('not a number: '0.452 J'', 'tap X is not in the tap map', 'the unit is ...') is one line for
+    all its values when more than DROPPED_MAX_VALUES of them differ, with their count and three examples, and the
+    list has at most DROPPED_MAX_LINES lines, the last counting the reasons and rows it leaves out."""
+    by: dict[str, list[int]] = {}
+    example: dict[str, str] = {}
+    for d in dropped:
+        by.setdefault(d["reason"], []).append(int(d["row"]))
+        if d.get("example") and d["reason"] not in example:
+            example[d["reason"]] = d["example"]
+    groups: dict[str, list[str]] = {}
+    for why in by:
+        g = _reason_group(why)
+        if g:
+            groups.setdefault(g[0], []).append(why)
+    merged: dict[str, tuple] = {}            # a reason -> (the group's line head, the group's rows), once per group
+    skip = set()
+    for words, whys in groups.items():
+        if len(whys) > DROPPED_MAX_VALUES:
+            vals = [v if v[:1] in "'\"" else repr(v) for v in (_reason_group(w)[1] for w in whys)]
+            head = (f"{words} ({len(whys):,} different values, for example {', '.join(vals[:3])})")
+            merged[whys[0]] = (head, [r for w in whys for r in by[w]])
+            skip |= set(whys[1:])
+    out = []
+    for why, rows in by.items():
+        if why in skip:
+            continue
+        if why in merged:
+            head, rows = merged[why]
+        else:
+            head = why + (f" (for example {example[why]!r})" if why in example else "")
+        runs = _row_runs(rows)
+        n = len(set(rows))
+        if len(runs) <= max_runs:
+            out.append(f"{head}: row{'s' if n != 1 else ''} {', '.join(runs)}")
+        else:
+            out.append(f"{head}: {n:,} rows, from row {min(rows):,} to row {max(rows):,} ({', '.join(runs[:max_runs])}, "
+                       f"and {len(runs) - max_runs:,} more runs of rows)")
+    if len(out) > DROPPED_MAX_LINES:
+        left = [w for w in by if w not in skip][DROPPED_MAX_LINES - 1:]       # the reasons of the lines left out
+        n_rows = len({r for w in left for r in (merged[w][1] if w in merged else by[w])})
+        out = out[:DROPPED_MAX_LINES - 1] + [f"and {len(left):,} more reasons, for {n_rows:,} more "
+                                             f"row{'s' if n_rows != 1 else ''}"]
+    return out
+
+
+def xlsx_bytes(rows: list[list], sheet: str = "grab log") -> bytes:
+    """A one-sheet workbook of these rows, written by openpyxl (the Get started page's .xlsx template; nothing binary
+    is committed).  Read back by read_table, this is same-library self-consistency."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # ----------------------------------------------------------------------------- command line

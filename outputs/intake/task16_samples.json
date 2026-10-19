@@ -1,0 +1,889 @@
+{
+ "about": "Task 16's grab-log and clock-time tests on files built by residualmap/fixtures.py (invented readings at Net3's junctions; grab_log_typed.xlsx and the Excel template written by openpyxl, the library that reads them, so those two are same-library self-consistency). Written by python -m residualmap.intake_exp samples; the task16 checks rerun each part and compare. The app's own numbers (AppTest) are in outputs/chem/checks_report.json. Part 'review' holds the review's cases and part 'final_review' the final verification's; parts 'final_review_probes' and 'browser_check' are copied from the final verification's probe logs and the one real-browser run's log, and the checks do not rerun them.",
+ "mapping": {
+  "lims_one_datetime_us": {
+   "rows": 40,
+   "rows_as_expected": true,
+   "mapping": {
+    "tap": "Sample Point",
+    "reading": "Total Chlorine (mg/L)",
+    "date": "Sample Date/Time",
+    "time": null
+   },
+   "species_warning": false,
+   "without_format_refused": true,
+   "without_format_asks": true,
+   "with_strptime_same": true
+  },
+  "lims_censored": {
+   "rows": 3,
+   "rows_as_expected": true,
+   "n_censored": 4,
+   "n_dropped": 1,
+   "censored": [
+    "T2",
+    "T3",
+    "T5",
+    "T7"
+   ],
+   "censored_raw": [
+    "< 0.05",
+    "<0.02",
+    "BDL",
+    "ND"
+   ],
+   "censored_reasons_say_so": true,
+   "dropped": [
+    [
+     "T4",
+     "blank reading"
+    ]
+   ],
+   "as_expected": true
+  },
+  "log_semicolon": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "how": "Read as text separated by semicolons; 4 data rows."
+  },
+  "log_tab": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "how": "Read as text separated by tabs; 4 data rows."
+  },
+  "log_semicolon_explicit_mapping_same": true,
+  "ambiguous_dates": {
+   "refused": true,
+   "asks": true,
+   "question": "The dates in column 'date' can be read two ways: 03/04/2026 is month 3, day 4 with the month first (MM/DD/YYYY), or day 3, month 4 with the day first (DD/MM/YYYY), and no date in the file has a day above 12 to settle it. Which is it? Choose the date format (in the app, 'Date format' with the grab log's columns; in the pilot, --date-format MDY or DMY).",
+   "with_DMY_rows": 3
+  }
+ },
+ "encodings": {
+  "grab_log_cp1252": {
+   "rows": 3,
+   "rows_as_expected": true,
+   "how": "Read as text separated by commas, decoded as cp1252 (Windows Western European); 3 data rows.",
+   "header_first": "date"
+  },
+  "grab_log_bom": {
+   "rows": 2,
+   "rows_as_expected": true,
+   "how": "Read as text separated by commas, decoded as utf-8 with a byte-order mark; 2 data rows.",
+   "header_first": "date"
+  }
+ },
+ "excel": {
+  "xlsx_rows": 5,
+  "csv_rows": 5,
+  "same_rows": true,
+  "rows_as_expected": true,
+  "same_S": true,
+  "leading_zero_warning": true,
+  "leading_zero_taps": [
+   "007",
+   "012"
+  ],
+  "warning": "2 tap IDs in the log are numbers with no leading zeros, as Excel stores them; matched by number to the tap map (12 is 012, 7 is 007). Check that these are the same taps.",
+  "csv_warnings": 0,
+  "how": "Read as an Excel workbook (.xlsx), its first sheet, typed cells kept; 5 data rows.",
+  "label": "same-library self-consistency (openpyxl)"
+ },
+ "analyzer": {
+  "readings_in": 5760,
+  "sites": [
+   "AN-1",
+   "AN-2"
+  ],
+  "kept": 60,
+  "per_site_per_day_max": 1,
+  "per_site_per_day_min": 1,
+  "days": 30,
+  "clock_minutes_kept": [
+   600
+  ],
+  "at_hour": 10.0,
+  "grab_rows_kept": 3,
+  "noted": true,
+  "thinned_listed": 5700,
+  "hour_8": [
+   480
+  ]
+ },
+ "utc": {
+  "warned": true,
+  "warning": "6 of 6 sample times fall outside 06:00 to 18:00, when grab samples are usually taken. The times may have been exported in UTC rather than local time: check one sample against its field sheet, and export the log in local time if so.",
+  "semicolon_log_warned": false,
+  "example_log_warned": false
+ },
+ "clock_helpers": {
+  "09:00_at_6h": 3,
+  "09:59_at_6h": 3,
+  "03:00_at_6h": 21,
+  "model_3_label_6h": "09:00",
+  "daytime_6h": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11
+  ],
+  "daytime_6h_labels": [
+   "07:00",
+   "08:00",
+   "09:00",
+   "10:00",
+   "11:00",
+   "12:00",
+   "13:00",
+   "14:00",
+   "15:00",
+   "16:00",
+   "17:00"
+  ],
+  "daytime_0h_is_DAY_HOURS": true,
+  "identity_at_0h": true,
+  "daytime_6h30_labels": [
+   "07:30",
+   "08:30",
+   "09:30",
+   "10:30",
+   "11:30",
+   "12:30",
+   "13:30",
+   "14:30",
+   "15:30",
+   "16:30",
+   "17:30"
+  ],
+  "09:15_at_6h30": 2,
+  "shows_clock": {
+   "0": false,
+   "6": true,
+   "23:59:50": false,
+   "0:00:20": false
+  },
+  "bundled_start_h": {
+   "Net3": 0.0,
+   "Net2": 8.0,
+   "ky4": 0.0
+  }
+ },
+ "app_inputs": {
+  "example_rows": 78,
+  "example_rows_in_window": 39,
+  "window_months": [
+   "2026-04",
+   "2026-05",
+   "2026-06"
+  ],
+  "unknown_tap_dropped": [
+   [
+    "T99",
+    "tap T99 is not in the tap map"
+   ]
+  ],
+  "mixed_refused": true,
+  "mixed_refused_chloramine": true,
+  "multi_month": {
+   "months_in_log": 9,
+   "months_used": [
+    "2026-07",
+    "2026-08",
+    "2026-09"
+   ],
+   "rows_used": 12,
+   "rows_outside": 24
+  }
+ },
+ "templates": {
+  "grab_log_template.csv": {
+   "parses_with": "load_log",
+   "rows": 2,
+   "censored": 1,
+   "dropped": 0
+  },
+  "grab_log_total_template.csv": {
+   "parses_with": "load_log",
+   "rows": 3,
+   "censored": 0,
+   "dropped": 0
+  },
+  "tap_map_by_id_template.csv": {
+   "parses_with": "load_log (its tap map)",
+   "taps": 3
+  },
+  "plant_log_template.csv": {
+   "parses_with": "load_plant",
+   "months": 3
+  },
+  "grab_log_template.xlsx": {
+   "parses_with": "load_log's reader (read_grab_log)",
+   "rows": 2,
+   "censored": 1,
+   "same_as_csv": true,
+   "label": "same-library self-consistency (openpyxl)"
+  }
+ },
+ "review": {
+  "log_title_line": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "how": "Read as text separated by commas; the 1 line before its header was skipped ('Residuals, March 2026'); 4 data rows."
+  },
+  "log_lab_preamble": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "how": "Read as text separated by commas; the 2 lines before its header were skipped ('Lab: Distribution; Exported 2026-04-01 by the LIMS'); 4 data rows."
+  },
+  "log_sep_hint": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "how": "Read as text separated by semicolons; its first line, 'sep=;', names the separator; 4 data rows."
+  },
+  "log_chloride_first": {
+   "reading": "Chlorine Residual (mg/L)",
+   "rows_as_expected": true
+  },
+  "log_month_names": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "dropped": 0
+  },
+  "log_multiline_comment": {
+   "rows": 1,
+   "dropped": [
+    [
+     "T99",
+     4
+    ]
+   ]
+  },
+  "log_overrange": {
+   "rows": 1,
+   "censored": {
+    "below": [
+     "T3"
+    ],
+    "above": [
+     "T1",
+     "T4"
+    ]
+   },
+   "as_written": {
+    "below": [
+     "T3"
+    ],
+    "above": [
+     "T1",
+     "T4"
+    ]
+   },
+   "pilot_notes": [
+    "note: 1 reading below detection is kept and listed, not used in the fit: row 3 tap T3 '<0.02'",
+    "note: 2 readings above the measuring range are kept and listed, not used in the fit: row 2 tap T1 '>2.2'; row 5 tap T4 '> 4.0'"
+   ]
+  },
+  "log_ugL": {
+   "rows": 4,
+   "rows_as_expected": true,
+   "warned": true
+  },
+  "log_implausible": {
+   "rows": 2,
+   "rows_as_expected": true,
+   "dropped": [
+    [
+     "T1",
+     "above 10 mg/L, more than any chlorine residual: check the reading column and its unit"
+    ],
+    [
+     "T3",
+     "above 10 mg/L, more than any chlorine residual: check the reading column and its unit"
+    ]
+   ]
+  },
+  "lims_long": {
+   "free_chlorine": {
+    "rows": 3,
+    "rows_as_expected": true,
+    "analyte": "Analyte",
+    "reading": "Result",
+    "not_used": {
+     "total chlorine, not free chlorine ('Total Chlorine'): one model never mixes them": 3,
+     "another analyte ('pH')": 3,
+     "another analyte ('Temperature')": 3
+    },
+    "species_warning": false
+   },
+   "chloramine": {
+    "rows": 3,
+    "rows_as_expected": true,
+    "analyte": "Analyte",
+    "reading": "Result",
+    "not_used": {
+     "free chlorine, not total chlorine ('Free Chlorine'): one model never mixes them": 3,
+     "another analyte ('pH')": 3,
+     "another analyte ('Temperature')": 3
+    },
+    "species_warning": false
+   }
+  },
+  "both_columns_chosen": {
+   "bare_guess_refused_asks": true,
+   "free_chlorine": {
+    "reading": "free_chlorine_mgL",
+    "y": [
+     0.45,
+     0.38
+    ],
+    "other_column_noted": true
+   },
+   "chloramine": {
+    "reading": "total_chlorine_mgL",
+    "y": [
+     1.1,
+     0.95
+    ],
+    "other_column_noted": true
+   }
+  },
+  "junction_list": {
+   "tap": null,
+   "junction": "Node ID"
+  },
+  "analyzer_midnight": {
+   "xlsx_readings": 192,
+   "csv_readings": 192,
+   "written": 192,
+   "same_rows": true,
+   "no_time_dropped": 0,
+   "label": "same-library self-consistency (openpyxl)"
+  },
+  "log_cover_and_stray": {
+   "rows": 2,
+   "header": [
+    "date",
+    "time",
+    "tap_id",
+    "free_chlorine_mgL"
+   ],
+   "how": "an Excel workbook (.xlsx), its sheet 'Data' (the first that holds a table), typed cells kept",
+   "stray_cell": [
+    20000,
+    2000
+   ],
+   "label": "same-library self-consistency (openpyxl)"
+  },
+  "grab_study_24h": {
+   "rows": 63,
+   "written": 63,
+   "analyzer_taps": [],
+   "dropped": 0
+  },
+  "analyzer_interleaved": {
+   "readings_in": 1920,
+   "analyzer_taps": 10,
+   "kept": 20,
+   "thinned_listed": 1900,
+   "not_used_lines": 10,
+   "lines_capped": 10,
+   "chars": 2307
+  },
+  "analyzer_keep_every_reading": {
+   "rows": 5763,
+   "thinned_listed": 0,
+   "noted": true
+  },
+  "window_outside_listed": {
+   "n_outside": 24,
+   "listed": 24,
+   "reason": "dated before the window (the last 3 months that hold a reading, from 2026-07)",
+   "rows": 36,
+   "used": 12
+  }
+ },
+ "final_review": {
+  "long_species": {
+   "long_paren": {
+    "free_chlorine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Analyte",
+     "reading": "Result",
+     "species_warning": false
+    },
+    "chloramine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Analyte",
+     "reading": "Result",
+     "species_warning": false
+    }
+   },
+   "long_short_names": {
+    "free_chlorine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Analyte",
+     "reading": "Result",
+     "species_warning": false
+    },
+    "chloramine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Analyte",
+     "reading": "Result",
+     "species_warning": false
+    }
+   },
+   "long_lims_codes": {
+    "free_chlorine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Parameter Code",
+     "reading": "Result",
+     "species_warning": false
+    },
+    "chloramine": {
+     "rows": 3,
+     "rows_as_expected": true,
+     "analyte": "Parameter Code",
+     "reading": "Result",
+     "species_warning": false
+    }
+   }
+  },
+  "wide_species": {
+   "wide_paren|free_chlorine": {
+    "bare_guess_refused_asks": true,
+    "chosen": "Chlorine (Free) mg/L",
+    "rows_as_expected": true,
+    "other_column_noted": true
+   },
+   "wide_paren|chloramine": {
+    "bare_guess_refused_asks": true,
+    "chosen": "Chlorine (Total) mg/L",
+    "rows_as_expected": true,
+    "other_column_noted": true
+   },
+   "wide_paren_total_first|free_chlorine": {
+    "bare_guess_refused_asks": true,
+    "chosen": "Chlorine (Free) mg/L",
+    "rows_as_expected": true,
+    "other_column_noted": true
+   },
+   "wide_residual_and_free|free_chlorine": {
+    "bare_guess_refused_asks": true,
+    "chosen": "Free Chlorine",
+    "rows_as_expected": true,
+    "other_column_noted": true
+   }
+  },
+  "chloramine_header": {
+   "free_mode_refused_as_total": true,
+   "chloramine_rows_as_expected": true,
+   "species_warning": false
+  },
+  "analyte_value": {
+   "long_unknown_codes": {
+    "refused_asks_value": true,
+    "value": "CHLF",
+    "rows_as_expected": true,
+    "warned": true
+   },
+   "long_two_unnamed": {
+    "refused_asks_value": true,
+    "value": "Chlorine Residual",
+    "rows_as_expected": true,
+    "warned": true
+   },
+   "long_unknown_codes_param": {
+    "refused_names_the_column": true,
+    "value": "CHLF",
+    "rows_as_expected": true
+   },
+   "value_not_in_column_refused": true
+  },
+  "units": {
+   "Free Chlorine ugL": {
+    "y": [
+     0.45,
+     0.38,
+     0.008,
+     0.005
+    ],
+    "warned": true
+   },
+   "free_chlorine_ugl": {
+    "y": [
+     0.45,
+     0.38,
+     0.008,
+     0.005
+    ],
+    "warned": true
+   },
+   "Free Chlorine (\u00c2\u00b5g/L)": {
+    "y": [
+     0.45,
+     0.38,
+     0.008,
+     0.005
+    ],
+    "warned": true
+   },
+   "Free Chlorine (ug per L)": {
+    "y": [
+     0.45,
+     0.38,
+     0.008,
+     0.005
+    ],
+    "warned": true
+   },
+   "Free Chlorine \u00b5g L-1": {
+    "y": [
+     0.45,
+     0.38,
+     0.008,
+     0.005
+    ],
+    "warned": true
+   },
+   "mg Cl2/L": {
+    "rows_as_expected": true,
+    "dropped": 0
+   },
+   "mgCl2/L": {
+    "rows_as_expected": true,
+    "dropped": 0
+   },
+   "mg/litre": {
+    "rows_as_expected": true,
+    "dropped": 0
+   },
+   "unnamed_ugL_warned": true
+  },
+  "titles": {
+   "comma_title_rows_as_expected": true,
+   "comma_title_how": "Read as text separated by semicolons; the 1 line before its header was skipped ('Residuals report, March 2026'); 4 data rows.",
+   "xlsx_title_rows_as_expected": true,
+   "xlsx_title_how": "Read as an Excel workbook (.xlsx), its first sheet, typed cells kept; the 1 row before its header was skipped ('Residuals report | March 2026'); 4 data rows.",
+   "label": "the workbook: same-library self-consistency (openpyxl)"
+  },
+  "excel_date_only": {
+   "xlsx_rows": [
+    [
+     "225",
+     9,
+     0.45,
+     "2026-03",
+     "2026-03-10",
+     "T1"
+    ],
+    [
+     "239",
+     10,
+     0.38,
+     "2026-03",
+     "2026-03-11",
+     "T2"
+    ]
+   ],
+   "same_rows_as_csv": true,
+   "xlsx_no_time": [
+    [
+     "T3",
+     4
+    ]
+   ],
+   "csv_no_time": [
+    [
+     "T3",
+     4
+    ]
+   ],
+   "label": "same-library self-consistency (openpyxl)"
+  },
+  "time_column_epoch_date": {
+   "rows_as_expected": true,
+   "dropped": 0
+  },
+  "superscript_tap": {
+   "log": {
+    "rows": 1,
+    "dropped": [
+     [
+      "1\u00b2",
+      "tap 1\u00b2 is not in the tap map"
+     ]
+    ]
+   },
+   "tap_map": {
+    "rows": 2,
+    "dropped": []
+   }
+  },
+  "junctions_2col": {
+   "tap": null,
+   "junction": "Node ID"
+  },
+  "not_used_lists": {
+   "qualifier_interleaved": {
+    "rows_in": 1920,
+    "used": 0,
+    "not_used": 1920,
+    "lines": 1,
+    "chars": 96,
+    "first": "not a number (159 different values, for example '0.300 J', '0.307 J', '0.314 J'): rows 2 to 1921"
+   },
+   "unknown_taps_many": {
+    "rows_in": 200,
+    "used": 0,
+    "not_used": 200,
+    "lines": 1,
+    "chars": 124,
+    "first": "a tap that is not in the tap map (200 different values, for example 'SITE-00000', 'SITE-00001', 'SITE-00002'): rows 2 to 201"
+   },
+   "line_cap": {
+    "reasons": 35,
+    "lines": 30,
+    "last": "and 6 more reasons, for 6 more rows"
+   }
+  },
+  "csv_tiny_rows": {
+   "refused": "The file has 3,000,002 lines, more than the 1,000,000 rows a log is read up to. Send the last few months only.",
+   "within_1s": true,
+   "rows_written": 3000000,
+   "line_limit": 2000050
+  },
+  "net2_pilot_hours": {
+   "start_clock_h": 8.0,
+   "clock_hours": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "app_hours": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "pilot_hours": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  }
+ },
+ "final_review_probes": {
+  "before": {
+   "app_example_log": {
+    "samples_used": 39,
+    "flagged": "35 of 92"
+   },
+   "app_example_log_as_long_rows_species_in_brackets": {
+    "samples_used": 78,
+    "flagged": "20 of 92"
+   },
+   "app_wide_species_in_brackets_chloramine": {
+    "samples_used": 39,
+    "flagged": "87 of 92",
+    "reading_column": "Chlorine (Free) mg/L"
+   },
+   "reader_long_species_in_brackets_y": [
+    0.45,
+    1.2,
+    0.38,
+    1.05
+   ],
+   "reader_chloramine_header_free_mode_y": [
+    2.1,
+    1.9
+   ],
+   "reader_free_cl_total_cl_ph_no_units_y": [
+    0.45,
+    1.2,
+    7.6,
+    0.38,
+    1.05,
+    7.8
+   ],
+   "csv_tiny_rows": {
+    "1000000": {
+     "peak_mb": 454,
+     "seconds": 2.05
+    },
+    "3000000": {
+     "peak_mb": 1036,
+     "seconds": 7.66,
+     "refused": true
+    },
+    "6000000": {
+     "peak_mb": 1930,
+     "seconds": 443.54,
+     "refused": true
+    }
+   },
+   "not_used_lists": {
+    "qualifier_interleaved": {
+     "rows": 57600,
+     "lines": 1451,
+     "chars": 324067
+    },
+    "unknown_taps_interleaved": {
+     "rows": 60000,
+     "lines": 2000,
+     "chars": 476796
+    }
+   },
+   "check_a_file_junctions_2col": "As a tap map: 4 taps, tap column 'Node ID', junction column 'Elevation'",
+   "superscript_tap": "ValueError: invalid literal for int() with base 10: '1\u00b2'",
+   "net2_upload": {
+    "app_hours": [
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "pilot_hours": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "caption_says_unconverted": false
+   }
+  },
+  "after": {
+   "app_example_log": {
+    "samples_used": 39,
+    "flagged": "35 of 92"
+   },
+   "app_example_log_as_long_rows_species_in_brackets": {
+    "samples_used": 39,
+    "flagged": "35 of 92"
+   },
+   "app_wide_species_in_brackets_chloramine": {
+    "refused_asks": true,
+    "reading_column": "(choose a column)"
+   },
+   "reader_long_species_in_brackets_y": [
+    0.45,
+    0.38
+   ],
+   "reader_chloramine_header_free_mode": "refused: total chlorine in the free-chlorine model",
+   "reader_free_cl_total_cl_ph_no_units_y": [
+    0.45,
+    0.38
+   ],
+   "csv_tiny_rows": {
+    "1000000": {
+     "peak_mb": 388,
+     "seconds": 1.15
+    },
+    "2000000": {
+     "peak_mb": 247,
+     "seconds": 0.59,
+     "refused": true
+    },
+    "3000000": {
+     "peak_mb": 56,
+     "seconds": 0.01,
+     "refused": true
+    },
+    "6000000": {
+     "peak_mb": 74,
+     "seconds": 0.02,
+     "refused": true
+    },
+    "33000000": {
+     "peak_mb": 236,
+     "seconds": 0.11,
+     "refused": true
+    }
+   },
+   "not_used_lists": {
+    "qualifier_interleaved": {
+     "rows": 57600,
+     "lines": 1,
+     "chars": 102
+    },
+    "unknown_taps_interleaved": {
+     "rows": 60000,
+     "lines": 1,
+     "chars": 131
+    }
+   },
+   "check_a_file_junctions_2col": "As a table: it has a junction column ('Node ID') but no tap column",
+   "superscript_tap": "read; the tap is listed as not in the tap map",
+   "net2_upload": {
+    "app_hours": [
+     9,
+     10,
+     11,
+     12,
+     13,
+     14,
+     15
+    ],
+    "pilot_hours": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "caption_says_unconverted": true
+   }
+  }
+ },
+ "browser_check": {
+  "what": "the 'Every junction' dataframe's toolbar CSV download in a real browser, with the default demo and again with the demo off after the example grab log and tap map were set on the page's own file inputs; Chrome's save dialog stood in by a stub that keeps what the page writes",
+  "when": "2026-10-19 11:48, after the final verification of task 16, on the app's final code (app.py, the Get started page and every module they import; the run after the review, at 08:41, was before a last edit to importers.py)",
+  "toolbar_buttons": [
+   "Show/hide columns",
+   "Download as CSV",
+   "Search",
+   "Fullscreen"
+  ],
+  "demo_csv": {
+   "rows": 92,
+   "columns": 6
+  },
+  "upload_csv": {
+   "rows": 92,
+   "columns": 6
+  },
+  "upload_samples_used": 39,
+  "get_started_title": "Bring your data",
+  "get_started_downloads": 5
+ }
+}

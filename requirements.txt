@@ -8,3 +8,6 @@ matplotlib
 streamlit>=1.30
 # the saved checks only (python -m residualmap.checks): reads the app's PDF (iteration 4, task 14)
 pypdf
+# iteration 5, task 16: Excel grab logs and the .xlsx template (read through pandas; without it an Excel log is refused with "save it as CSV")
+openpyxl==3.1.5
+et-xmlfile==2.0.0

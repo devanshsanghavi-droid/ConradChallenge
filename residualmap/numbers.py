@@ -116,6 +116,13 @@ _RB15B = "outputs/intake/readiness_bundled.json"
 _N2P = ("networks", "Net2", "flags", "multi_day_patterns", 0, 1)   # the length of Net2's first pattern, in hours
 _T15BR = ("runs", "post_task15b_review")        # the rerun on the final tree, after task 15b's review
 _T15BR2 = ("runs", "post_task15b_review2")      # the same, after task 15b's second review
+T16 = "Task 16"                                  # task 16's journal section
+_S16 = "outputs/intake/task16_samples.json"
+_T16R = ("runs", "post_task16")                 # the rerun on the final tree, task 16
+_T16RV = ("runs", "post_task16_review")         # the same, after task 16's review (before a last importers edit)
+_T16F = ("runs", "post_task16_final")           # the rerun on the final tree, after task 16's final verification
+_FRB = ("final_review_probes", "before")         # the final verification's probes, before and after its fixes
+_FRA = ("final_review_probes", "after")
 
 
 def _age(net: str, *keys) -> tuple:
@@ -456,6 +463,79 @@ REGISTRY: list[tuple] = [
     ("README", L15, "and {} to 1.838 times in five later repeats", (_TM15B, ("net3_repeats_summary", "ratio_min")), ".3f"),
     ("README", L15, "1.437 to {} times in five later repeats", (_TM15B, ("net3_repeats_summary", "ratio_max")), ".3f"),
     ("README", L15, "while ky10's took {} times it", (_TM15B, ("ky10", "ratio")), ".3f"),
+    # task 16 (journal 'Task 16'), outputs/intake/task16_samples.json
+    ("journal", T16, "maps by the guessed columns: {} of 40 rows", (_S16, ("mapping", "lims_one_datetime_us", "rows")), "d"),
+    ("journal", T16, "The censored log gives its {} readings", (_S16, ("mapping", "lims_censored", "rows")), "d"),
+    ("journal", T16, "lists {} censored readings", (_S16, ("mapping", "lims_censored", "n_censored")), "d"),
+    ("journal", T16, "and drops {} blank with its reason", (_S16, ("mapping", "lims_censored", "n_dropped")), "d"),
+    ("journal", T16, "The semicolon and tab logs give their {} rows", (_S16, ("mapping", "log_semicolon", "rows")), "d"),
+    ("journal", T16, "and read as {} rows once 'day first'", (_S16, ("mapping", "ambiguous_dates", "with_DMY_rows")), "d"),
+    ("journal", T16, "gives its {} rows, the accented tap matched", (_S16, ("encodings", "grab_log_cp1252", "rows")), "d"),
+    ("journal", T16, "with a byte-order mark gives its {} rows", (_S16, ("encodings", "grab_log_bom", "rows")), "d"),
+    ("journal", T16, "gives the same {} rows and the same S", (_S16, ("excel", "xlsx_rows")), "d"),
+    ("journal", T16, "for 30 days, {} readings, keep 60", (_S16, ("analyzer", "readings_in")), ",d"),
+    ("journal", T16, "5,760 readings, keep {}, one per site", (_S16, ("analyzer", "kept")), "d"),
+    ("journal", T16, "and the other {} are listed as thinned", (_S16, ("analyzer", "thinned_listed")), ",d"),
+    ("journal", T16, "gives 'Samples used' {}, the number", (_S16, ("app_inputs", "example_rows_in_window")), "d"),
+    ("journal", T16, "of `load_log`'s {} rows that fall inside", (_S16, ("app_inputs", "example_rows")), "d"),
+    ("journal", T16, "uses its last 3 months, {} rows, and says so", (_S16, ("app_inputs", "multi_month", "rows_used")), "d"),
+    ("journal", T16, "a 09:00 sample is model hour {} (09:59 too", (_S16, ("clock_helpers", "09:00_at_6h")), "d"),
+    ("journal", T16, "the free-chlorine grab log gives {} readings and 1 censored", (_S16, ("templates", "grab_log_template.csv", "rows")), "d"),
+    ("journal", T16, "the total-chlorine one {}, the tap map", (_S16, ("templates", "grab_log_total_template.csv", "rows")), "d"),
+    ("journal", T16, "the tap map {} taps, the plant log", (_S16, ("templates", "tap_map_by_id_template.csv", "taps")), "d"),
+    ("journal", T16, "the plant log {} months", (_S16, ("templates", "plant_log_template.csv", "months")), "d"),
+    ("journal", T16, "| {} rows, as its table says", (_S16, ("mapping", "lims_one_datetime_us", "rows")), "d"),
+    ("journal", T16, "| 5,760 readings to {}, one per site per day", (_S16, ("analyzer", "kept")), "d"),
+    ("journal", T16, "| {}, `load_log`'s rows in the window (of 78) |", (_S16, ("app_inputs", "example_rows_in_window")), "d"),
+    ("journal", T16, "its last 3 months, {} rows, said on the page", (_S16, ("app_inputs", "multi_month", "rows_used")), "d"),
+    ("journal", T16, "(label `post_task16`) | {} of 50 files byte-identical", (_BR, _T16R + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16, "| 50 of {} files byte-identical; the app's", (_BR, _T16R + ("vs_committed", "n_files")), "d"),
+    ("journal", T16, "the four committed reruns write {} of 50 files", (_BR, _T16R + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16, "default demo {} of 92 flagged", (_BR, _T16R + ("app_default_demo", "flagged")), "d"),
+    ("journal", T16, "flagged, {} of 36 found, 1 false alarm", (_BR, _T16R + ("app_default_demo", "found")), "d"),
+    ("journal", T16, "36 of 36 found, {} false alarm", (_BR, _T16R + ("app_default_demo", "false_alarms")), "d"),
+    # task 16's review (journal 'Task 16', item 13 and its table rows), part 'review' of task16_samples.json
+    ("journal", T16, "(label `post_task16_review`) | {} of 50 files byte-identical again", (_BR, _T16RV + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16, "| 50 of {} files byte-identical again", (_BR, _T16RV + ("vs_committed", "n_files")), "d"),
+    ("journal", T16, "again; default demo {} of 92 flagged", (_BR, _T16RV + ("app_default_demo", "flagged")), "d"),
+    ("journal", T16, "92 flagged, {} of 36 found, 1 false alarm again", (_BR, _T16RV + ("app_default_demo", "found")), "d"),
+    ("journal", T16, "36 found, {} false alarm again", (_BR, _T16RV + ("app_default_demo", "false_alarms")), "d"),
+    ("journal", T16, "clicking it wrote {} rows with the 6 columns", (_S16, ("browser_check", "upload_csv", "rows")), "d"),
+    ("journal", T16, "wrote 92 rows with the {} columns", (_S16, ("browser_check", "upload_csv", "columns")), "d"),
+    ("journal", T16, "'Bring your data' with its {} template buttons", (_S16, ("browser_check", "get_started_downloads")), "d"),
+    ("journal", T16, "| {} of 63 readings kept", (_S16, ("review", "grab_study_24h", "rows")), "d"),
+    ("journal", T16, "keeps all {} readings; `analyzer_15min.csv`", (_S16, ("review", "grab_study_24h", "rows")), "d"),
+    ("journal", T16, "| {} readings to 20; 10 not-used lines", (_S16, ("review", "analyzer_interleaved", "readings_in")), ",d"),
+    ("journal", T16, "1,920 readings to {}; 10 not-used lines", (_S16, ("review", "analyzer_interleaved", "kept")), "d"),
+    ("journal", T16, "readings to 20; {} not-used lines", (_S16, ("review", "analyzer_interleaved", "not_used_lines")), "d"),
+    ("journal", T16, "10 not-used lines, {} characters in all", (_S16, ("review", "analyzer_interleaved", "chars")), ",d"),
+    ("journal", T16, "give 10 lines, {} characters", (_S16, ("review", "analyzer_interleaved", "chars")), ",d"),
+    ("journal", T16, "covers all {} thinned rows", (_S16, ("review", "analyzer_interleaved", "thinned_listed")), ",d"),
+    ("journal", T16, "| {} and 192 readings | equal |", (_S16, ("review", "analyzer_midnight", "xlsx_readings")), "d"),
+    ("journal", T16, "| 192 and {} readings | equal |", (_S16, ("review", "analyzer_midnight", "csv_readings")), "d"),
+    ("journal", T16, "reads all {} readings its CSV twin", (_S16, ("review", "analyzer_midnight", "csv_readings")), "d"),
+    ("journal", T16, "an analyzer whole ({} rows of that file)", (_S16, ("review", "analyzer_keep_every_reading", "rows")), ",d"),
+    ("journal", T16, "the 9-month log's {} rows before 2026-07", (_S16, ("review", "window_outside_listed", "n_outside")), "d"),
+    ("journal", T16, "| {} listed, and counted on the page", (_S16, ("review", "window_outside_listed", "listed")), "d"),
+    ("journal", T16, "`lims_long.csv` gives its {} free chlorine rows", (_S16, ("review", "lims_long", "free_chlorine", "rows")), "d"),
+    ("journal", T16, "and its {} total chlorine rows in chloramine mode", (_S16, ("review", "lims_long", "chloramine", "rows")), "d"),
+    # task 16's final verification (journal 'Task 16', item 14 and its table rows), parts 'final_review' and
+    # 'final_review_probes' of task16_samples.json, and the rerun post_task16_final
+    ("journal", T16, "gave 'Samples used' {} and 20 of 92 flagged in the app", (_S16, _FRB + ("app_example_log_as_long_rows_species_in_brackets", "samples_used")), "d"),
+    ("journal", T16, "and {} flagged in the app, against 39", (_S16, _FRB + ("app_example_log_as_long_rows_species_in_brackets", "flagged")), "s"),
+    ("journal", T16, "read the free column as total chlorine ({} flagged)", (_S16, _FRB + ("app_wide_species_in_brackets_chloramine", "flagged")), "s"),
+    ("journal", T16, "The same long-format log now gives {} and 35 of 92", (_S16, _FRA + ("app_example_log_as_long_rows_species_in_brackets", "samples_used")), "d"),
+    ("journal", T16, "`long_paren.csv` gives its {} free chlorine rows", (_S16, ("final_review", "long_species", "long_paren", "free_chlorine", "rows")), "d"),
+    ("journal", T16, "1 million rows of '1,' (3 MB) took {} MB", (_S16, _FRB + ("csv_tiny_rows", "1000000", "peak_mb")), "d"),
+    ("journal", T16, "3 million (9 MB) {} MB and 7.66 s", (_S16, _FRB + ("csv_tiny_rows", "3000000", "peak_mb")), ",d"),
+    ("journal", T16, "3 million rows are refused in 0.01 s at {} MB", (_S16, _FRA + ("csv_tiny_rows", "3000000", "peak_mb")), "d"),
+    ("journal", T16, "57,600 rows) gave {} lines and 324,067 characters", (_S16, _FRB + ("not_used_lists", "qualifier_interleaved", "lines")), ",d"),
+    ("journal", T16, "the same two files give 1 line of {} characters", (_S16, _FRA + ("not_used_lists", "qualifier_interleaved", "chars")), "d"),
+    ("journal", T16, "characters and 1 of {}; the fixtures", (_S16, _FRA + ("not_used_lists", "unknown_taps_interleaved", "chars")), "d"),
+    ("journal", T16, "(label `post_task16_final`) | {} of 50 files byte-identical", (_BR, _T16F + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16, "`post_task16_final`) | 50 of {} files", (_BR, _T16F + ("vs_committed", "n_files")), "d"),
+    ("journal", T16, "files byte-identical; default demo {} of 92 flagged", (_BR, _T16F + ("app_default_demo", "flagged")), "d"),
+    ("journal", T16, "default demo 42 of 92 flagged, {} of 36 found, 1 false alarm | all; unchanged |", (_BR, _T16F + ("app_default_demo", "found")), "d"),
 ]
 
 

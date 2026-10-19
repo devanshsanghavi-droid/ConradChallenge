@@ -1,12 +1,15 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: group task15, files built by residualmap/fixtures.py).
+and access (task 15 on: groups task15, task15b and task16, files built by residualmap/fixtures.py).
 
-    python -m residualmap.checks            # every check, about 530 s on this machine (69 checks after task 14: 68 in
-                                            # the committed report, plus the names check, skipped without the variable;
-                                            # 76 after task 15)
+    python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
+                                            # after task 14; 69 checks after task 14: 68 in the committed report,
+                                            # plus the names check, skipped without the variable; 76 after task 15;
+                                            # 102 after task 16 and its review, 101 in the committed report;
+                                            # 103 after its final verification, 102 in the report; each run's
+                                            # time is in outputs/chem/checks_run.json)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
-                                            # seasonal, organics and chloramine (MSX) checks (about 24 s)
+                                            # seasonal, organics and chloramine (MSX) checks (about 50 s after task 16)
     RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
 
 Task 14's app check reads the app's PDF with pypdf (in requirements.txt); without pypdf it still requires the PDF
@@ -2485,7 +2488,10 @@ def app_water_age_panels():
 DASH = ("—", "–")       # em dash, en dash
 # iteration 5's new files, held to 'no em or en dashes' whole (task 15 on)
 IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/config.toml",
-             "residualmap/intake_exp.py")                                        # task 15b
+             "residualmap/intake_exp.py",                                        # task 15b
+             "pages/1_Get_started.py", "docs/how_to_export_your_model.md",       # task 16
+             "docs/templates/grab_log_template.csv", "docs/templates/grab_log_total_template.csv",
+             "docs/templates/tap_map_by_id_template.csv", "docs/templates/plant_log_template.csv")
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -3832,6 +3838,917 @@ def app_small_network_upload():
     return {"net1_flagged": n1["flagged"], "net1_calib_delta_says": "old-pipe factor: not identifiable from one C value",
             "net1_route_rows": n1["route_rows"], "net1_grid": "grid24_full_fixed_gamma_<sha1>[:8]_Net1.inp_<tag>.pkl",
             "net6_checkbox": True, "net6_stopped_before_any_run": True}
+
+
+# ----------------------------------------------------------------------------- task 16: grab logs, clock time, pages
+INTAKE_RECORD_16 = os.path.join(REPO, "outputs", "intake", "task16_samples.json")
+GET_STARTED_PAGE = os.path.join(REPO, "pages", "1_Get_started.py")
+
+
+def _record_16(part: str) -> dict:
+    """One part of the committed task-16 record (python -m residualmap.intake_exp samples)."""
+    with open(INTAKE_RECORD_16) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_16(got: dict, part: str) -> dict:
+    want = _record_16(part)
+    diff = _json_diff(json.loads(json.dumps(got)), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _sample_fixtures():
+    """The task-16 fixtures built into a temporary folder."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t16_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), FX.SAMPLE_FIXTURES)
+
+
+def _app_run(script: str, args: list[str], match, label: str) -> tuple[dict, dict]:
+    """Run an AppTest script in a subprocess (PYTHONPATH = the repo, cwd = the checks' scratch folder) and return its
+    JSON line (printed after label) and the files it left in outputs/app_uploads and outputs/cache whose names
+    match(name) is true for.  Those files (git-ignored) are deleted afterwards; earlier files with such names are
+    moved aside first and put back, as the task-15 app checks do."""
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    had_dir = os.path.isdir(up_dir)
+    mine = lambda d: [f for f in (os.listdir(d) if os.path.isdir(d) else []) if match(f)]
+    aside = tempfile.mkdtemp(prefix="rm_t16_aside_")
+    moved = [(d, f) for d in (up_dir, CACHE) for f in mine(d)]
+    built = {}
+    try:
+        for d, f in moved:
+            os.makedirs(os.path.join(aside, os.path.basename(d)), exist_ok=True)
+            shutil.move(os.path.join(d, f), os.path.join(aside, os.path.basename(d), f))
+        try:
+            r = subprocess.run([PY, "-c", script, *args], cwd=os.getcwd(), capture_output=True, text=True,
+                               env={**os.environ, "PYTHONPATH": REPO})
+        finally:
+            built = {os.path.basename(d): mine(d) for d in (up_dir, CACHE)}
+            for d in (up_dir, CACHE):
+                for f in mine(d):
+                    os.remove(os.path.join(d, f))
+            if not had_dir and os.path.isdir(up_dir) and not os.listdir(up_dir):
+                os.rmdir(up_dir)
+    finally:
+        for d, f in moved:
+            os.makedirs(d, exist_ok=True)
+            shutil.move(os.path.join(aside, os.path.basename(d), f), os.path.join(d, f))
+        shutil.rmtree(aside, ignore_errors=True)
+    line = [x for x in r.stdout.splitlines() if x.startswith(label + " ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    return json.loads(line[-1][len(label) + 1:]), built
+
+
+@check("task16")
+def grab_log_column_mapping():
+    """lims_one_datetime_us.csv (a sample ID per row, 'Sample Point', one 'Sample Date/Time' column of US dates with
+    AM/PM times, 'Total Chlorine (mg/L)', a units column) maps with the guessed columns and an explicit date format
+    (MDY, and the same rows with the strptime format), and without a format it is refused with the question, because
+    every one of its dates reads two ways; lims_censored.csv ('<0.02', 'ND', '< 0.05', 'BDL', a blank, a decimal comma,
+    '0.27 mg/L') gives its 3 readings, lists its 4 censored readings as censored and not fitted and drops the blank
+    with its reason; log_semicolon.csv (';' and '0,45') and log_tab.txt give the rows of their table, with the guess
+    and with an explicit mapping; ambiguous_dates.csv is refused with 'Which is it?' and read with DMY.  The expected
+    rows come from each fixture's own table, never from the reader.  Equals the committed record (part 'mapping')."""
+    from . import intake_exp as E
+    with _sample_fixtures() as paths:
+        got = E.part_mapping(paths)
+    lu = got["lims_one_datetime_us"]
+    assert lu["rows"] == 40 and lu["rows_as_expected"] and lu["with_strptime_same"], lu
+    assert lu["mapping"] == {"tap": "Sample Point", "reading": "Total Chlorine (mg/L)", "date": "Sample Date/Time",
+                             "time": None}, lu["mapping"]
+    assert lu["without_format_refused"] and lu["without_format_asks"], lu
+    lc = got["lims_censored"]
+    assert lc["rows"] == 3 and lc["rows_as_expected"] and lc["as_expected"] and lc["censored_reasons_say_so"], lc
+    for k in ("log_semicolon", "log_tab"):
+        assert got[k]["rows"] == 4 and got[k]["rows_as_expected"], (k, got[k])
+    assert got["log_semicolon_explicit_mapping_same"]
+    a = got["ambiguous_dates"]
+    assert a["refused"] and a["asks"] and a["with_DMY_rows"] == 3, a
+    _same_as_16(got, "mapping")
+    return {"lims_us_rows": lu["rows"], "lims_us_needs_a_date_format": True, "censored_listed": len(lc["censored"]),
+            "censored_raw": lc["censored_raw"], "blank_dropped": len(lc["dropped"]), "semicolon_rows": 4, "tab_rows": 4,
+            "ambiguous_refused_with_question": True}
+
+
+@check("task16")
+def grab_log_encodings():
+    """grab_log_cp1252.csv (cp1252 throughout, Windows line ends, a tap ID 'Église_3' that the UTF-8 tap map holds)
+    and grab_log_bom.csv (a UTF-8 byte-order mark before the first header) give the rows of their tables, the accented
+    tap matched, and say how they were decoded.  Equals the committed record (part 'encodings')."""
+    from . import intake_exp as E
+    with _sample_fixtures() as paths:
+        got = E.part_encodings(paths)
+    c, b = got["grab_log_cp1252"], got["grab_log_bom"]
+    assert c["rows"] == 3 and c["rows_as_expected"] and "cp1252" in c["how"], c
+    assert b["rows"] == 2 and b["rows_as_expected"] and "byte-order mark" in b["how"] and b["header_first"] == "date", b
+    _same_as_16(got, "encodings")
+    return {"cp1252_rows": c["rows"], "bom_rows": b["rows"], "cp1252_how": c["how"], "bom_how": b["how"]}
+
+
+@check("task16")
+def excel_log_equals_csv_log():
+    """grab_log_typed.xlsx (typed date and time cells; tap IDs 007 and 012 stored as the numbers 7 and 12, as Excel
+    keeps them) gives the same S (junction, hour, reading) and the same rows as its CSV twin, whose IDs are text, with
+    a warning that the two taps were matched by number; the CSV gets no warning.  The workbook is written by openpyxl,
+    the library that reads it: same-library self-consistency.  Equals the committed record (part 'excel')."""
+    from . import intake_exp as E
+    with _sample_fixtures() as paths:
+        got = E.part_excel(paths)
+    assert got["xlsx_rows"] == got["csv_rows"] == 5 and got["same_rows"] and got["same_S"], got
+    assert got["rows_as_expected"] and got["leading_zero_warning"] and got["csv_warnings"] == 0, got
+    assert got["leading_zero_taps"] == ["007", "012"] and "12 is 012, 7 is 007" in got["warning"], got
+    _same_as_16(got, "excel")
+    return {"rows": got["xlsx_rows"], "same_S": True, "leading_zero_warning": True, "label": got["label"]}
+
+
+@check("task16")
+def analyzer_thinning():
+    """analyzer_15min.csv (two online analyzers, 96 readings a day for 30 days, and three grab samples) keeps one
+    reading per site per day, the one at 10:00 (600 minutes), 60 in all, and the three grab samples; every thinned
+    reading is in the not-used list with its reason; at --analyzer-hour 8 the kept readings are at 08:00.  Equals the
+    committed record (part 'analyzer')."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    with _sample_fixtures() as paths:
+        got = E.part_analyzer(paths)
+    n_in = len(FX.ANALYZER_SITES) * FX.ANALYZER_DAYS * 24 * 60 // FX.ANALYZER_STEP_MIN
+    assert got["readings_in"] == n_in and got["sites"] == list(FX.ANALYZER_SITES), got
+    assert got["kept"] == len(FX.ANALYZER_SITES) * FX.ANALYZER_DAYS and got["days"] == FX.ANALYZER_DAYS, got
+    assert got["per_site_per_day_max"] == got["per_site_per_day_min"] == 1 and got["clock_minutes_kept"] == [600], got
+    assert got["grab_rows_kept"] == 3 and got["noted"] and got["hour_8"] == [480], got
+    assert got["thinned_listed"] == got["readings_in"] - got["kept"], got        # every thinned reading is listed
+    _same_as_16(got, "analyzer")
+    return {"readings_in": got["readings_in"], "kept": got["kept"], "per_site_per_day": 1, "at": "10:00"}
+
+
+@check("task16")
+def utc_warning():
+    """utc_shifted_log.csv (six daytime samples, 10:05 to 15:00, written 8 h late as a UTC export would) warns that the
+    times may be UTC; the semicolon log and the committed example log do not.  Equals the committed record (part
+    'utc')."""
+    from . import intake_exp as E
+    with _sample_fixtures() as paths:
+        got = E.part_utc(paths)
+    assert got["warned"] and "UTC" in got["warning"], got
+    assert not got["semicolon_log_warned"] and not got["example_log_warned"], got
+    _same_as_16(got, "utc")
+    return {"warned": True, "warning_starts": got["warning"][:60]}
+
+
+@check("task16")
+def grab_log_review_cases():
+    """The cases the review of task 16 found, each a fixture (part 'review' of the committed record; expected rows
+    from each fixture's own table): a title line, a 'Lab:/Exported' block and Excel's 'sep=;' line before the header
+    are skipped and said so; a 'Chloride (mg/L)' column before 'Chlorine Residual (mg/L)' is not taken as the reading;
+    month-name dates and dotted times are read; after a quoted comment over two lines a row's number is its line;
+    '>2.2' and '> 4.0' are kept apart from '<0.02' (kind 'above', never called below detection, in the reader and in
+    the pilot's notes); a log in µg/L is divided by 1000, with a warning; 9999 and 450 mg/L are listed, not fitted; a
+    long-format LIMS export keeps only its free chlorine rows (its total chlorine rows in chloramine mode) and lists the
+    others with their reason; a log with a free and a total column asks which is the reading and reads only the one
+    chosen; a junction list is no tap map; an analyzer's typed datetimes from 00:00 in Excel give its CSV twin's
+    readings; a workbook's cover sheet is passed over and a stray cell far out is cut; a diurnal grab-sampling study
+    keeps every reading; ten analyzers interleaved by time give a short not-used list that still counts every row;
+    every reading is kept when asked; and rows before the date window are listed with their reason."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    with _sample_fixtures() as paths:
+        got = E.part_review(paths)
+    for k in ("log_title_line", "log_lab_preamble", "log_sep_hint"):
+        assert got[k]["rows"] == len(FX.REVIEW_ROWS) and got[k]["rows_as_expected"], (k, got[k])
+    assert "skipped" in got["log_title_line"]["how"] and "'sep=;', names the separator" in got["log_sep_hint"]["how"]
+    assert got["log_chloride_first"] == {"reading": "Chlorine Residual (mg/L)", "rows_as_expected": True}, got
+    assert got["log_month_names"]["rows_as_expected"] and got["log_month_names"]["dropped"] == 0, got["log_month_names"]
+    assert got["log_multiline_comment"]["dropped"] == [["T99", 4]], got["log_multiline_comment"]
+    o = got["log_overrange"]
+    assert o["censored"] == o["as_written"] and o["rows"] == 1, o
+    assert any("1 reading below detection" in n for n in o["pilot_notes"]), o["pilot_notes"]
+    assert any("2 readings above the measuring range" in n for n in o["pilot_notes"]), o["pilot_notes"]
+    assert got["log_ugL"]["rows_as_expected"] and got["log_ugL"]["warned"], got["log_ugL"]
+    li = got["log_implausible"]
+    assert li["rows_as_expected"] and sorted(t for t, _ in li["dropped"]) == ["T1", "T3"], li
+    for dis in ("free_chlorine", "chloramine"):
+        lg = got["lims_long"][dis]
+        assert lg["rows"] == len(FX.LONG_SAMPLES) and lg["rows_as_expected"] and lg["analyte"] == "Analyte", (dis, lg)
+        assert sum(lg["not_used"].values()) == 3 * len(FX.LONG_SAMPLES) and not lg["species_warning"], (dis, lg)
+    b = got["both_columns_chosen"]
+    assert b["bare_guess_refused_asks"] and b["free_chlorine"]["y"] == [0.45, 0.38], b
+    assert b["chloramine"]["y"] == [1.10, 0.95] and b["free_chlorine"]["other_column_noted"], b
+    assert got["junction_list"] == {"tap": None, "junction": "Node ID"}, got["junction_list"]
+    am = got["analyzer_midnight"]
+    assert am["xlsx_readings"] == am["csv_readings"] == am["written"] and am["same_rows"], am
+    assert am["no_time_dropped"] == 0, am
+    cs = got["log_cover_and_stray"]
+    assert cs["rows"] == 2 and len(cs["header"]) == 4 and "'Data'" in cs["how"], cs
+    gs = got["grab_study_24h"]
+    assert gs["rows"] == gs["written"] and gs["analyzer_taps"] == [] and gs["dropped"] == 0, gs
+    ai = got["analyzer_interleaved"]
+    assert ai["analyzer_taps"] == len(FX.INTERLEAVED_SITES) and ai["kept"] == len(FX.INTERLEAVED_SITES) * FX.INTERLEAVED_DAYS
+    assert ai["thinned_listed"] == ai["readings_in"] - ai["kept"] and ai["lines_capped"] == ai["not_used_lines"], ai
+    assert ai["chars"] < 5000, ai
+    kr = got["analyzer_keep_every_reading"]
+    assert kr["rows"] == len(FX.ANALYZER_SITES) * FX.ANALYZER_DAYS * 96 + 3 and kr["thinned_listed"] == 0, kr
+    w = got["window_outside_listed"]
+    assert w["n_outside"] == w["listed"] == w["rows"] - w["used"] and "before the window" in w["reason"], w
+    _same_as_16(got, "review")
+    return {"preamble_logs_read": 3, "overrange_kept_apart": o["censored"], "ugL_converted": True,
+            "implausible_listed": len(li["dropped"]), "long_format_rows": got["lims_long"]["free_chlorine"]["rows"],
+            "both_columns_chosen_reads_one": True, "grab_study_kept": gs["rows"],
+            "interleaved_not_used_chars": ai["chars"], "window_outside_listed": w["listed"]}
+
+
+@check("task16")
+def grab_log_final_review_cases():
+    """The cases the final verification of task 16 found, each a fixture (part 'final_review' of the committed
+    record; expected rows from each fixture's own table): the species is read inside brackets, so a long-format export
+    of 'Chlorine (Free)', 'Chlorine (Total)' and pH reads only the chosen species' rows (its 3 free chlorine rows; 3
+    total chlorine rows in chloramine mode), and so do 'Free Cl' and 'Total Cl' with no units column and the LIMS
+    codes FCL2 and TCL2 under 'Parameter Code'; two wide columns 'Chlorine (Free) mg/L' and 'Chlorine (Total) mg/L'
+    (either order) and 'Chlorine Residual' beside 'Free Chlorine' ask which is the reading and read only the one
+    chosen; 'Chloramine (mg/L)' is total chlorine (refused in free mode, read in chloramine mode); analytes that cannot
+    pick the rows (codes the reader does not know, two chlorine analytes that name no species, a 'Parameter Code'
+    column the guess passes over beside a plain 'Result') are refused with the question and read once the analyte
+    value is chosen; µg/L headers written 'ugL', '_ugl', 'Âµg/L', 'ug per L' and 'µg L-1' are divided by 1000, units
+    'mg Cl2/L', 'mgCl2/L' and 'mg/litre' are mg/L, and a µg/L log whose header does not say so warns; a comma title
+    before a semicolon log and an Excel title row of two cells are skipped and named; an Excel date with no time among
+    timed ones gives its CSV twin's rows, listed as 'no time of day'; a time column holding '1899-12-30 09:15:00'
+    reads its times; a tap ID with a superscript digit is listed, never a crash; 'Node ID,Elevation' is no tap map;
+    a lab qualifier on every reading of ten interleaved analyzers and 200 taps from another system give one not-used
+    line each, and the list is capped at DROPPED_MAX_LINES lines; a 9 MB file of 3 million tiny rows is refused, by
+    its line count, within 1 s; and the bundled Net2's 08:00 start moves a 09:00 sample to model hour 1 in the pilot
+    while the app's bundled Net2 keeps it at 9."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    from .importers import DROPPED_MAX_LINES
+    with _sample_fixtures() as paths:
+        got = E.part_final_review(paths)
+    for f, res in got["long_species"].items():
+        for dis, r in res.items():
+            assert r["rows"] == len(FX.LONG_SAMPLES) and r["rows_as_expected"] and not r["species_warning"], (f, dis, r)
+            assert r["analyte"] in ("Analyte", "Parameter Code") and r["reading"] == "Result", (f, dis, r)
+    for k, r in got["wide_species"].items():
+        assert r["bare_guess_refused_asks"] and r["rows_as_expected"] and r["other_column_noted"], (k, r)
+    ch = got["chloramine_header"]
+    assert ch["free_mode_refused_as_total"] and ch["chloramine_rows_as_expected"] and not ch["species_warning"], ch
+    av = got["analyte_value"]
+    for k in ("long_unknown_codes", "long_two_unnamed"):
+        assert av[k]["refused_asks_value"] and av[k]["rows_as_expected"] and av[k]["warned"], (k, av[k])
+    assert av["long_unknown_codes_param"]["refused_names_the_column"] and av["long_unknown_codes_param"]["rows_as_expected"]
+    assert av["value_not_in_column_refused"], av
+    u = got["units"]
+    for h in FX.UGL_HEADERS:
+        assert u[h]["y"] == [round(float(v) / 1000, 6) for *_, v in FX.UGL_ROWS] and u[h]["warned"], (h, u[h])
+    for x in FX.UNIT_SPELLINGS:
+        assert u[x]["rows_as_expected"] and u[x]["dropped"] == 0, (x, u[x])
+    assert u["unnamed_ugL_warned"], u
+    ti = got["titles"]
+    assert ti["comma_title_rows_as_expected"] and "semicolons" in ti["comma_title_how"] and "skipped" in ti["comma_title_how"]
+    assert ti["xlsx_title_rows_as_expected"] and "skipped" in ti["xlsx_title_how"], ti
+    ed = got["excel_date_only"]
+    assert ed["same_rows_as_csv"] and len(ed["xlsx_rows"]) == 2 and ed["xlsx_no_time"] == ed["csv_no_time"] == [["T3", 4]]
+    assert got["time_column_epoch_date"] == {"rows_as_expected": True, "dropped": 0}, got["time_column_epoch_date"]
+    sp = got["superscript_tap"]
+    assert "error" not in sp["log"] and "error" not in sp["tap_map"], sp
+    assert sp["log"]["dropped"] == [["1²", "tap 1² is not in the tap map"]] and sp["tap_map"]["rows"] == 2, sp
+    assert got["junctions_2col"] == {"tap": None, "junction": "Node ID"}, got["junctions_2col"]
+    nl = got["not_used_lists"]
+    for k in ("qualifier_interleaved", "unknown_taps_many"):
+        assert nl[k]["lines"] == 1 and nl[k]["not_used"] == nl[k]["rows_in"] and nl[k]["chars"] < 300, (k, nl[k])
+    assert nl["line_cap"]["lines"] == DROPPED_MAX_LINES and nl["line_cap"]["last"].startswith("and 6 more reasons")
+    tr = got["csv_tiny_rows"]
+    assert tr["refused"] and "lines, more than" in tr["refused"] and tr["within_1s"], tr
+    n2 = got["net2_pilot_hours"]
+    assert n2["start_clock_h"] == 8.0 and n2["app_hours"] == n2["clock_hours"], n2
+    assert n2["pilot_hours"] == [h - 8 for h in n2["clock_hours"]], n2
+    _same_as_16(got, "final_review")
+    return {"long_species_rows": {k: v["free_chlorine"]["rows"] for k, v in got["long_species"].items()},
+            "wide_both_species_ask": len(got["wide_species"]), "analyte_value_asked_then_read": 3,
+            "ugl_headers_divided": len(FX.UGL_HEADERS), "unit_spellings_read": len(FX.UNIT_SPELLINGS),
+            "not_used_lines": {k: nl[k]["lines"] for k in ("qualifier_interleaved", "unknown_taps_many")},
+            "tiny_rows_refused_by_line_count": True, "net2_pilot_hours": n2["pilot_hours"]}
+
+
+APP_CLOCK_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+app, net3_log, clock6_inp, clock6_log, taps, net2_log, net2_taps = sys.argv[1:8]
+EDITOR = ["junction", "hour", "mg/L"]
+
+def run(at):
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+def put(at, label, name, path):
+    [u for u in at.file_uploader if u.label == label][0].set_value((name, open(path, "rb").read(), "text/csv"))
+
+def state(at):
+    m = {x.label: x.value for x in at.metric}
+    route = [d.value for d in at.dataframe if "reason" in d.value.columns][0]
+    every = [d.value for d in at.dataframe if "hour of the daily minimum" in d.value.columns][0]
+    ed = [d.value for d in at.dataframe if list(d.value.columns) == EDITOR][0]
+    flagged = [k for k in m if k.startswith("Junctions likely below")][0]
+    return {"worst": m["Worst hour of the day"], "flagged_label": flagged, "flagged": m[flagged],
+            "samples": m["Samples used"], "route_hours": list(route.hour),
+            "every_min_hour": dict(zip(every.junction.astype(str), every["hour of the daily minimum"])),
+            "editor": [[str(a), int(b), float(c)] for a, b, c in ed.values.tolist()],
+            "show_options": [r for r in at.radio if r.label == "Show"][0].options,
+            "captions": [c.value for c in at.caption], "info": [i.value for i in at.info],
+            "warnings": [w.value for w in at.warning]}
+
+def show(at, opt):
+    [r for r in at.radio if r.label == "Show"][0].set_value(opt)
+    run(at)
+    m = {x.label: x.value for x in at.metric}
+    k = [k for k in m if k.startswith("Junctions likely below")][0]
+    return {"label": k, "value": m[k]}
+
+res = {}
+at = run(AppTest.from_file(app, default_timeout=900))                     # A: Net3, demo off, the log at clock hours
+[t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False); run(at)
+put(at, "Grab log (CSV or Excel)", "clock_log_net3.csv", net3_log); put(at, "Tap map (CSV)", "task16_tap_map.csv", taps)
+run(at); res["net3"] = state(at); res["net3_at_03"] = show(at, "03:00")
+at = run(AppTest.from_file(app, default_timeout=900))                     # B: net3_clock6.inp uploaded, demo off
+[r for r in at.radio if r.label == "Model"][0].set_value("Upload my .inp"); run(at)
+at.file_uploader[0].set_value(("net3_clock6.inp", open(clock6_inp, "rb").read(), "application/octet-stream")); run(at)
+res["clock6_demo"] = state(at)                                            # the demo on: its hours by the clock
+[t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False); run(at)
+res["uploaders"] = [u.label for u in at.file_uploader]
+put(at, "Grab log (CSV or Excel)", "clock_log_clock6.csv", clock6_log); put(at, "Tap map (CSV)", "task16_tap_map.csv", taps)
+run(at); res["clock6"] = state(at); res["clock6_at_09"] = show(at, "09:00")
+res["clock6_readiness"] = [m.value for m in at.markdown if m.value.startswith("**Model readiness")]
+at = run(AppTest.from_file(app, default_timeout=900))                     # C: the Net2 example, demo on
+at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith("Net2")][0]); run(at)
+res["net2"] = state(at)
+[t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False); run(at)   # D: and a log at clock hours
+put(at, "Grab log (CSV or Excel)", "net2_clock_log.csv", net2_log); put(at, "Tap map (CSV)", "net2_tap_map.csv", net2_taps)
+run(at); res["net2_log"] = state(at)
+print("APP_CLOCK_JSON " + json.dumps(res))
+"""
+
+
+@check("task16", quick=False)
+def clock_conversion():
+    """Clock time in and out (critique 10).  The helpers: a 09:00 sample in a file that starts at 06:00 is model hour 3
+    (09:59 too: minutes truncated), the daytime window is model hours 1 to 11, shown as 07:00 to 17:00, a start of
+    6:30 gives 07:30 to 17:30, and a start at midnight gives simgp.DAY_HOURS and leaves every hour as it is; the
+    bundled Net3 and ky4 start at midnight, so nothing of theirs moves, and Net2 (08:00) keeps model hours by lead
+    decision 2.  In the app (AppTest): (A) the Net3 example with clock_log_net3.csv, whose times of day equal its
+    model hours, and (B) net3_clock6.inp (Net3 starting at 06:00, its grid bit-identical to Net3's) with
+    clock_log_clock6.csv, the same readings written 6 h later.  B's sample table holds A's rows exactly (its 09:00
+    readings are model hour 3), so the fit is A's: B's worst hour is A's plus 6, mod 24, every junction's hour of the
+    daily minimum is A's plus 6, B's map at 09:00 is A's at 03:00, and B's route hours lie within 07:00 to 17:00 by the
+    clock; A shows model hours as before.  (C) the Net2 example keeps its model hours, with the caption 'model hour
+    (this file starts at 08:00)'.  Since the review of task 16, (B) with the demo on draws its daytime samples at the
+    model hours of 07:00 to 17:00 by the clock (1 to 11), not at DAY_HOURS shown as 13:00 to 23:00.  The upload's copy
+    and grid are deleted afterwards.  ky4's app run is not repeated here (its free-chlorine grid is not cached); its
+    start is midnight, so its hours are unchanged by construction.  Since the final verification of task 16, (D) the
+    Net2 example with the demo off and net2_clock_log.csv (09:00 to 15:00) keeps those times as model hours 9 to 15,
+    unconverted (lead decision 2), and its caption now says so and that the pilot with --inp Net2 subtracts 8 h; the
+    demo-on Net2 page (C) has no such words."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    from .simulate import LIB
+    h = E.part_clock_helpers()
+    assert h["09:00_at_6h"] == 3 and h["09:59_at_6h"] == 3 and h["model_3_label_6h"] == "09:00", h
+    assert h["daytime_6h"] == list(range(1, 12)) and h["daytime_6h_labels"][0] == "07:00", h
+    assert h["daytime_6h_labels"][-1] == "17:00" and h["daytime_6h30_labels"][0] == "07:30", h
+    assert h["daytime_0h_is_DAY_HOURS"] and h["identity_at_0h"], h
+    assert h["bundled_start_h"] == {"Net3": 0.0, "Net2": 8.0, "ky4": 0.0}, h
+    assert h["shows_clock"] == {"0": False, "6": True, "23:59:50": False, "0:00:20": False}, h
+    _same_as_16(h, "clock_helpers")
+    with _sample_fixtures() as paths:
+        res, built = _app_run(APP_CLOCK_SCRIPT, [os.path.join(REPO, "app.py"), paths["clock_log_net3.csv"],
+                                                 paths["net3_clock6.inp"], paths["clock_log_clock6.csv"],
+                                                 paths["task16_tap_map.csv"], paths["net2_clock_log.csv"],
+                                                 paths["net2_tap_map.csv"]],
+                              lambda f: "_net3_clock6.inp" in f, "APP_CLOCK_JSON")
+    a, b, c = res["net3"], res["clock6"], res["net2"]
+    plus6 = lambda lab: f"{(int(lab[:2]) + FX.CLOCK_SHIFT_H) % 24:02d}:00"
+    hours = [f"{x:02d}:00" for x in range(24)]
+    assert res["uploaders"] == ["EPANET .inp file", "Grab log (CSV or Excel)", "Tap map (CSV)"], res["uploaders"]
+    assert b["editor"] == a["editor"] and a["samples"] == b["samples"], (a["editor"][:4], b["editor"][:4])
+    first = [r for r in b["editor"] if r[1] == 3]
+    assert first and a["show_options"][1:] == hours and b["show_options"][1:] == hours, (first, b["show_options"])
+    assert b["worst"] == plus6(a["worst"]), (a["worst"], b["worst"])
+    assert all(b["every_min_hour"][j] == plus6(v) for j, v in a["every_min_hour"].items()), "hour of the daily minimum"
+    assert res["clock6_at_09"]["value"] == res["net3_at_03"]["value"], (res["clock6_at_09"], res["net3_at_03"])
+    assert res["clock6_at_09"]["label"].endswith("(09:00)") and res["net3_at_03"]["label"].endswith("(03:00)")
+    assert b["route_hours"] and all(7 <= int(x[:2]) <= 17 for x in b["route_hours"]), b["route_hours"]
+    assert all(7 <= int(x[:2]) <= 17 for x in a["route_hours"]), a["route_hours"]
+    assert any("Hours are times of day: this file starts at 06:00" in x for x in b["captions"]), b["captions"]
+    assert any("MODEL hour" in x and "is hour 3" in x for x in b["captions"]), b["captions"]
+    assert not any("times of day" in x for x in a["captions"]), a["captions"]
+    assert any("model hour (this file starts at 08:00)" in x for x in c["captions"]), c["captions"]
+    assert c["show_options"][1:] == hours and all(7 <= int(x[:2]) <= 17 for x in c["route_hours"]), c["route_hours"]
+    assert "Times of day are converted to model hours" in " ".join(b["info"]), b["info"]
+    assert any(f"grid24_full_" in f for f in built["cache"]), built
+    # the review of task 16: on a converted upload the demo draws its daytime samples at 07:00 to 17:00 by the clock
+    demo_h = [r[1] for r in res["clock6_demo"]["editor"]]
+    assert demo_h and all(x in h["daytime_6h"] for x in demo_h), demo_h
+    # the final verification of task 16: the bundled Net2 with an uploaded log says its times are not converted
+    d = res["net2_log"]
+    assert [r[1] for r in d["editor"]] == list(range(9, 9 + len(FX.NET2_LOG_JUNCTIONS))), d["editor"]
+    assert any("not converted (the pilot with --inp Net2 subtracts 8 h)" in x for x in d["captions"]), d["captions"]
+    assert not any("not converted" in x for x in c["captions"]), c["captions"]
+    return {"helpers": {k: h[k] for k in ("09:00_at_6h", "daytime_6h_labels", "daytime_0h_is_DAY_HOURS")},
+            "net3_worst": a["worst"], "clock6_worst": b["worst"], "net3_at_03": res["net3_at_03"]["value"],
+            "clock6_at_09": res["clock6_at_09"]["value"], "clock6_route_hours": b["route_hours"],
+            "net3_route_hours": a["route_hours"], "samples_used": int(a["samples"]),
+            "junctions_whose_daily_min_hour_moved_by_6": len(a["every_min_hour"]), "net2_caption": True,
+            "net2_worst_model_hour": c["worst"],
+            "clock6_demo_sample_clock_hours": sorted({(x + FX.CLOCK_SHIFT_H) % 24 for x in demo_h}),
+            "net2_upload_hours_unconverted": [r[1] for r in d["editor"]], "net2_upload_caption_says_so": True}
+
+
+APP_LOG_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+import matplotlib.axes
+_scatter = matplotlib.axes.Axes.scatter
+MARKS = []
+ABOVE = []
+def _rec(self, *a, **k):
+    if str(k.get("label") or "").startswith("measured below detection"):
+        MARKS.append(len(a[0]))
+    if str(k.get("label") or "").startswith("measured above the range"):
+        ABOVE.append(len(a[0]))
+    return _scatter(self, *a, **k)
+matplotlib.axes.Axes.scatter = _rec
+from streamlit.testing.v1 import AppTest
+app, ex_log, ex_taps, fx = sys.argv[1], sys.argv[2], sys.argv[3], json.loads(sys.argv[4])
+EDITOR = ["junction", "hour", "mg/L"]
+
+def run(at):
+    at.run()
+    return at
+
+def put(at, label, name, path):
+    [u for u in at.file_uploader if u.label == label][0].set_value((name, open(path, "rb").read(), "application/octet-stream"))
+
+def demo_off(ca=False):
+    at = run(AppTest.from_file(app, default_timeout=900))
+    [t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False)
+    run(at)
+    if ca:      # after the demo is off, so the chloramine demo truth (EPANET-MSX) never runs here
+        [r for r in at.radio if r.label == "Disinfectant"][0].set_value("Chloramine (total chlorine)")
+        run(at)
+    return at
+
+def state(at):
+    m = {x.label: x.value for x in at.metric}
+    ed = [d.value for d in at.dataframe if list(d.value.columns) == EDITOR]
+    return {"exception": [e.value for e in at.exception], "samples": m.get("Samples used"),
+            "editor": [[str(a), int(b), float(c)] for a, b, c in ed[0].values.tolist()] if ed else None,
+            "info": [i.value for i in at.info], "warnings": [w.value for w in at.warning],
+            "errors": [e.value for e in at.error], "uploaders": [u.label for u in at.file_uploader],
+            "selectboxes": [s.label for s in at.selectbox], "downloads": len(at.get("download_button")),
+            "flagged": next((v for k, v in m.items() if k.startswith("Junctions likely below")), None),
+            "reading_choice": next((s.value for s in at.selectbox if s.label == "Reading column"), None)}
+
+def upload(log_name, log_path, taps_name, taps_path, ca=False):
+    at = demo_off(ca)
+    put(at, "Grab log (CSV or Excel)", log_name, log_path)
+    put(at, "Tap map (CSV)", taps_name, taps_path)
+    return run(at)
+
+res = {}
+at = run(AppTest.from_file(app, default_timeout=900))                     # the demo path: no log uploaders
+res["demo_on"] = state(at)
+at = upload("example_grab_log.csv", ex_log, "example_tap_map.csv", ex_taps)
+res["example"] = state(at)
+put(at, "Grab log (CSV or Excel)", "multi_month_log.csv", fx["multi_month_log.csv"])      # a changed re-upload
+res["reupload_multi_month"] = state(run(at))
+res["unknown_tap"] = state(upload("unknown_tap_log.csv", fx["unknown_tap_log.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["mixed"] = state(upload("mixed_species_log.csv", fx["mixed_species_log.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["xlsx"] = state(upload("grab_log_typed.xlsx", fx["grab_log_typed.xlsx"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["xlsx_csv"] = state(upload("grab_log_typed.csv", fx["grab_log_typed.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+MARKS.clear()
+res["censored"] = state(upload("lims_censored.csv", fx["lims_censored.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["censored_marks"] = list(MARKS)
+res["ambiguous"] = state(upload("ambiguous_dates.csv", fx["ambiguous_dates.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+at = upload("ambiguous_dates.csv", fx["ambiguous_dates.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"])
+[s for s in at.selectbox if s.label == "Date format"][0].set_value("day first (DD/MM/YYYY)")
+res["ambiguous_dmy"] = state(run(at))
+at = demo_off()
+put(at, "Grab log (CSV or Excel)", "example_grab_log.csv", ex_log)
+res["no_tap_map"] = state(run(at))
+MARKS.clear(); ABOVE.clear()                                               # the review of task 16
+res["overrange"] = state(upload("log_overrange.csv", fx["log_overrange.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["overrange_marks"] = {"below": list(MARKS), "above": list(ABOVE)}
+res["long"] = state(upload("lims_long.csv", fx["lims_long.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+at = upload("mixed_species_log.csv", fx["mixed_species_log.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"])
+[s for s in at.selectbox if s.label == "Reading column"][0].set_value("free_chlorine_mgL")
+res["mixed_chosen"] = state(run(at))
+# the final verification of task 16: the species inside brackets; the question for two species; the analyte value
+res["long_paren"] = state(upload("long_paren.csv", fx["long_paren.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"]))
+res["wide_paren_ca"] = state(upload("wide_paren.csv", fx["wide_paren.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"],
+                                    ca=True))
+at = upload("long_unknown_codes.csv", fx["long_unknown_codes.csv"], "task16_tap_map.csv", fx["task16_tap_map.csv"])
+res["unknown_codes"] = state(at)
+[s for s in at.selectbox if s.label.startswith("Analyte value")][0].set_value("CHLF")
+res["unknown_codes_chosen"] = state(run(at))
+print("APP_LOG_JSON " + json.dumps(res))
+"""
+
+
+@check("task16", quick=False)
+def app_grab_log_upload():
+    """Headless AppTest of the grab-log upload, the demo off, the Net3 example (task 16's acceptance: from a grab-log
+    file, CSV or Excel, and a tap map by ID to the chlorine map without typing a junction ID):
+    docs/example_grab_log.csv with docs/example_tap_map.csv makes 'Samples used' equal load_log's row count inside the
+    date window (the last 3 of its 6 months), and says 'using N samples from <date> to <date>' and that within the
+    window every sample is one simulated day; a changed re-upload (multi_month_log.csv, 9 months) changes the table
+    and uses its last 3 months, and says so; unknown_tap_log.csv lists its unknown tap in a warning; mixed_species_log.csv
+    is refused with an error before any map; grab_log_typed.xlsx gives the same table as its CSV twin, with the
+    leading-zero warning; lims_censored.csv lists its censored readings with their reason and marks their junctions on
+    the map ('measured below detection (not fitted)', counted through matplotlib's scatter); ambiguous_dates.csv
+    stops with the question, and runs once 'day first' is chosen; a log with no tap map asks for it.  The demo path
+    has no grab-log uploader, and every page keeps one download button.  Since the review of task 16: the 9-month
+    log's 24 rows before the window are counted on the page and listed with their reason; log_overrange.csv marks
+    its '<0.02' junction as below detection and its two '>' junctions apart, as above the range; lims_long.csv (one
+    row per analyte) uses its 3 free chlorine rows, with the analyte column guessed; and mixed_species_log.csv runs
+    once its 'Reading column' is chosen.  Since its final verification: long_paren.csv ('Chlorine (Free)',
+    'Chlorine (Total)', pH rows) uses its 3 free chlorine rows with no species warning; wide_paren.csv in chloramine
+    mode stops with 'Which column is the reading?' and its 'Reading column' starts at '(choose a column)' (it read the
+    free column as total chlorine before); and long_unknown_codes.csv stops with 'Which value is the chlorine
+    reading?' and uses its 3 CHLF rows once 'Analyte value' is CHLF."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    want = _record_16("app_inputs")
+    with _sample_fixtures() as paths:
+        got_inputs = E.part_app_inputs(paths)
+        res, _ = _app_run(APP_LOG_SCRIPT, [os.path.join(REPO, "app.py"), os.path.join(REPO, "docs", "example_grab_log.csv"),
+                                           os.path.join(REPO, "docs", "example_tap_map.csv"), json.dumps(paths)],
+                          lambda f: False, "APP_LOG_JSON")
+    assert not _json_diff(json.loads(json.dumps(got_inputs)), want), _json_diff(got_inputs, want)[:5]
+    for k, v in res.items():
+        if isinstance(v, dict) and "exception" in v:
+            assert not v["exception"], (k, v["exception"])
+    d0 = res["demo_on"]
+    assert not any(u.startswith(("Grab log", "Tap map")) for u in d0["uploaders"]) and d0["downloads"] == 1, d0
+    ex = res["example"]
+    assert int(ex["samples"]) == want["example_rows_in_window"] == 39, ex["samples"]
+    assert any(i.startswith("Grab log: using 39 samples from 2026-04-03 to 2026-06-27") and "one simulated day" in i
+               and "the last 3 months of the log" in i for i in ex["info"]), ex["info"]
+    assert ex["downloads"] == 1 and not ex["errors"], ex
+    mm = res["reupload_multi_month"]
+    assert mm["editor"] != ex["editor"] and int(mm["samples"]) == want["multi_month"]["rows_used"], (mm["samples"],)
+    assert any("the last 3 months of the log (2026-07, 2026-08, 2026-09" in i for i in mm["info"]), mm["info"]
+    u = res["unknown_tap"]
+    assert any("tap T99 is not in the tap map: row 3" in w for w in u["warnings"]) and int(u["samples"]) == 3, u
+    mx = res["mixed"]
+    assert any("both a free chlorine column" in e for e in mx["errors"]) and mx["flagged"] is None, mx
+    x, xc = res["xlsx"], res["xlsx_csv"]
+    assert x["editor"] == xc["editor"] and int(x["samples"]) == 5, (x["editor"], xc["editor"])
+    assert any("leading zeros" in w for w in x["warnings"]) and not any("leading zeros" in w for w in xc["warnings"]), x
+    c = res["censored"]
+    cens = [w for w in c["warnings"] if w.startswith("Rows of the grab log that are not used")]
+    assert cens and cens[0].count("censored") == 4 and "blank reading" in cens[0], cens
+    assert int(c["samples"]) == 3 and res["censored_marks"] and set(res["censored_marks"]) == {4}, res["censored_marks"]
+    am = res["ambiguous"]
+    assert any("Which is it?" in e for e in am["errors"]) and am["flagged"] is None, am["errors"]
+    assert int(res["ambiguous_dmy"]["samples"]) == 3 and not res["ambiguous_dmy"]["errors"], res["ambiguous_dmy"]
+    assert any("Upload the tap map too" in i for i in res["no_tap_map"]["info"]), res["no_tap_map"]["info"]
+    # the review of task 16: rows before the window listed; '>2.2' marked apart from '<0.02'; a long-format export;
+    # a log with both species read once its reading column is chosen
+    out_n = want["multi_month"]["rows_outside"]
+    assert any(f"{out_n} rows dated before 2026-07 are outside the window" in i for i in mm["info"]), mm["info"]
+    assert any(w.startswith("Rows of the grab log that are not used") and "dated before the window" in w
+               for w in mm["warnings"]), mm["warnings"]
+    ov = res["overrange"]
+    marks = {k: sorted(set(v)) for k, v in res["overrange_marks"].items()}      # the page's map and the PDF's
+    assert int(ov["samples"]) == 1 and marks == {"below": [1], "above": [2]}, res["overrange_marks"]
+    lg = res["long"]
+    assert int(lg["samples"]) == 3 and not lg["errors"] and "Analyte column (a log with one row per analyte)" in lg["selectboxes"], lg
+    assert any("another analyte ('pH')" in w for w in lg["warnings"]), lg["warnings"]
+    mc = res["mixed_chosen"]
+    assert int(mc["samples"]) == 2 and not mc["errors"] and not mc["exception"], mc
+    # the final verification of task 16
+    lp = res["long_paren"]
+    assert int(lp["samples"]) == len(FX.LONG_SAMPLES) and not lp["errors"], lp
+    assert not any("does not say free or total" in w for w in lp["warnings"]), lp["warnings"]
+    assert any("total chlorine, not free chlorine ('Chlorine (Total)')" in w for w in lp["warnings"]), lp["warnings"]
+    wp = res["wide_paren_ca"]
+    assert any("Which column is the reading?" in e for e in wp["errors"]) and wp["flagged"] is None, wp
+    assert wp["reading_choice"] == "(choose a column)", wp["reading_choice"]
+    uc, ucc = res["unknown_codes"], res["unknown_codes_chosen"]
+    assert any("Which value is the chlorine reading?" in e for e in uc["errors"]) and uc["flagged"] is None, uc
+    assert any(x.startswith("Analyte value") for x in uc["selectboxes"]), uc["selectboxes"]
+    assert int(ucc["samples"]) == len(FX.LONG_SAMPLES) and not ucc["errors"] and not ucc["exception"], ucc
+    return {"samples_used_example": int(ex["samples"]), "load_log_rows_in_window": want["example_rows_in_window"],
+            "load_log_rows": want["example_rows"], "multi_month_samples_used": int(mm["samples"]),
+            "unknown_tap_listed": True, "mixed_species_refused": True, "xlsx_equals_csv": True,
+            "censored_listed": 4, "censored_junctions_marked_on_the_map": res["censored_marks"][0],
+            "ambiguous_asks_then_runs_with_day_first": True, "download_buttons": ex["downloads"],
+            "multi_month_rows_before_the_window_listed": out_n, "overrange_marked_apart": marks,
+            "long_format_samples_used": int(lg["samples"]), "both_species_chosen_samples_used": int(mc["samples"]),
+            "species_in_brackets_samples_used": int(lp["samples"]), "wide_species_in_brackets_asks": True,
+            "analyte_value_asked_then_samples_used": int(ucc["samples"])}
+
+
+APP_TABLE_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+app, ex_log, ex_taps = sys.argv[1:4]
+def table_state(at):
+    assert not at.exception, [e.value for e in at.exception]
+    every = [d.value for d in at.dataframe if "hour of the daily minimum" in d.value.columns]
+    plain = [t.value for t in at.table if "hour of the daily minimum" in t.value.columns]
+    m = {x.label: x.value for x in at.metric}
+    return {"every_shape": list(every[0].shape) if every else None, "every_columns": list(every[0].columns) if every else None,
+            "plain_rows": len(plain[0]) if plain else None, "plain_index": plain[0].index.name if plain else None,
+            "plain_top_p": [float(v) for v in plain[0].iloc[:, 3]] if plain else None,
+            "downloads": len(at.get("download_button")),
+            "flagged": next((v for k, v in m.items() if k.startswith("Junctions likely below")), None),
+            "subheaders": [s.value for s in at.subheader], "captions": [c.value for c in at.caption]}
+res = {}
+at = AppTest.from_file(app, default_timeout=900).run()
+res["default"] = table_state(at)
+[t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False); at.run()
+[u for u in at.file_uploader if u.label == "Grab log (CSV or Excel)"][0].set_value(("example_grab_log.csv", open(ex_log, "rb").read(), "text/csv"))
+[u for u in at.file_uploader if u.label == "Tap map (CSV)"][0].set_value(("example_tap_map.csv", open(ex_taps, "rb").read(), "text/csv"))
+at.run()
+res["demo_off_log"] = table_state(at)
+print("APP_TABLE_JSON " + json.dumps(res))
+"""
+
+
+@check("task16", quick=False)
+def app_per_junction_table():
+    """Headless AppTest (critique 25): with the default demo and with the demo off and the example log uploaded, the
+    'Every junction' dataframe has one row per junction (92 on Net3) and the 6 columns junction, median, lo90, hi90
+    (mg/L), P(daily min < threshold) and the hour of the daily minimum; the plain table of the junctions most likely
+    below the threshold has 20 rows, sorted by that probability; the page keeps exactly one download_button (the
+    dataframe's own toolbar offers the CSV); and the default demo still flags 42 of 92.  No claim of WCAG conformance
+    is made; the dataframe toolbar's CSV download was checked once in a real browser (journal, task 16)."""
+    res, _ = _app_run(APP_TABLE_SCRIPT, [os.path.join(REPO, "app.py"), os.path.join(REPO, "docs", "example_grab_log.csv"),
+                                         os.path.join(REPO, "docs", "example_tap_map.csv")], lambda f: False,
+                      "APP_TABLE_JSON")
+    cols = ["junction", "median (mg/L)", "lo90 (mg/L)", "hi90 (mg/L)", "P(daily min < 0.2)", "hour of the daily minimum"]
+    for k in ("default", "demo_off_log"):
+        g = res[k]
+        assert g["every_shape"] == [APP_DEMO["junctions"], 6] and g["every_columns"] == cols, (k, g)
+        assert g["plain_rows"] == 20 and g["plain_index"] == "junction", (k, g)
+        assert g["plain_top_p"] == sorted(g["plain_top_p"], reverse=True), (k, g["plain_top_p"])
+        assert g["downloads"] == 1 and "Every junction: the daily minimum" in g["subheaders"], (k, g)
+        assert any("downloads it as CSV" in c and "screen readers" in c for c in g["captions"]), k
+    assert res["default"]["flagged"] == f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}", res["default"]["flagged"]
+    return {"rows": res["default"]["every_shape"][0], "columns": cols, "plain_table_rows": 20, "download_buttons": 1,
+            "default_flagged": res["default"]["flagged"]}
+
+
+PAGE_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+import streamlit.runtime.memory_media_file_storage as mm
+FILES = {}
+_orig = mm.MemoryMediaFileStorage.load_and_get_id
+def _rec(self, path_or_data, mimetype, kind, filename=None):
+    FILES[filename] = (mimetype, len(path_or_data) if isinstance(path_or_data, (bytes, bytearray)) else None)
+    return _orig(self, path_or_data, mimetype, kind, filename)
+mm.MemoryMediaFileStorage.load_and_get_id = _rec
+from streamlit.testing.v1 import AppTest
+page, fx = sys.argv[1], json.loads(sys.argv[2])
+at = AppTest.from_file(page, default_timeout=900).run()
+assert not at.exception, [e.value for e in at.exception]
+res = {"downloads": [b.label for b in at.get("download_button")], "files": FILES, "choices": {}}
+radio = lambda: [r for r in at.radio if r.label == "Which software holds your network?"][0]
+for o in radio().options:
+    radio().set_value(o)
+    at.run()
+    assert not at.exception, (o, [e.value for e in at.exception])
+    res["choices"][o] = [m.value for m in at.markdown][0]
+for name in ("mains.gpkg", "net3_backup.inp.bak", "lims_censored.csv", "task16_tap_map.csv", "ambiguous_dates.csv",
+             "junction_list.csv", "log_title_line.csv", "multi_month_log.csv", "junctions_2col.csv", "long_paren.csv"):
+    at.file_uploader[0].set_value((name, open(fx[name], "rb").read(), "application/octet-stream"))
+    at.run()
+    assert not at.exception, (name, [e.value for e in at.exception])
+    res[name] = {"markdown": [m.value for m in at.markdown if m.value.startswith(("**This", "**Not sure", "**As",
+                                                                                    "**Model readiness"))],
+                 "warnings": [w.value for w in at.warning]}
+print("PAGE_JSON " + json.dumps(res))
+"""
+
+
+@check("task16", quick=False)
+def get_started_page_runs():
+    """Headless AppTest of pages/1_Get_started.py (PYTHONPATH set): every software choice of step 1 renders its own
+    section of docs/how_to_export_your_model.md (12 choices; the GIS and CAD ones marked 'coming'); step 2 has one
+    download button per template (the four CSVs and the Excel grab log, written on the fly by openpyxl); every template
+    parses (the grab logs with load_log and the tap map template, the tap map as load_log's tap map, the plant log with
+    load_plant, the workbook through the same reader: part 'templates' of the committed record); step 3, 'Check a
+    file', gives mains.gpkg its sniff result and advice and net3_backup.inp.bak its sniff result and readiness report,
+    reads lims_censored.csv as a grab log (its censored rows listed), task16_tap_map.csv as a tap map, and asks the
+    question for ambiguous_dates.csv; since the review of task 16, junction_list.csv (a junction column and no tap
+    column, which crashed the page) is said to be a junction list, not a tap map, log_title_line.csv is read past its
+    title, and multi_month_log.csv gives the main page's 3-month window; since its final verification,
+    junctions_2col.csv ('Node ID,Elevation') is a junction list too, never a tap map whose junction column is
+    'Elevation', and long_paren.csv ('Chlorine (Free)', 'Chlorine (Total)', pH rows) gives its 3 free chlorine
+    readings only, with no 'does not say free or total' warning.  No grid is built (outputs/cache unchanged),
+    and nothing is left in outputs/private/check_a_file or outputs/app_uploads.  The task-19 form parser does not exist
+    yet."""
+    from . import intake_exp as E
+    from . import fixtures as FX
+    t = E.part_templates()
+    for f, v in t.items():
+        assert v.get("rows", v.get("taps", v.get("months", 0))) > 0, (f, v)
+    assert t["grab_log_template.csv"]["censored"] == 1 and t["grab_log_template.xlsx"]["same_as_csv"], t
+    _same_as_16(t, "templates")
+    sections = [ln[3:].strip() for ln in open(os.path.join(REPO, "docs", "how_to_export_your_model.md"),
+                                              encoding="utf-8") if ln.startswith("## ")]
+    cache0 = _cache_snapshot()
+    check_dir = os.path.join(REPO, "outputs", "private", "check_a_file")
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    ups0 = sorted(os.listdir(up_dir)) if os.path.isdir(up_dir) else []
+    with tempfile.TemporaryDirectory(prefix="rm_t16_page_") as d:
+        paths = FX.build_all(d, ["mains.gpkg", "net3_backup.inp.bak", "lims_censored.csv", "task16_tap_map.csv",
+                                 "ambiguous_dates.csv", "junction_list.csv", "log_title_line.csv",
+                                 "multi_month_log.csv", "junctions_2col.csv", "long_paren.csv"])
+        r = subprocess.run([PY, "-c", PAGE_SCRIPT, GET_STARTED_PAGE, json.dumps(paths)], cwd=os.getcwd(),
+                           capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+    line = [x for x in r.stdout.splitlines() if x.startswith("PAGE_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    res = json.loads(line[-1][len("PAGE_JSON "):])
+    choices = res["choices"]
+    assert list(choices) == [s for s in sections if s != "Your grab samples"] and len(choices) == 12, list(choices)
+    assert len(set(choices.values())) == len(choices), "two choices show the same steps"
+    coming = [c for c in choices if "coming" in c]
+    assert len(coming) == 5 and all(any(w in c for w in ("AutoCAD", "MicroStation", "ArcGIS", "QGIS", "Google")) for c in coming)
+    assert len(res["downloads"]) == 5, res["downloads"]
+    xlsx = [f for f in res["files"] if f and f.endswith(".xlsx")]
+    assert xlsx and sorted(f for f in res["files"] if f) == sorted(
+        ["grab_log_template.csv", "grab_log_total_template.csv", "tap_map_by_id_template.csv", "plant_log_template.csv",
+         "grab_log_template.xlsx"]), res["files"]
+    g, b = res["mains.gpkg"], res["net3_backup.inp.bak"]
+    assert g["markdown"][0].startswith("**This file is a GIS layer (GeoPackage)") and any("EPANET export" in w for w in g["warnings"]), g
+    assert b["markdown"][0].startswith("**This file is a backup copy of an EPANET model") and any(
+        m.startswith("**Model readiness: net3_backup.inp.bak") and "| Test run |" in m for m in b["markdown"]), b
+    lc = res["lims_censored.csv"]
+    assert any(m.startswith("**As a grab log:** 3 readings") for m in lc["markdown"]) and any(
+        "censored" in w for w in lc["warnings"]), lc
+    assert any(m.startswith("**As a tap map:** 20 taps") for m in res["task16_tap_map.csv"]["markdown"])
+    assert any("Which is it?" in w for w in res["ambiguous_dates.csv"]["warnings"])
+    # the review of task 16: a junction list crashed the page; a title line before the header; the main page's window
+    assert any(m.startswith("**As a table:** it has a junction column ('Node ID')") for m in
+               res["junction_list.csv"]["markdown"]), res["junction_list.csv"]
+    assert any(m.startswith("**As a grab log:** 4 readings") and "skipped" in m for m in
+               res["log_title_line.csv"]["markdown"]), res["log_title_line.csv"]
+    mm = _record_16("app_inputs")["multi_month"]
+    assert any(f"The main page uses the last 3 months that hold a reading: {mm['rows_used']} readings" in m
+               for m in res["multi_month_log.csv"]["markdown"]), res["multi_month_log.csv"]
+    # the final verification of task 16
+    j2 = res["junctions_2col.csv"]
+    assert any(m.startswith("**As a table:** it has a junction column ('Node ID')") for m in j2["markdown"]), j2
+    assert not any(m.startswith("**As a tap map") for m in j2["markdown"]), j2
+    lp = res["long_paren.csv"]
+    assert any(m.startswith(f"**As a grab log:** {len(FX.LONG_SAMPLES)} readings") for m in lp["markdown"]), lp
+    assert not any("does not say free or total" in w for w in lp["warnings"]), lp["warnings"]
+    cache1 = _cache_snapshot()
+    assert cache1 == cache0, sorted(set(cache1) ^ set(cache0))
+    assert not os.path.exists(check_dir) or not os.listdir(check_dir), os.listdir(check_dir)
+    assert (sorted(os.listdir(up_dir)) if os.path.isdir(up_dir) else []) == ups0
+    return {"software_choices": len(choices), "coming": len(coming), "template_downloads": len(res["downloads"]),
+            "templates_parse": sorted(t), "check_a_file": ["mains.gpkg: advice", "net3_backup.inp.bak: readiness report",
+                                                           "lims_censored.csv: as a grab log", "task16_tap_map.csv: as a tap map",
+                                                           "ambiguous_dates.csv: the question",
+                                                           "junction_list.csv: a junction list, not a tap map",
+                                                           "log_title_line.csv: as a grab log, its title skipped",
+                                                           "multi_month_log.csv: the main page's window",
+                                                           "junctions_2col.csv: a junction list, not a tap map",
+                                                           "long_paren.csv: its free chlorine rows only"],
+            "grids_built": 0, "files_left": 0}
+
+
+APP_ORDER_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+import residualmap.chloramine as CA
+app, inp = sys.argv[1], sys.argv[2]
+def _no_msx(*a, **k):      # the demo truth's EPANET-MSX run is stood in by the reduced truth: no widget depends on it
+    raise RuntimeError("EPANET-MSX not run by app_widget_order_unchanged")
+CA.truth_in_subprocess = _no_msx
+def fresh():
+    return AppTest.from_file(app, default_timeout=900).run()
+def pick(at, label, value):
+    if label == "selectbox":
+        at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith(value)][0])
+    else:
+        [r for r in at.radio if r.label == label][0].set_value(value)
+    return at.run()
+def toggle(at, prefix, value):
+    [t for t in at.toggle if t.label.startswith(prefix)][0].set_value(value)
+    return at.run()
+def order(at):
+    assert not at.exception, [e.value for e in at.exception]
+    return {"selectbox0": at.selectbox[0].label if at.selectbox else None,
+            "uploaders": [u.label for u in at.file_uploader], "example_shown": any(s.label == "Example" for s in at.selectbox)}
+res = {}
+at = fresh(); res["t14_default"] = order(at)
+res["t14_hourly"] = order(pick(at, "Show", "03:00"))
+res["t14_net2"] = order(pick(fresh(), "selectbox", "Net2"))
+res["t14_chloramine_net3"] = order(pick(fresh(), "Disinfectant", "Chloramine (total chlorine)"))
+at = pick(fresh(), "Disinfectant", "Chloramine (total chlorine)"); res["t14_ky4_chloramine"] = order(pick(at, "selectbox", "ky4"))
+at = pick(fresh(), "selectbox", "Net2"); res["t14_msx_fallback"] = order(pick(at, "Disinfectant", "Chloramine (total chlorine)"))
+at = pick(fresh(), "Model", "Upload my .inp")
+at.file_uploader[0].set_value(("Net3.inp", open(inp, "rb").read(), "application/octet-stream")); at.run()
+res["t14_upload"] = order(at)
+at = pick(fresh(), "selectbox", "Net2"); res["ca_net2"] = order(pick(at, "Disinfectant", "Chloramine (total chlorine)"))
+res["age_net3"] = order(fresh())
+res["age_net2"] = order(pick(fresh(), "selectbox", "Net2"))
+res["age_demo_off"] = order(toggle(fresh(), "Demo", False))
+at = pick(fresh(), "Model", "Upload my .inp")                              # new: upload, demo off
+at.file_uploader[0].set_value(("Net3.inp", open(inp, "rb").read(), "application/octet-stream")); at.run()
+res["new_upload_demo_off"] = order(toggle(at, "Demo", False))
+print("APP_ORDER_JSON " + json.dumps(res))
+"""
+
+
+@check("task16", quick=False)
+def app_widget_order_unchanged():
+    """The widget order the older app checks rely on (critique 18), replayed by headless AppTest scenario by scenario:
+    app_task14_runs (default, hourly view, Net2, chloramine on Net3, ky4 with chloramine, the EPANET-MSX fallback on
+    Net2, the Net3.inp upload), app_chloramine_mode (Net2 with chloramine) and app_water_age_panels (Net3, Net2, the
+    demo off).  In each, selectbox[0] is 'Example' wherever the example picker is shown, and file_uploader[0] is
+    'EPANET .inp file' in every upload scenario; the example network with the demo off has no model uploader, so its
+    first uploader is the grab log, by design.  One new scenario (upload, demo off) shows the model, grab-log and
+    tap-map uploaders in that order.  The demo truth's EPANET-MSX run is stood in by the reduced truth (raising in its
+    place), which changes no widget; the upload's copy and grid are deleted afterwards."""
+    import hashlib
+    from .simulate import LIB
+    inp = os.path.join(LIB, "Net3.inp")
+    up_name = f"{hashlib.sha1(open(inp, 'rb').read()).hexdigest()[:8]}_Net3.inp"    # app.py's name for the upload
+    res, _ = _app_run(APP_ORDER_SCRIPT, [os.path.join(REPO, "app.py"), inp],
+                      lambda f: f == up_name or f"_{up_name}" in f, "APP_ORDER_JSON")
+    for k, v in res.items():
+        if v["example_shown"]:
+            assert v["selectbox0"] == "Example", (k, v)
+    for k in ("t14_upload", "new_upload_demo_off"):
+        assert res[k]["uploaders"][:1] == ["EPANET .inp file"] and not res[k]["example_shown"], (k, res[k])
+    assert res["new_upload_demo_off"]["uploaders"] == ["EPANET .inp file", "Grab log (CSV or Excel)", "Tap map (CSV)"]
+    assert res["age_demo_off"]["uploaders"] == ["Grab log (CSV or Excel)", "Tap map (CSV)"], res["age_demo_off"]
+    shown = [k for k, v in res.items() if v["example_shown"]]
+    assert len(shown) == 10, shown
+    return {"scenarios": len(res), "example_picker_first": len(shown), "upload_scenarios_model_uploader_first": 2,
+            "new_order": res["new_upload_demo_off"]["uploaders"]}
+
+
+@check("task16", quick=False)
+def pilot_clock_and_log():
+    """The pilot's real-data path with task 16's reader, from fresh working directories: (a) lims_one_datetime_us.csv
+    on Net3 in chloramine mode with --date-format MDY runs (its model hours are its times of day, Net3 starting at
+    midnight) and, without --date-format, stops with the question; (b) clock_log_clock6.csv on net3_clock6.inp (a
+    file, so it gets a private copy and a fresh grid) and (c) clock_log_net3.csv, the same readings written 6 h
+    earlier, on Net3 by name: the hours of (b)'s predictions are its times of day minus 6 h, and (b) and (c) write
+    byte-identical predictions and validation files, because net3_clock6's grid is Net3's bit for bit, and (b) says
+    that its outputs' hours are model hours (the review of task 16).
+    synthetic_pilot_net3 (unchanged) covers the synthetic path, whose hours are model hours already."""
+    from . import fixtures as FX
+    out = {}
+    with _sample_fixtures() as paths, tempfile.TemporaryDirectory(prefix="rm_t16_pilot_") as d:
+        def pilot(sub: str, link: bool, *args) -> subprocess.CompletedProcess:
+            wd = os.path.join(d, sub)
+            os.makedirs(os.path.join(wd, "outputs"))
+            if link:
+                os.symlink(CACHE, os.path.join(wd, "outputs", "cache"))      # a committed grid is read, not rebuilt
+            return subprocess.run([PY, "-m", "residualmap.pilot", *args], cwd=wd, capture_output=True, text=True,
+                                  env={**os.environ, "PYTHONPATH": REPO})
+        lims = ["--inp", "Net3", "--samples", paths["lims_one_datetime_us.csv"], "--taps", paths["task16_tap_map.csv"],
+                "--disinfectant", "chloramine", "--dose", "2.0"]
+        ra = pilot("a", True, *lims, "--date-format", "MDY")
+        assert ra.returncode == 0, ra.stderr[-2000:]
+        pa = pd.read_csv(os.path.join(d, "a", "outputs", "private", "pilot", "predictions_Net3.csv"), dtype={"tap_id": str})
+        want_h = {(f"2026-{mo:02d}-{dd:02d}", t): h for mo, dd, h, mi, t, v in FX.LIMS_US_ROWS}
+        assert all(want_h[(r.date, r.tap_id)] == r.hour for r in pa.itertuples()) and len(pa) > 0, pa.head()
+        rq = pilot("q", True, *lims)
+        assert rq.returncode != 0 and "Which is it?" in (rq.stderr + rq.stdout), (rq.returncode, rq.stderr[-500:])
+        rb = pilot("b", False, "--inp", paths["net3_clock6.inp"], "--samples", paths["clock_log_clock6.csv"],
+                   "--taps", paths["task16_tap_map.csv"])
+        assert rb.returncode == 0, rb.stderr[-2000:]
+        assert "every hour in the pilot's outputs (predictions and validation files) is a model hour" in rb.stdout
+        rc = pilot("c", True, "--inp", "Net3", "--samples", paths["clock_log_net3.csv"], "--taps",
+                   paths["task16_tap_map.csv"])
+        assert rc.returncode == 0, rc.stderr[-2000:]
+        pb = pd.read_csv(os.path.join(d, "b", "outputs", "private", "pilot", "predictions_net3_clock6.csv"), dtype={"tap_id": str})
+        model_h = {(dt_, t): h for dt_, h, mi, t, v in FX.CLOCK_ROWS}
+        assert all(model_h[(r.date, r.tap_id)] == r.hour for r in pb.itertuples()) and len(pb) > 0, pb.head()
+        same = {}
+        for kind in ("predictions", "validation"):
+            for ext in ("csv",) if kind == "predictions" else ("csv", "json"):
+                fb = os.path.join(d, "b", "outputs", "private", "pilot", f"{kind}_net3_clock6.{ext}")
+                fc = os.path.join(d, "c", "outputs", "private", "pilot", f"{kind}_Net3.{ext}")
+                same[f"{kind}.{ext}"] = open(fb, "rb").read() == open(fc, "rb").read()
+        assert all(same.values()), same
+        out = {"lims_us_with_date_format_rows": len(pa), "lims_us_without_date_format_stops_with_the_question": True,
+               "clock6_predictions_rows": len(pb), "clock6_hours_are_clock_minus_6": True,
+               "clock6_and_net3_byte_identical": sorted(same), "clock6_says_its_outputs_are_model_hours": True}
+    return out
 
 
 # ----------------------------------------------------------------------------- runner

@@ -1,0 +1,4 @@
+date,time,tap_id,total_chlorine_mgL,method,notes
+2026-01-05,09:15,T1,1.45,DPD colorimeter,example row: replace with your own
+2026-01-05,10:40,T2,1.12,DPD colorimeter,
+2026-01-06,08:55,T3,0.86,DPD colorimeter,

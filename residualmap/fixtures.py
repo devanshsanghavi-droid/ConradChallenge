@@ -26,6 +26,17 @@ quote run that held csv.Sniffer for seconds; a 250-character upload name; a smal
 They were added after the pre-registered tables above, which are unchanged, and each sits in the check it belongs
 to.  The checks in residualmap/checks.py (group task15) rerun each part of record() and compare it with the
 committed outputs/intake/task15_import.json.
+
+Task 16 adds the grab-log fixtures (SAMPLE_FIXTURES): a LIMS export with one US datetime column, a log with '<0.02', 'ND'
+and blanks, a log whose dates all read two ways, a cp1252 log and one with a byte-order mark, a workbook with typed date
+and time cells and numeric tap IDs (written by openpyxl, the library that reads it: same-library self-consistency) with
+its CSV twin, two online analyzers' 15-minute series, a log written 8 h late as a UTC export would be, an unknown tap,
+both species, nine months, and a log written at Net3's model hours and again 6 h later for net3_clock6.inp, all with
+one tap map.  The readings are invented and the junctions are Net3's; residualmap/intake_exp.py writes their record.
+The review of task 16 and its final verification add the layouts they found (part 'review' and part 'final_review'
+of that record): species in brackets, LIMS codes and analytes that cannot pick the rows, µg/L spellings, titles before
+the header, Excel dates with no time, a superscript digit in a tap ID, a two-column junction export, interleaved
+lab qualifiers, a tap map from another system, three million tiny rows, and a clock-time log for the bundled Net2.
 """
 from __future__ import annotations
 
@@ -1326,6 +1337,510 @@ def net1_export_like() -> bytes:
     return _crlf(t)
 
 
+# ----------------------------------------------------------------------------- task 16: grab logs and tap maps
+# Written here by hand (string formatting and the codecs), never by importers.read_grab_log; grab_log_typed.xlsx is
+# written by openpyxl, the library that reads it, so its check is same-library self-consistency.  The readings, taps
+# and dates are invented; the junctions are Net3's, as in docs/example_tap_map.csv.
+T16_TAPS = (("T1", "225"), ("T2", "239"), ("T3", "193"), ("T4", "173"), ("T5", "127"), ("T6", "35"), ("T7", "15"),
+            ("T8", "139"), ("T9", "113"), ("T10", "60"), ("SP-01", "143"), ("SP-02", "261"), ("SP-03", "243"),
+            ("SP-04", "61"), ("AN-1", "187"), ("AN-2", "263"), ("007", "219"), ("012", "267"), ("101", "206"),
+            ("Église_3", "269"))
+# lims_one_datetime_us.csv: (month, day, h, min, tap, total chlorine mg/L); every day is 12 or less and differs from
+# its month, so each date reads two ways and the file needs a date format; times are written '9:15 AM'
+LIMS_US_ROWS = tuple((mo, d, h, mi, tap, round(1.05 + 0.04 * k + 0.03 * (mo - 6), 2))
+                     for mo, days in ((6, (3, 9)), (7, (2, 11)), (8, (4, 10)), (9, (1, 8)), (10, (5, 12)))
+                     for d in days
+                     for k, (h, mi, tap) in enumerate(((9, 15, "SP-01"), (10, 40, "SP-02"), (13, 5, "SP-03"),
+                                                       (14, 30, "SP-04"))))
+# lims_censored.csv: (date, time, tap, the reading as written); the expected outcome of each row
+LIMS_CENSORED_ROWS = (("2026-03-02", "09:15", "T1", "0.45"), ("2026-03-02", "10:40", "T2", "<0.02"),
+                      ("2026-03-03", "08:55", "T3", "ND"), ("2026-03-03", "11:20", "T4", ""),
+                      ("2026-03-04", "09:05", "T5", "< 0.05"), ("2026-03-04", "13:30", "T6", "0,31"),
+                      ("2026-03-05", "14:10", "T7", "BDL"), ("2026-03-05", "15:45", "T8", "0.27 mg/L"))
+LIMS_CENSORED_EXPECT = {"used": ("T1", "T6", "T8"), "censored": ("T2", "T3", "T5", "T7"), "blank": ("T4",)}
+AMBIGUOUS_ROWS = (("03/04/2026", "09:15", "T1", "0.45"), ("05/06/2026", "10:40", "T2", "0.38"),
+                  ("07/08/2026", "08:55", "T3", "0.52"))
+CP1252_ROWS = (("2026-03-02", "09:15", "T1", "0.45", "résidu normal"), ("2026-03-02", "10:40", "Église_3", "0.38",
+                                                                            "près de l'école"),
+               ("2026-03-03", "08:55", "T3", "0.52", "°C noté"))
+# grab_log_typed.xlsx and its CSV twin: (date, h, min, tap as the tap map writes it, reading)
+TYPED_ROWS = (("2026-04-06", 9, 10, "007", 0.62), ("2026-04-06", 11, 45, "012", 0.41), ("2026-04-07", 8, 30, "101", 0.55),
+              ("2026-04-07", 14, 20, "T2", 0.33), ("2026-04-08", 10, 5, "007", 0.59))
+ANALYZER_SITES = ("AN-1", "AN-2")
+ANALYZER_DAYS = 30
+ANALYZER_STEP_MIN = 15
+UTC_SHIFT_H = 8                         # utc_shifted_log.csv: local times 10:00 to 15:00 written 8 h later
+UTC_LOCAL = ((10, 5), (11, 20), (12, 40), (13, 15), (14, 30), (15, 0))
+MULTI_MONTHS = 9                        # multi_month_log.csv: January to September 2026, 4 readings a month
+# the clock conversion logs: (date, model hour, minute, tap, reading); written once with the time of day equal to the
+# model hour (for Net3, which starts at midnight) and once 6 h later (for net3_clock6.inp, which starts at 06:00)
+# over five months (March to July 2026), so the pilot's hold-out has months to hold out and the app's window takes three
+CLOCK_ROWS = tuple((f"2026-{m:02d}-{d + 2 * k:02d}", h, mi, tap, round(v + 0.01 * (m - 3), 2))
+                   for m in range(3, 8)
+                   for k, (d, h, mi, tap, v) in enumerate(((4, 3, 0, "T1", 0.41), (4, 4, 30, "T2", 0.36),
+                                                          (5, 5, 15, "T3", 0.58), (5, 7, 40, "T4", 0.29),
+                                                          (6, 9, 5, "T5", 0.47), (6, 10, 20, "T6", 0.52))))
+CLOCK_SHIFT_H = 6
+
+
+def _csv_text(header: str, rows, sep: str = ",") -> str:
+    def q(c):
+        c = str(c)
+        return f'"{c}"' if (sep in c or '"' in c) else c
+    return header + "\n" + "".join(sep.join(q(c) for c in r) + "\n" for r in rows)
+
+
+def task16_tap_map() -> bytes:
+    return _csv_text("tap_id,junction_id,notes", [(t, j, "invented") for t, j in T16_TAPS]).encode("utf-8")
+
+
+def lims_one_datetime_us() -> bytes:
+    """A LIMS export: a sample ID per row, 'Sample Point', one 'Sample Date/Time' column with US dates and AM/PM times,
+    'Total Chlorine (mg/L)' and a units column, over five months (enough for the pilot's hold-out)."""
+    rows = []
+    for k, (mo, d, h, mi, tap, v) in enumerate(LIMS_US_ROWS, start=1):
+        h12, ap = (h - 12, "PM") if h > 12 else (h, "PM" if h == 12 else "AM")
+        rows.append((f"S{k:04d}", tap, f"{mo:02d}/{d:02d}/2026 {h12}:{mi:02d} {ap}", f"{v:.2f}", "mg/L", "lab"))
+    return _csv_text("Sample ID,Sample Point,Sample Date/Time,Total Chlorine (mg/L),Units,Analyst", rows).encode()
+
+
+def lims_censored() -> bytes:
+    return _csv_text("Sample Point,Sample Date,Sample Time,Free Chlorine (mg/L),Qualifier",
+                     [(t, d, h, v, "") for d, h, t, v in LIMS_CENSORED_ROWS]).encode()
+
+
+def ambiguous_dates() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", AMBIGUOUS_ROWS).encode()
+
+
+def grab_log_cp1252() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL,notes", CP1252_ROWS).replace("\n", "\r\n").encode("cp1252")
+
+
+def grab_log_bom() -> bytes:
+    return b"\xef\xbb\xbf" + _csv_text("date,time,tap_id,free_chlorine_mgL", [r[:4] for r in CP1252_ROWS
+                                                                             if r[2] != "Église_3"]).encode()
+
+
+def grab_log_typed_xlsx() -> bytes:
+    """Typed date and time cells, and the numeric tap IDs as numbers (007 is 7), as Excel keeps them: written by
+    openpyxl (same-library self-consistency with the reader)."""
+    import datetime as _dt
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "samples"
+    ws.append(["date", "time", "tap_id", "free_chlorine_mgL"])
+    for d, h, mi, tap, v in TYPED_ROWS:
+        ws.append([_dt.date.fromisoformat(d), _dt.time(h, mi), int(tap) if tap.isdigit() else tap, v])
+        ws.cell(row=ws.max_row, column=1).number_format = "yyyy-mm-dd"
+        ws.cell(row=ws.max_row, column=2).number_format = "hh:mm"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def grab_log_typed_csv() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL",
+                     [(d, f"{h:02d}:{mi:02d}", tap, f"{v:.2f}") for d, h, mi, tap, v in TYPED_ROWS]).encode()
+
+
+def analyzer_15min() -> bytes:
+    """Two online analyzers (AN-1, AN-2) at 15-minute steps for 30 days of April 2026, and three grab samples."""
+    rows = []
+    for day in range(1, ANALYZER_DAYS + 1):
+        for k, site in enumerate(ANALYZER_SITES):
+            for step in range(0, 24 * 60, ANALYZER_STEP_MIN):
+                v = 0.55 + 0.1 * k + 0.08 * math.sin(2 * math.pi * step / 1440) - 0.002 * day
+                rows.append((f"2026-04-{day:02d}", f"{step // 60:02d}:{step % 60:02d}", site, f"{v:.3f}"))
+    rows += [("2026-04-02", "09:30", "T1", "0.44"), ("2026-04-09", "11:10", "T2", "0.37"),
+             ("2026-04-16", "14:25", "T3", "0.51")]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def utc_shifted_log() -> bytes:
+    rows = [(f"2026-03-{2 + i:02d}", f"{(h + UTC_SHIFT_H) % 24:02d}:{mi:02d}", f"T{i + 1}", f"{0.4 + 0.02 * i:.2f}")
+            for i, (h, mi) in enumerate(UTC_LOCAL)]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def unknown_tap_log() -> bytes:
+    rows = [("2026-03-02", "09:15", "T1", "0.45"), ("2026-03-02", "10:40", "T99", "0.38"),
+            ("2026-03-03", "08:55", "T3", "0.52"), ("2026-03-03", "11:20", "T4", "0.21")]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def mixed_species_log() -> bytes:
+    rows = [("2026-03-02", "09:15", "T1", "0.45", "1.10"), ("2026-03-03", "10:40", "T2", "0.38", "0.95")]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL,total_chlorine_mgL", rows).encode()
+
+
+def multi_month_log() -> bytes:
+    rows = []
+    for m in range(1, MULTI_MONTHS + 1):
+        for k in range(4):
+            rows.append((f"2026-{m:02d}-{3 + 6 * k:02d}", f"{8 + 2 * k:02d}:{10 + 5 * k:02d}", f"T{1 + (m + k) % 10}",
+                         f"{0.35 + 0.03 * k + 0.01 * m:.2f}"))
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def _clock_log(shift_h: int) -> bytes:
+    rows = []
+    for d, h, mi, tap, v in CLOCK_ROWS:
+        rows.append((d, f"{(h + shift_h) % 24:02d}:{mi:02d}", tap, f"{v:.2f}"))
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def clock_log_net3() -> bytes:
+    return _clock_log(0)
+
+
+def clock_log_clock6() -> bytes:
+    return _clock_log(CLOCK_SHIFT_H)
+
+
+# ----------------------------------------------------------------------------- task 16's review: logs as they arrive
+# Each case the review of task 16 found, written by hand (the workbooks by openpyxl: same-library self-consistency).
+# (date, time, tap, reading as written) rows; the junctions are Net3's through task16_tap_map.csv.
+REVIEW_ROWS = (("2026-03-10", "09:15", "T1", "0.45"), ("2026-03-11", "10:20", "T2", "0.38"),
+               ("2026-03-12", "11:05", "T3", "0.52"), ("2026-03-13", "13:40", "T4", "0.29"))
+OVERRANGE_ROWS = (("2026-03-10", "09:15", "T1", ">2.2"), ("2026-03-10", "10:20", "T3", "<0.02"),
+                  ("2026-03-11", "11:05", "T2", "0.41"), ("2026-03-11", "13:40", "T4", "> 4.0"))
+IMPLAUSIBLE_ROWS = (("2026-03-10", "09:15", "T1", "9999"), ("2026-03-10", "10:20", "T2", "0.38"),
+                    ("2026-03-11", "11:05", "T3", "450"), ("2026-03-11", "13:40", "T4", "0.29"))
+# lims_long.csv: one row per analyte, as a LIMS exports it; each sample (date, time, tap, free, total) gets a free and a
+# total chlorine row, a pH row and a temperature row
+LONG_SAMPLES = (("2026-03-10", "09:15", "SP-01", "0.45", "1.20"), ("2026-03-11", "10:40", "SP-02", "0.38", "1.05"),
+                ("2026-03-12", "13:05", "SP-03", "0.52", "1.31"))
+ANALYZER_MIDNIGHT_DAYS = 2              # analyzer_midnight.xlsx: one site, 15-minute data, typed datetimes from 00:00
+STUDY_HOURLY_DAYS = ("2026-03-04", "2026-03-05")    # grab_study_24h.csv: T1 hourly on two days, T3 two-hourly on one
+INTERLEAVED_SITES = tuple(f"T{i}" for i in range(1, 11))   # analyzer_interleaved.csv: 10 analyzers, by timestamp
+INTERLEAVED_DAYS = 2
+STRAY_CELL = (20000, 2000)              # log_cover_and_stray.xlsx: one stray cell far down and far right
+
+
+def _review_log(rows, header: str = "date,time,tap_id,free_chlorine_mgL", sep: str = ",") -> str:
+    return _csv_text(header.replace(",", sep), rows, sep)
+
+
+def junction_list() -> bytes:
+    """A GIS or EPANET junction export: a junction column, no tap column, no reading (crashed 'Check a file')."""
+    return _csv_text("Node ID,Elevation,Base Demand", [(j, 10 + k, 1.5) for k, (_, j) in enumerate(T16_TAPS[:6])]).encode()
+
+
+def log_title_line() -> bytes:
+    return ("Residuals, March 2026\n" + _review_log(REVIEW_ROWS)).encode()
+
+
+def log_lab_preamble() -> bytes:
+    return ("Lab: Distribution\nExported 2026-04-01 by the LIMS\n" + _review_log(REVIEW_ROWS)).encode()
+
+
+def log_sep_hint() -> bytes:
+    """Excel's 'sep=;' hint line, semicolons and decimal commas, as a European export writes them."""
+    rows = [(d, t, tap, v.replace(".", ",")) for d, t, tap, v in REVIEW_ROWS]
+    return ("sep=;\n" + _review_log(rows, sep=";")).encode()
+
+
+def log_chloride_first() -> bytes:
+    """A chloride column before the chlorine one, in a LIMS's alphabetical order."""
+    rows = [(d, t, tap, f"{35 + k}", v) for k, (d, t, tap, v) in enumerate(REVIEW_ROWS)]
+    return _csv_text("date,time,tap_id,Chloride (mg/L),Chlorine Residual (mg/L)", rows).encode()
+
+
+def log_month_names() -> bytes:
+    """Dates with the month's name ('10-Mar-26', '11 March 2026', 'Mar 12, 2026') and times with dots ('09.15')."""
+    def mon(d, k):
+        y, m, dd = d.split("-")
+        name = ("Mar", "March")[k % 2]
+        return (f"{int(dd)}-{name[:3]}-{y[2:]}", f"{int(dd)} {name} {y}", f"{name[:3]} {int(dd)}, {y}")[k % 3]
+    rows = [(mon(d, k), t.replace(":", "."), tap, v) for k, (d, t, tap, v) in enumerate(REVIEW_ROWS)]
+    return _review_log(rows).encode()
+
+
+def log_multiline_comment() -> bytes:
+    """A quoted comment that runs over two lines, then a tap the tap map does not have, on line 4 of the file."""
+    return ('date,time,tap_id,free_chlorine_mgL,notes\n2026-03-10,09:15,T1,0.45,"line one\nline two"\n'
+            '2026-03-11,10:15,T99,0.55,\n').encode()
+
+
+def log_overrange() -> bytes:
+    return _review_log(OVERRANGE_ROWS).encode()
+
+
+def log_ugL() -> bytes:
+    """The readings in micrograms per litre, as the header says."""
+    rows = [(d, t, tap, f"{round(float(v) * 1000):d}") for d, t, tap, v in REVIEW_ROWS]
+    return _csv_text("date,time,tap_id,Free Chlorine (ug/L)", rows).encode()
+
+
+def log_implausible() -> bytes:
+    """A LIMS missing code (9999) and a reading in the wrong unit (450) among two real readings."""
+    return _review_log(IMPLAUSIBLE_ROWS).encode()
+
+
+def lims_long() -> bytes:
+    rows = []
+    for d, t, tap, free, total in LONG_SAMPLES:
+        rows += [(tap, d, t, "Free Chlorine", free, "mg/L"), (tap, d, t, "Total Chlorine", total, "mg/L"),
+                 (tap, d, t, "pH", "7.6", "SU"), (tap, d, t, "Temperature", "15.2", "C")]
+    return _csv_text("Sample Point,Sample Date,Sample Time,Analyte,Result,Units", rows).encode()
+
+
+def _analyzer_midnight_rows():
+    import datetime as _dt
+    t0 = _dt.datetime(2026, 3, 1)
+    return [(t0 + _dt.timedelta(minutes=15 * k), "AN-1", round(0.5 + 0.001 * (k % 96), 3))
+            for k in range(96 * ANALYZER_MIDNIGHT_DAYS)]
+
+
+def analyzer_midnight_xlsx() -> bytes:
+    """One analyzer's 15-minute series with typed datetimes, so each day starts with a cell at exactly 00:00."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["timestamp", "site", "free_chlorine_mgL"])
+    for ts, site, v in _analyzer_midnight_rows():
+        ws.append([ts, site, v])
+        ws.cell(row=ws.max_row, column=1).number_format = "yyyy-mm-dd hh:mm"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def analyzer_midnight_csv() -> bytes:
+    return _csv_text("timestamp,site,free_chlorine_mgL",
+                     [(f"{ts:%Y-%m-%d %H:%M}", site, f"{v:.3f}") for ts, site, v in _analyzer_midnight_rows()]).encode()
+
+
+def grab_study_24h() -> bytes:
+    """A diurnal grab-sampling study: T1 every hour on two days, T3 every two hours on one, and three route samples;
+    every reading is a grab sample and is kept (it was thinned as an analyzer before the review)."""
+    rows = [(d, f"{h:02d}:10", "T1", f"{0.30 + 0.01 * h:.2f}") for d in STUDY_HOURLY_DAYS for h in range(24)]
+    rows += [(STUDY_HOURLY_DAYS[0], f"{h:02d}:40", "T3", f"{0.50 - 0.01 * h:.2f}") for h in range(0, 24, 2)]
+    rows += [("2026-03-11", "09:30", "T2", "0.44"), ("2026-03-18", "10:45", "T4", "0.31"),
+             ("2026-03-25", "14:05", "T5", "0.27")]
+    return _review_log(rows).encode()
+
+
+def analyzer_interleaved() -> bytes:
+    """Ten analyzers at 15-minute steps for two days, written row by timestamp as a historian exports them, so each
+    site's thinned rows are not consecutive."""
+    rows = []
+    for day in range(1, INTERLEAVED_DAYS + 1):
+        for step in range(0, 24 * 60, 15):
+            for k, site in enumerate(INTERLEAVED_SITES):
+                rows.append((f"2026-03-{day:02d}", f"{step // 60:02d}:{step % 60:02d}", site, f"{0.4 + 0.01 * k:.2f}"))
+    return _review_log(rows).encode()
+
+
+def log_cover_and_stray_xlsx() -> bytes:
+    """A cover sheet first, then the data sheet, which holds one stray cell far down and far right (pandas padded
+    such a sheet to rows x columns cells)."""
+    import datetime as _dt
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Cover"
+    ws.append(["Monthly residuals report"])
+    ws.append(["Prepared by the lab"])
+    ws2 = wb.create_sheet("Data")
+    ws2.append(["date", "time", "tap_id", "free_chlorine_mgL"])
+    for d, t, tap, v in REVIEW_ROWS[:2]:
+        ws2.append([_dt.date.fromisoformat(d), _dt.time.fromisoformat(t), tap, float(v)])
+    ws2.cell(row=STRAY_CELL[0], column=STRAY_CELL[1], value="x")
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+# ----------------------------------------------------------------------------- task 16's final verification
+# Each case the final verification of task 16 found, written by hand (the workbooks by openpyxl: same-library
+# self-consistency).  The long-format logs reuse LONG_SAMPLES (free and total chlorine per sample) with the analyte
+# names as the verification wrote them; the wide logs reuse REVIEW_ROWS, total chlorine 0.80 mg/L above free.
+UGL_HEADERS = ("Free Chlorine ugL", "free_chlorine_ugl", "Free Chlorine (Âµg/L)", "Free Chlorine (ug per L)",
+               "Free Chlorine µg L-1")
+UGL_ROWS = (("2026-03-10", "09:15", "T1", "450"), ("2026-03-11", "10:20", "T2", "380"),
+            ("2026-03-12", "11:05", "T3", "8"), ("2026-03-13", "13:40", "T4", "5"))
+UNIT_SPELLINGS = ("mg Cl2/L", "mgCl2/L", "mg/litre")
+QUALIFIER_SITES = tuple(f"T{i}" for i in range(1, 11))   # qualifier_interleaved.csv: 10 analyzers, 2 days, '0.452 J'
+QUALIFIER_DAYS = 2
+UNKNOWN_SITES = 200                                       # unknown_taps_many.csv: 200 taps from another system
+TINY_ROWS = 3_000_000                                     # csv_tiny_rows.csv: 'a,b' and 3 million rows '1,'
+NET2_LOG_JUNCTIONS = ("3", "7", "11", "15", "19", "23", "27")   # net2_clock_log.csv: 09:00 to 15:00, one a day
+
+
+def _long_log(names: tuple, header: str = "Analyte", units: bool = True) -> bytes:
+    rows = []
+    for d, t, tap, free, total in LONG_SAMPLES:
+        for nm, v, u in ((names[0], free, "mg/L"), (names[1], total, "mg/L"), ("pH", "7.6", "SU")):
+            rows.append((tap, d, t, nm, v) + ((u,) if units else ()))
+    return _csv_text(f"Sample Point,Sample Date,Sample Time,{header},Result" + (",Units" if units else ""), rows).encode()
+
+
+def long_paren() -> bytes:
+    """One row per analyte, the species in brackets: 'Chlorine (Free)', 'Chlorine (Total)', 'pH'."""
+    return _long_log(("Chlorine (Free)", "Chlorine (Total)"))
+
+
+def long_short_names() -> bytes:
+    """'Free Cl', 'Total Cl' and 'pH', with no units column."""
+    return _long_log(("Free Cl", "Total Cl"), units=False)
+
+
+def long_lims_codes() -> bytes:
+    """LIMS codes in a 'Parameter Code' column: FCL2, TCL2, pH."""
+    return _long_log(("FCL2", "TCL2"), header="Parameter Code")
+
+
+def long_unknown_codes() -> bytes:
+    """Codes the reader does not know (CHLF, CHLT) under 'Analyte': the analyte value must be chosen."""
+    return _long_log(("CHLF", "CHLT"))
+
+
+def long_unknown_codes_param() -> bytes:
+    """The same codes under 'Parameter Code', a header the analyte guess passes over."""
+    return _long_log(("CHLF", "CHLT"), header="Parameter Code")
+
+
+def long_two_unnamed() -> bytes:
+    """Two chlorine analytes that name no species: 'Chlorine Residual' and 'Chlorine'."""
+    return _long_log(("Chlorine Residual", "Chlorine"))
+
+
+def _wide(h1: str, h2: str, first_free: bool = True) -> bytes:
+    rows = [(d, t, tap, *((v, f"{float(v) + 0.8:.2f}") if first_free else (f"{float(v) + 0.8:.2f}", v)))
+            for d, t, tap, v in REVIEW_ROWS]
+    return _csv_text(f"date,time,tap_id,{h1},{h2}", rows).encode()
+
+
+def wide_paren() -> bytes:
+    return _wide("Chlorine (Free) mg/L", "Chlorine (Total) mg/L")
+
+
+def wide_paren_total_first() -> bytes:
+    return _wide("Chlorine (Total) mg/L", "Chlorine (Free) mg/L", first_free=False)
+
+
+def wide_residual_and_free() -> bytes:
+    """'Chlorine Residual' (no species) beside 'Free Chlorine' (here the residual column holds the total readings)."""
+    return _wide("Free Chlorine", "Chlorine Residual")
+
+
+def chloramine_header() -> bytes:
+    """A 'Chloramine (mg/L)' column, total chlorine as a chloraminated system measures it."""
+    return _csv_text("date,time,tap_id,Chloramine (mg/L)", [(d, t, tap, f"{float(v) + 0.8:.2f}")
+                                                            for d, t, tap, v in REVIEW_ROWS]).encode()
+
+
+def ugl_header_log(header: str) -> bytes:
+    """UGL_ROWS (µg/L) under one of the UGL_HEADERS spellings, UTF-8."""
+    return _csv_text(f"date,time,tap_id,{header}", UGL_ROWS).encode("utf-8")
+
+
+def units_column_log(unit: str) -> bytes:
+    """REVIEW_ROWS with a units column spelled one of the UNIT_SPELLINGS ways."""
+    return _csv_text("date,time,tap_id,free_chlorine_mgL,units", [r + (unit,) for r in REVIEW_ROWS]).encode()
+
+
+def ugl_unnamed() -> bytes:
+    """UGL_ROWS under free_chlorine_mgL: a µg/L log whose header does not say so."""
+    return _review_log(UGL_ROWS).encode()
+
+
+def log_comma_title_semicolon() -> bytes:
+    """A title with a comma before a semicolon export with decimal commas."""
+    rows = [(d, t, tap, v.replace(".", ",")) for d, t, tap, v in REVIEW_ROWS]
+    return ("Residuals report, March 2026\n" + _review_log(rows, sep=";")).encode()
+
+
+def log_two_cell_title_xlsx() -> bytes:
+    """A workbook whose first row holds a title and a month, then a blank row, then the header."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Residuals report", "March 2026"])
+    ws.append([])
+    ws.append(["date", "time", "tap_id", "free_chlorine_mgL"])
+    for d, t, tap, v in REVIEW_ROWS:
+        ws.append([d, t, tap, float(v)])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+DATE_ONLY_ROWS = (((2026, 3, 10, 9, 15), "T1", 0.45), ((2026, 3, 11, 10, 20), "T2", 0.38), ((2026, 3, 12), "T3", 0.21))
+
+
+def excel_date_only_xlsx() -> bytes:
+    """Typed datetimes, one of them a date with no time (a time that was not typed), in one column."""
+    import datetime as _dt
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Sample DateTime", "tap_id", "free_chlorine_mgL"])
+    for ts, tap, v in DATE_ONLY_ROWS:
+        ws.append([_dt.datetime(*ts), tap, v])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def excel_date_only_csv() -> bytes:
+    return _csv_text("Sample DateTime,tap_id,free_chlorine_mgL",
+                     [(f"{ts[0]}-{ts[1]:02d}-{ts[2]:02d}" + (f" {ts[3]:02d}:{ts[4]:02d}" if len(ts) > 3 else ""), tap,
+                       f"{v:.2f}") for ts, tap, v in DATE_ONLY_ROWS]).encode()
+
+
+def time_column_epoch_date() -> bytes:
+    """A time column as an Access or SQL time field exports it: '1899-12-30 09:15:00'."""
+    return _review_log([(d, f"1899-12-30 {t}:00", tap, v) for d, t, tap, v in REVIEW_ROWS]).encode()
+
+
+def superscript_tap_log() -> bytes:
+    """A tap ID '1²' (a digit and a superscript two: isdigit() is true, int() fails), UTF-8."""
+    return _review_log([REVIEW_ROWS[0], ("2026-03-11", "10:20", "1²", "0.38")]).encode("utf-8")
+
+
+def superscript_tap_map() -> bytes:
+    return _csv_text("tap_id,junction_id", [("T1", "225"), ("1²", "239"), ("007", "219")]).encode("utf-8")
+
+
+def junctions_2col() -> bytes:
+    """A two-column junction export: 'Node ID,Elevation'."""
+    return _csv_text("Node ID,Elevation", [(j, 10 + k) for k, (_, j) in enumerate(T16_TAPS[:4])]).encode()
+
+
+def qualifier_interleaved() -> bytes:
+    """Ten analyzers at 15-minute steps for two days, by timestamp, every reading with a lab qualifier ('0.452 J')."""
+    rows = []
+    for day in range(1, QUALIFIER_DAYS + 1):
+        for step in range(0, 24 * 60, 15):
+            for k, site in enumerate(QUALIFIER_SITES):
+                rows.append((f"2026-03-{day:02d}", f"{step // 60:02d}:{step % 60:02d}", site,
+                             f"{0.3 + 0.001 * ((step // 15 + 7 * k) % 400):.3f} J"))
+    return _review_log(rows).encode()
+
+
+def unknown_taps_many() -> bytes:
+    """200 sampling points, none of them in the task-16 tap map (a tap map from another system)."""
+    return _review_log([("2026-03-10", f"10:{s % 60:02d}", f"SITE-{s:05d}", "0.40") for s in range(UNKNOWN_SITES)]).encode()
+
+
+def csv_tiny_rows() -> bytes:
+    """'a,b' and three million rows '1,': 9 MB, far fewer bytes than LOG_MAX_BYTES and far more rows than the cap."""
+    return b"a,b\n" + b"1,\n" * TINY_ROWS
+
+
+def net2_clock_log() -> bytes:
+    """Seven samples at 09:00 to 15:00 by the clock, for the bundled Net2 (which starts at 08:00)."""
+    return _review_log([(f"2026-03-{10 + k:02d}", f"{9 + k:02d}:00", f"N{k + 1}", f"0.{30 + k}")
+                        for k in range(len(NET2_LOG_JUNCTIONS))]).encode()
+
+
+def net2_tap_map() -> bytes:
+    return _csv_text("tap_id,junction_id", [(f"N{k + 1}", j) for k, j in enumerate(NET2_LOG_JUNCTIONS)]).encode()
+
+
 LONG_UPLOAD_NAME = "Z" * 246 + ".inp"  # a 250-character upload name: legal on APFS, too long once the digest is added
 
 
@@ -1389,6 +1904,35 @@ FIXTURES = {
     "utf8_pasted_block.inp": utf8_pasted_block, "utf8_pasted_chance_pair.inp": utf8_pasted_chance_pair,
     "net3_clock_235950.inp": net3_clock_235950, "net3_clock_000020.inp": net3_clock_000020,
     "net3_dw_plastic.inp": net3_dw_plastic, "net1_export_like.inp": net1_export_like,
+    # task 16: grab logs and tap maps
+    "task16_tap_map.csv": task16_tap_map, "lims_one_datetime_us.csv": lims_one_datetime_us,
+    "lims_censored.csv": lims_censored, "ambiguous_dates.csv": ambiguous_dates, "grab_log_cp1252.csv": grab_log_cp1252,
+    "grab_log_bom.csv": grab_log_bom, "grab_log_typed.xlsx": grab_log_typed_xlsx, "grab_log_typed.csv": grab_log_typed_csv,
+    "analyzer_15min.csv": analyzer_15min, "utc_shifted_log.csv": utc_shifted_log, "unknown_tap_log.csv": unknown_tap_log,
+    "mixed_species_log.csv": mixed_species_log, "multi_month_log.csv": multi_month_log,
+    "clock_log_net3.csv": clock_log_net3, "clock_log_clock6.csv": clock_log_clock6,
+    # task 16's review
+    "junction_list.csv": junction_list, "log_title_line.csv": log_title_line, "log_lab_preamble.csv": log_lab_preamble,
+    "log_sep_hint.csv": log_sep_hint, "log_chloride_first.csv": log_chloride_first,
+    "log_month_names.csv": log_month_names, "log_multiline_comment.csv": log_multiline_comment,
+    "log_overrange.csv": log_overrange, "log_ugL.csv": log_ugL, "log_implausible.csv": log_implausible,
+    "lims_long.csv": lims_long, "analyzer_midnight.xlsx": analyzer_midnight_xlsx,
+    "analyzer_midnight.csv": analyzer_midnight_csv, "grab_study_24h.csv": grab_study_24h,
+    "analyzer_interleaved.csv": analyzer_interleaved, "log_cover_and_stray.xlsx": log_cover_and_stray_xlsx,
+    # task 16's final verification
+    "long_paren.csv": long_paren, "long_short_names.csv": long_short_names, "long_lims_codes.csv": long_lims_codes,
+    "long_unknown_codes.csv": long_unknown_codes, "long_unknown_codes_param.csv": long_unknown_codes_param,
+    "long_two_unnamed.csv": long_two_unnamed, "wide_paren.csv": wide_paren,
+    "wide_paren_total_first.csv": wide_paren_total_first, "wide_residual_and_free.csv": wide_residual_and_free,
+    "chloramine_header.csv": chloramine_header, "ugl_unnamed.csv": ugl_unnamed,
+    "log_comma_title_semicolon.csv": log_comma_title_semicolon, "log_two_cell_title.xlsx": log_two_cell_title_xlsx,
+    "excel_date_only.xlsx": excel_date_only_xlsx, "excel_date_only.csv": excel_date_only_csv,
+    "time_column_epoch_date.csv": time_column_epoch_date, "superscript_tap_log.csv": superscript_tap_log,
+    "superscript_tap_map.csv": superscript_tap_map, "junctions_2col.csv": junctions_2col,
+    "qualifier_interleaved.csv": qualifier_interleaved, "unknown_taps_many.csv": unknown_taps_many,
+    "csv_tiny_rows.csv": csv_tiny_rows, "net2_clock_log.csv": net2_clock_log, "net2_tap_map.csv": net2_tap_map,
+    **{f"ugl_header_{k}.csv": (lambda h=h: ugl_header_log(h)) for k, h in enumerate(UGL_HEADERS)},
+    **{f"units_column_{k}.csv": (lambda u=u: units_column_log(u)) for k, u in enumerate(UNIT_SPELLINGS)},
 }
 
 # (fixture, kind it must come back as, the file name may decide something, a backup copy)
@@ -1469,6 +2013,29 @@ PHYSICS_FIXTURES = ("net3_bulk_lines.inp", "net3_dw.inp", "net3_cm.inp", "net3_c
                     "net3_cp1252_one_pair_id.inp", "net3_cp1252_dash_ids.inp", "utf8_more_stray_than_accents.inp",
                     "utf8_one_id_six_stray.inp", "utf8_pasted_block.inp", "utf8_pasted_chance_pair.inp",
                     "net3_clock_235950.inp", "net3_clock_000020.inp", "net3_dw_plastic.inp", "net1_export_like.inp")
+# task 16: the grab-log fixtures (residualmap/intake_exp.py builds them for outputs/intake/task16_samples.json), with
+# net3_clock6.inp, log_semicolon.csv and log_tab.txt from the tables above
+SAMPLE_FIXTURES = ("task16_tap_map.csv", "lims_one_datetime_us.csv", "lims_censored.csv", "ambiguous_dates.csv",
+                   "grab_log_cp1252.csv", "grab_log_bom.csv", "grab_log_typed.xlsx", "grab_log_typed.csv",
+                   "analyzer_15min.csv", "utc_shifted_log.csv", "unknown_tap_log.csv", "mixed_species_log.csv",
+                   "multi_month_log.csv", "clock_log_net3.csv", "clock_log_clock6.csv", "log_semicolon.csv",
+                   "log_tab.txt", "net3_clock6.inp", "mains.gpkg", "net3_backup.inp.bak",
+                   # task 16's review
+                   "junction_list.csv", "log_title_line.csv", "log_lab_preamble.csv", "log_sep_hint.csv",
+                   "log_chloride_first.csv", "log_month_names.csv", "log_multiline_comment.csv", "log_overrange.csv",
+                   "log_ugL.csv", "log_implausible.csv", "lims_long.csv", "analyzer_midnight.xlsx",
+                   "analyzer_midnight.csv", "grab_study_24h.csv", "analyzer_interleaved.csv",
+                   "log_cover_and_stray.xlsx",
+                   # task 16's final verification
+                   "long_paren.csv", "long_short_names.csv", "long_lims_codes.csv", "long_unknown_codes.csv",
+                   "long_unknown_codes_param.csv", "long_two_unnamed.csv", "wide_paren.csv",
+                   "wide_paren_total_first.csv", "wide_residual_and_free.csv", "chloramine_header.csv",
+                   "ugl_unnamed.csv", "log_comma_title_semicolon.csv", "log_two_cell_title.xlsx", "excel_date_only.xlsx",
+                   "excel_date_only.csv", "time_column_epoch_date.csv", "superscript_tap_log.csv",
+                   "superscript_tap_map.csv", "junctions_2col.csv", "qualifier_interleaved.csv",
+                   "unknown_taps_many.csv", "csv_tiny_rows.csv", "net2_clock_log.csv", "net2_tap_map.csv",
+                   *(f"ugl_header_{k}.csv" for k in range(len(UGL_HEADERS))),
+                   *(f"units_column_{k}.csv" for k in range(len(UNIT_SPELLINGS))))
 # the second review's encoding cases: (fixture, how it must decode, the IDs it must keep)
 ENCODING_CONTROLS = (("net3_cp1252_one_pair_id.inp", "cp1252", (ONE_PAIR_ID,)),
                      ("net3_cp1252_dash_ids.inp", "cp1252", tuple(n for _, n in DASH_IDS)),

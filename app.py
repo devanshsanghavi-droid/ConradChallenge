@@ -43,10 +43,37 @@ it) and the old-pipe factor is shown as not identifiable; a model of more than 3
 needs the checkbox in its readiness report; a grid that would leave less than 1.5 GB of disk free is refused.  A
 network so small that the samples leave fewer junctions than the route asks for gets a shorter route (it stopped the
 app before).  The bundled examples never go through prepare_inp and run exactly as before.
+
+Iteration 5, task 16: with the demo off, '2. Your samples' takes the grab log (CSV or Excel) and the tap map as files,
+after the model uploader (so file_uploader[0] is still 'EPANET .inp file'), and every new selectbox sits in the sidebar
+after the example picker (so selectbox[0] is still 'Example' where it is shown).  importers.read_grab_log reads the
+log: its columns guessed from the header and shown for the operator to check, any encoding and separator, decimal
+commas, US or European dates (a date that reads two ways stops the page with the question), '<0.02' and 'ND' kept,
+listed and marked on the map but not fitted, an online analyzer's 15-minute series thinned to one reading a day, and
+free and total chlorine never mixed.  After the review of task 16: a log with a free and a total column asks for its
+reading column ('Reading column' starts at '(choose a column)') and reads only that one; a long-format export's
+analyte column ('Analyte column') keeps only the chosen species' rows; a units column ('Units column'), µg/L divided
+by 1000; a date format can be typed; a tap that looks like an online analyzer can be kept whole (a sampling study);
+'>2.2' is marked on the map apart from '<0.02', never as below detection; the rows before the date window are counted
+and listed; the expander opens when a guess is not a template name; and on an uploaded file that does not start at
+midnight the demo draws its daytime samples at 07:00 to 17:00 by the clock.  The rows of the last three months
+prefill the sample table (its key holds a hash of them, so a new upload replaces the table), and every row that is
+not used is listed with its reason.  An
+uploaded file whose START CLOCKTIME is not midnight has its log's times converted to model hours, and shows the
+route's hours, the worst hour, the hour picker and the hour of each junction's daily minimum as times of day, with the
+route's window 07:00 to 17:00 by the clock; typed and demo hours are model hours, never converted, and the bundled
+examples keep model hours (Net2 with a caption).  A table of every junction's daily minimum (its toolbar downloads the
+CSV, so the page keeps one download button) and a plain table of the 20 most likely below the threshold follow the
+route, and the page links to the Get started page (pages/1_Get_started.py).  After the final verification of task 16:
+the species is read inside brackets too ('Chlorine (Free)'), a second reading column whose header names no species
+also asks for the reading column, a long-format export whose analytes do not name the species stops with the
+question until 'Analyte value' names the analyte whose rows are read (or '(every row)'), and on the bundled Net2 an
+uploaded log's times of day are said to be read as model hours, unconverted.
 """
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -68,7 +95,9 @@ from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, 
 from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
 from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
 from residualmap.features import build_features
-from residualmap.importers import prepare_inp, size_gate
+from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, LOG_WINDOW_MONTHS, LogRefused, clock_label,
+                                   clock_minute_of, daytime_model_hours, distinct_values, dropped_lines, guess_columns,
+                                   prepare_inp, read_grab_log, read_table, shows_clock, size_gate)
 from residualmap.route import plan_route
 from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path, grid_edge_mass,
                                simulator_grid_24h)
@@ -95,6 +124,21 @@ st.caption("Your EPANET model + the grab samples you already take → a chlorine
            "with an honest band, the junctions likely below 0.2 mg/L at any hour of the day, and where to sample next.")
 intake_box = st.container()        # the uploaded file's readiness report or advice (iteration 5, task 15)
 UPLOAD_HELP = "any file: it is identified by its content"
+GET_STARTED = "pages/1_Get_started.py"      # task 16: what to export from each package, templates, 'Check a file'
+LOG_HELP = ("Your grab-sample log as your lab or field system exports it: CSV (any separator, decimal commas, Windows "
+            "encodings) or Excel (.xlsx). The columns are guessed from its header; check them below.")
+TAP_HELP = "Which junction of the model each tap is at: two columns, tap ID and junction ID (docs/templates)."
+CHOOSE = "(choose a column)"
+IN_DATE = "(the time is in the date column)"
+NO_ANALYTE = "(none: one column per reading)"
+NO_UNIT = "(none: the reading column's header says, or mg/L)"
+ANALYTE_AUTO = "(the chlorine chosen, found by its name)"      # the final verification of task 16: 'Analyte value'
+ANALYTE_EVERY = "(every row: this column does not pick the rows)"
+TYPE_FORMAT = "type a format (strptime, such as %d-%b-%y)"
+DATE_FORMAT_CHOICES = {"guess (ask when a date reads two ways)": None, **{v: k for k, v in DATE_ORDERS.items()},
+                       TYPE_FORMAT: "typed"}
+TEMPLATE_NAMES = {"date", "time", "tap_id", "free_chlorine_mgL", "total_chlorine_mgL"}   # docs/templates' headers
+KEEP_ALL = "Keep every reading of these taps (a sampling study, not an online analyzer)"
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -105,12 +149,49 @@ def upload_model(data: bytes, name: str, disinfectant: str):
     return prepare_inp(data, UPLOAD_DIR, disinfectant, name=name)
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def log_header(data: bytes, name: str, disinfectant: str):
+    """The grab log's header and the columns guessed from it (task 16, importers.guess_columns, an analyte column
+    found by its values included): (header, guess), or (None, why) when the file cannot be read as a table."""
+    try:
+        t = read_table(data, name)
+    except LogRefused as e:
+        return None, str(e)
+    except Exception as e:  # noqa: BLE001  (the last guard: a file the reader did not foresee)
+        return None, f"The file could not be read ({type(e).__name__}). Save it again as CSV and upload that."
+    return t.header, guess_columns(t, disinfectant)
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def column_values(data: bytes, name: str, column: str) -> list[str]:
+    """The distinct values of one column of the grab log (the analyte column's, for 'Analyte value'), at most 200."""
+    try:
+        return distinct_values(read_table(data, name), column)
+    except Exception:  # noqa: BLE001  (log_header has already said why)
+        return []
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def grab_log(data: bytes, name: str, taps: bytes, taps_name: str, disinfectant: str, mapping: tuple,
+             date_format: str | None, start_clock_h: float, analyzer_hour: float, thin: bool = True):
+    """importers.read_grab_log on the uploads, cached per content and choice: (GrabLog, None), or (None, why)."""
+    try:
+        return read_grab_log(data, name, taps, taps_name, disinfectant, date_format=date_format, mapping=dict(mapping),
+                             start_clock_h=start_clock_h, analyzer_hour=analyzer_hour, thin_analyzers=thin), None
+    except LogRefused as e:
+        return None, str(e)
+    except Exception as e:  # noqa: BLE001  (the last guard: a file the reader did not foresee)
+        return None, (f"The grab log or the tap map could not be read ({type(e).__name__}). Save them again as CSV and "
+                      f"upload those.")
+
+
 def show_intake(box, rep) -> bool:
     """The upload's advice (not a model), its blocking problems, or its readiness report, in the main area.  For a
     model of more than importers.LARGE_JUNCTIONS junctions (task 15b) the report holds a checkbox: True when the grid
-    may be built (always True for a smaller model)."""
+    may be built (always True for a smaller model).  Since task 16 the advice links to the Get started page."""
     if rep.not_a_model:
         box.warning(rep.advice())
+        box.page_link(GET_STARTED, label="Bring your data: what to export from your software, and 'Check a file'")
         return False
     if rep.blocking:
         box.error("This model cannot run yet. " + " ".join(rep.blocking))
@@ -146,6 +227,7 @@ with st.sidebar:
                        "The chloramine mode uses its own decay ranges, dose axis, likelihood scale and threshold; free and "
                        "total chlorine readings are never mixed.") == DISINFECTANTS[1]
     uniform_c = False          # task 15b: one C value on every pipe (an uploaded file only; the examples have several)
+    clock_h = 0.0              # task 16: an uploaded file's START CLOCKTIME, in hours (0 for every bundled example)
     if up is not None:
         disinfectant = "chloramine" if ca else "free_chlorine"
         try:            # prepare_inp turns what is in a file into plain problems; this is the last guard for the rest
@@ -164,6 +246,7 @@ with st.sidebar:
             intake_box.info("A large model: tick 'Build the grid anyway' in the readiness report to start its runs.")
             st.stop()
         uniform_c = bool(readiness.flags.get("uniform_c"))
+        clock_h = float(readiness.flags.get("start_clock_h") or 0.0)
     if ca:
         dose = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
                                help="Total chlorine (chloramine) at the source. The model treats it as uncertain and lets "
@@ -179,7 +262,64 @@ with st.sidebar:
 
     st.header("2. Your samples")
     demo = st.toggle("Demo: simulate a hidden truth and draw samples from it", value=True,
-                     help="Off = type your own grab samples in the table.")
+                     help="Off = upload your grab log and tap map, or type your own grab samples in the table.")
+    log_up = tap_up = None
+    glog, glog_error = None, None
+    if not demo:       # task 16: the grab log and its tap map, after the model uploader (file_uploader[0] is unchanged)
+        log_up = st.file_uploader("Grab log (CSV or Excel)", type=None, help=LOG_HELP)
+        tap_up = st.file_uploader("Tap map (CSV)", type=None, help=TAP_HELP)
+    if log_up is not None:
+        log_bytes = log_up.getvalue()
+        log_key = hashlib.sha1(log_bytes).hexdigest()[:10]
+        species = "chloramine" if ca else "free_chlorine"
+        header, guess = log_header(log_bytes, log_up.name, species)
+        if header is None:
+            glog_error = guess
+        else:
+            def pick_column(label: str, field: str, extra: list[str]) -> str | None:
+                opts = extra + header
+                g = guess.get(field)
+                if field == "reading" and guess.get("both_species"):
+                    g = None        # a free and a total column: the operator chooses (the review of task 16)
+                v = st.selectbox(label, opts, index=opts.index(g) if g in opts else 0, key=f"log_{field}_{log_key}")
+                return None if v in (CHOOSE, IN_DATE, NO_ANALYTE, NO_UNIT) else v
+            # open while a guess is not a template name, or the log needs a choice (both species, an analyte column)
+            check_them = bool(guess.get("both_species") or guess.get("analyte")
+                              or any(guess.get(k) not in TEMPLATE_NAMES for k in ("tap", "reading", "date", "time")))
+            with st.expander("Columns of your grab log", expanded=check_them):
+                st.caption("ResidualMap's guesses from the header: check them, and change any that is wrong.")
+                mapping = {"tap": pick_column("Tap column", "tap", [CHOOSE]),
+                           "reading": pick_column("Reading column", "reading", [CHOOSE]),
+                           "date": pick_column("Date column", "date", [CHOOSE]),
+                           "time": pick_column("Time column", "time", [IN_DATE]),
+                           "analyte": pick_column("Analyte column (a log with one row per analyte)", "analyte",
+                                                  [NO_ANALYTE])}
+                if mapping["analyte"]:     # the final verification of task 16: which analyte's rows are read
+                    v = st.selectbox("Analyte value (the analyte whose rows are the reading)",
+                                     [ANALYTE_AUTO, ANALYTE_EVERY] + column_values(log_bytes, log_up.name,
+                                                                                   mapping["analyte"]),
+                                     key=f"log_analyte_value_{log_key}_{mapping['analyte']}")
+                    mapping["analyte_value"] = None if v == ANALYTE_AUTO else "*" if v == ANALYTE_EVERY else v
+                mapping["unit"] = pick_column("Units column", "unit", [NO_UNIT])
+                date_format = DATE_FORMAT_CHOICES[st.selectbox("Date format", list(DATE_FORMAT_CHOICES),
+                                                               key=f"log_date_format_{log_key}")]
+                if date_format == "typed":
+                    typed = st.text_input("Date format, as strptime writes it (%d day, %b month name, %m month "
+                                          "number, %y or %Y year, %H:%M time)", value="%d-%b-%y",
+                                          key=f"log_date_typed_{log_key}")
+                    date_format = typed if "%" in typed else None
+                if tap_up is not None:
+                    args = (log_bytes, log_up.name, tap_up.getvalue(), tap_up.name, species, tuple(mapping.items()),
+                            date_format, clock_h)
+                    glog, glog_error = grab_log(*args, ANALYZER_HOUR)
+                    if glog is not None and glog.analyzer:
+                        if st.checkbox(KEEP_ALL, value=False, key=f"log_keep_all_{log_key}"):
+                            glog, glog_error = grab_log(*args, ANALYZER_HOUR, False)
+                        else:
+                            a_hour = st.number_input("Online analyzer: keep the reading nearest this hour (0 to 23)", 0,
+                                                     23, int(ANALYZER_HOUR), key=f"log_analyzer_{log_key}")
+                            if float(a_hour) != ANALYZER_HOUR:
+                                glog, glog_error = grab_log(*args, float(a_hour))
     if demo:
         n_demo = st.slider("Demo samples (daytime, random junctions)", 0, 15, 8)
         demo_seed = st.number_input("Demo scenario", 0, 99, 0)
@@ -344,6 +484,23 @@ with st.spinner(f"Running {n_runs} EPANET simulations of your model over the dec
 with st.spinner("Running 10 EPANET water-age simulations of your model (demand and roughness settings; once per network)…"):
     band = water_age(net_path, sc)
 junctions = list(sc.junctions)
+# task 16: hours on the page.  An uploaded file whose START CLOCKTIME is not midnight shows times of day (route hours,
+# worst hour, hour picker, hour of the daily minimum); every bundled example keeps model hours (Net2's with a caption)
+use_clock = shows_clock(clock_h)
+NET2_CAPTION = "model hour (this file starts at 08:00)"
+is_net2 = up is None and os.path.basename(net_path) == "Net2"
+
+
+def hlabel(h: int) -> str:
+    """The 'HH:00' the page prints for model hour h: a time of day for an uploaded file that does not start at
+    midnight (importers.clock_label), the model hour as before otherwise."""
+    return clock_label(h, clock_h) if use_clock else f"{h:02d}:00"
+
+
+def htag(h: int) -> str:
+    """The short hour tag next to a sample on the maps ('9h' as before; a time of day for a converted file)."""
+    return f"{clock_label(h, clock_h)}" if use_clock else f"{h}h"
+
 
 # samples table -----------------------------------------------------------------------------
 if ca:
@@ -374,23 +531,75 @@ if demo:
     rng = np.random.default_rng(int(demo_seed))
     n_demo = min(int(n_demo), len(junctions))          # task 15b: a network smaller than the slider (Net1 has 9)
     js = list(rng.choice(junctions, int(n_demo), replace=False)) if n_demo else []
-    hs = [int(h) for h in rng.choice(DAY_HOURS, int(n_demo))] if n_demo else []
+    # daytime by the clock: for an uploaded file that does not start at midnight, the model hours of 07:00 to 17:00
+    # (the review of task 16); DAY_HOURS for every bundled example, so the default demo draws exactly as before
+    hs = [int(h) for h in rng.choice(daytime_model_hours(clock_h) if use_clock else DAY_HOURS, int(n_demo))] if n_demo else []
     ys = [float(np.clip(tr.truth_by_hour.loc[h, j] + rng.normal(0, 0.03), 0.01, None)) for j, h in zip(js, hs)]
     default = pd.DataFrame({"junction": js, "hour": hs, "mg/L": np.round(ys, 2)})
 else:
     tr = None
     default = pd.DataFrame({"junction": pd.Series(dtype=str), "hour": pd.Series(dtype=int), "mg/L": pd.Series(dtype=float)})
 
+# task 16: an uploaded grab log prefills the table (rows of the last LOG_WINDOW_MONTHS months, model hours)
+log_key_suffix, below_detection, above_range = "", [], []
+if log_up is not None:
+    if glog_error:
+        st.error(f"The grab log cannot be used as it is. {glog_error}")
+        st.stop()
+    if tap_up is None:
+        st.info("Upload the tap map too (tap ID and junction ID, under '2. Your samples'): the grab log's taps are "
+                "matched to the model's junctions through it.")
+    elif glog is not None:
+        gj = glog.only_junctions(junctions)
+        rows_w, cens_w, winfo = gj.window(LOG_WINDOW_MONTHS)
+        if winfo["n_months_in_log"] > LOG_WINDOW_MONTHS:
+            span = (f"the last {LOG_WINDOW_MONTHS} months of the log ({', '.join(winfo['months'])}; the log runs from "
+                    f"{winfo['log_first']} to {winfo['log_last']})")
+        else:
+            span = f"the whole log ({winfo['n_months_in_log']} month{'s' if winfo['n_months_in_log'] != 1 else ''})"
+        outside = (f" {winfo['n_outside']} row{'s' if winfo['n_outside'] != 1 else ''} dated before "
+                   f"{winfo['months'][0]} {'are' if winfo['n_outside'] != 1 else 'is'} outside the window and not used "
+                   f"(listed below)." if winfo["n_outside"] else "")
+        if winfo["first"] is None:
+            st.warning("The grab log has no reading the model can use: every row is listed below with its reason. "
+                       + " ".join(gj.notes))
+        else:
+            st.info(f"Grab log: using {winfo['n_used']} samples from {winfo['first']} to {winfo['last']}, {span}.{outside} "
+                    f"Within the window every sample is treated as one simulated day: a reading is compared with the "
+                    f"model's day at its junction and hour, whatever its date. " + " ".join(gj.notes))
+        not_used = (gj.dropped + [{"row": int(r.row), "reason": r.reason} for r in cens_w.itertuples()]
+                    + winfo["outside"])
+        if not_used:
+            st.warning(f"Rows of the grab log that are not used ({len(not_used)}), each with its reason:\n\n"
+                       + "\n".join(f"- {ln}" for ln in dropped_lines(sorted(not_used, key=lambda d: d["row"]))))
+        for w in gj.warnings:
+            st.warning(w)
+        if len(cens_w):      # below detection and above the range are marked apart (the review of task 16)
+            below_detection = sorted(set(cens_w.junction[cens_w.kind == "below"]))
+            above_range = sorted(set(cens_w.junction[cens_w.kind == "above"]))
+        default = pd.DataFrame({"junction": rows_w.junction.astype(str), "hour": rows_w.hour.astype(int),
+                                "mg/L": rows_w.y.astype(float)})
+        log_key_suffix = "_log" + hashlib.sha1(default.to_csv(index=False).encode()).hexdigest()[:10]
+
 st.subheader("Grab samples")
 st.caption("One row per sample: the junction ID from your model, the hour it was taken (0 to 23), the TOTAL chlorine "
            "reading (chloramine)." if ca else
            "One row per sample: the junction ID from your model, the hour it was taken (0–23), the free chlorine reading.")
+if use_clock:
+    st.caption(f"The hour column is the MODEL hour: this file starts at {clock_label(0, clock_h)} (START CLOCKTIME), so a "
+               f"sample taken at {clock_label(3, clock_h)} is hour 3. An uploaded grab log's times are converted for you; "
+               f"a typed hour is a model hour. Everywhere else on this page, hours are times of day.")
+elif is_net2:
+    st.caption(f"Net2: the hour column, and every hour on this page, is a {NET2_CAPTION}."
+               + (" Your log's times of day are read as model hours here, not converted (the pilot with --inp Net2 "
+                  "subtracts 8 h)." if log_up is not None else ""))
 samples = st.data_editor(default, num_rows="dynamic", width='stretch',
-                         key=f"samples_{net_path}_{demo}_{demo and (n_demo, demo_seed)}" + ("_ca" if ca else ""),
+                         key=f"samples_{net_path}_{demo}_{demo and (n_demo, demo_seed)}" + ("_ca" if ca else "")
+                             + log_key_suffix,
                          column_config={"junction": st.column_config.SelectboxColumn("junction", options=junctions, required=True),
                                         "hour": st.column_config.NumberColumn("hour", min_value=0, max_value=23, step=1),
                                         "mg/L": st.column_config.NumberColumn("mg/L", min_value=0.0, max_value=5.0, step=0.01, format="%.2f")})
-samples = samples.dropna()
+samples = samples.dropna(subset=["junction", "hour", "mg/L"])
 samples = samples[samples.junction.isin(junctions)]
 S = pd.DataFrame({"junction": samples.junction.astype(str), "hour": samples.hour.astype(int), "y": samples["mg/L"].astype(float)})
 
@@ -406,17 +615,22 @@ else:
 model.fit(S if len(S) else None)
 hourly = model.predict_hours()
 pmin = model.predict_daily_min()
-route = plan_route(model, int(K), threshold=float(threshold), exclude=list(S.junction), with_age=True,
-                   age_initial_share=band.initial_share)
+if use_clock:     # task 16: the route's daytime window, 07:00 to 17:00, by the clock of this file
+    route = plan_route(model, int(K), hours=daytime_model_hours(clock_h), threshold=float(threshold),
+                       exclude=list(S.junction), with_age=True, age_initial_share=band.initial_share, hour_label=hlabel)
+else:
+    route = plan_route(model, int(K), threshold=float(threshold), exclude=list(S.junction), with_age=True,
+                       age_initial_share=band.initial_share)
 
 # ----------------------------------------------------------------------------- headline numbers
-view = st.radio("Show", ["Daily minimum (the compliance number)"] + [f"{h:02d}:00" for h in range(24)], horizontal=True, index=0)
+hour_options = {hlabel(h): h for h in sorted(range(24), key=lambda h: clock_minute_of(h, clock_h) if use_clock else h)}
+view = st.radio("Show", ["Daily minimum (the compliance number)"] + list(hour_options), horizontal=True, index=0)
 if view.startswith("Daily"):
     med, lo, hi = pmin["median"], pmin["lo90"], pmin["hi90"]
     p_below = pmin["p_below"]          # the model's own draws, at the threshold it was built with
     label = "daily minimum"
 else:
-    h = int(view[:2]); z_mu, z_sd = hourly[0][h], hourly[1][h]
+    h = hour_options[view]; z_mu, z_sd = hourly[0][h], hourly[1][h]
     med = pd.Series(np.exp(z_mu), index=junctions); lo = pd.Series(np.exp(z_mu - 1.645 * z_sd), index=junctions)
     hi = pd.Series(np.exp(z_mu + 1.645 * z_sd), index=junctions)
     p_below = pd.Series(norm.cdf((np.log(float(threshold)) - z_mu) / z_sd), index=junctions)
@@ -429,12 +643,18 @@ KB_FMT = ".3g" if ca else ".2f"     # the chloramine grid's bulk rates go down t
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Samples used", len(S))
 c2.metric(f"Junctions likely below {threshold:g} mg/L ({label})", f"{int(flag.sum())} of {len(junctions)}")
-c3.metric("Worst hour of the day", f"{worst:02d}:00", f"{frac_by_hour[worst]:.0%} of junctions below by median")
+c3.metric("Worst hour of the day", hlabel(worst), f"{frac_by_hour[worst]:.0%} of junctions below by median")
 if model.map_params_ is not None:
     kb, kw, g, dm, rm = model.map_params_
     c4.metric("Calibrated decay (bulk / wall)", f"{kb:{KB_FMT}} /d · {kw:.2f} m/d", f"{old_pipe_text(g, uniform_c)}, demand ×{dm:.2f}, dose ×{model.map_dose_:.2f}")
 else:
     c4.metric("Calibrated decay", "no samples yet", "map = your model's physics alone")
+if is_net2:
+    st.caption(f"Net2: every hour on this page is a {NET2_CAPTION}, and its demand patterns are 55 h long, so an hour "
+               f"of its day is an hour of that cycle (README, Net2).")
+elif use_clock:
+    st.caption(f"Hours are times of day: this file starts at {clock_label(0, clock_h)} (START CLOCKTIME), and every model "
+               f"hour is shown as its time of day.")
 
 
 def edge_warning(m) -> str | None:
@@ -452,9 +672,18 @@ if edge_msg:
 
 
 # ----------------------------------------------------------------------------- the four panels
-def network_panel(ax, series, title, cmap, vrange, marks=None, mark_labels=None, colorbar_label=None):
+def network_panel(ax, series, title, cmap, vrange, marks=None, mark_labels=None, colorbar_label=None, below=None,
+                  above=None):
     wntr.graphics.plot_network(sc.wn, node_attribute=series.to_dict(), node_size=max(12, int(4000 / len(junctions))),
                                node_cmap=cmap, node_range=vrange, ax=ax, link_width=0.6, add_colorbar=True, title=title)
+    if below:     # task 16: junctions with a reading below detection ('<0.02', 'ND'): shown, not fitted
+        ax.scatter([sc.coords[j][0] for j in below], [sc.coords[j][1] for j in below], s=90, marker="x", c="red",
+                   linewidths=1.8, zorder=6, label="measured below detection (not fitted)")
+    if above:     # a reading above the measuring range ('>2.2'): high chlorine, never called below detection
+        ax.scatter([sc.coords[j][0] for j in above], [sc.coords[j][1] for j in above], s=90, marker="+", c="blue",
+                   linewidths=1.8, zorder=6, label="measured above the range (not fitted)")
+    if below or above:
+        ax.legend(loc="lower left", fontsize=8)
     if marks:
         ax.scatter([sc.coords[j][0] for j in marks], [sc.coords[j][1] for j in marks], s=130, facecolors="none",
                    edgecolors="cyan", linewidths=1.8, zorder=5)
@@ -463,17 +692,31 @@ def network_panel(ax, series, title, cmap, vrange, marks=None, mark_labels=None,
                 ax.annotate(lab, sc.coords[j], fontsize=8, color="darkcyan", xytext=(4, 3), textcoords="offset points")
 
 
+def route_tag(k: int, h: int) -> str:
+    """'1: 09h', a route site's number and hour on the maps (a time of day for a converted file)."""
+    return f"{k + 1}: {clock_label(h, clock_h)}" if use_clock else f"{k + 1}: {h:02d}h"
+
+
+def worst_hour_bars(ax, ylabel: str, legend_label: str):
+    """The share of junctions below the threshold at each hour of the day: by model hour as before, or (task 16) at
+    each model hour's time of day for a converted file, with the sampling window by the clock."""
+    xs = [clock_minute_of(h, clock_h) / 60 if use_clock else h for h in frac_by_hour.index]
+    ax.bar(xs, frac_by_hour.values * 100, color=["tab:red" if x >= 18 or x < 6 else "tab:blue" for x in xs])
+    ax.axvspan(6.5, 17.5, color="gold", alpha=0.15, label=legend_label)
+    ax.set(xlabel=NET2_CAPTION if is_net2 else "hour of day", ylabel=ylabel)
+
+
 def four_panels(figsize=(24, 6.5)):
     fig, axes = plt.subplots(1, 4, figsize=figsize)
     top = max(1.2, float(dose))
     title0 = (f"Total chlorine map: {label} (mg/L)\nfrom {len(S)} grab samples" if ca else
               f"Chlorine map — {label} (mg/L)\nfrom {len(S)} grab samples")
     network_panel(axes[0], med, title0, "viridis", (0, top),
-                  list(S.junction), [f"{h}h" for h in S.hour])
+                  list(S.junction), [htag(h) for h in S.hour], below=below_detection, above=above_range)
     network_panel(axes[1], hi - lo, "Uncertainty — width of the 90% band (mg/L)", "magma", (0, float((hi - lo).quantile(0.98))))
     network_panel(axes[2], p_below, f"P(residual < {threshold:g} mg/L) — {label}\n{int(flag.sum())} junctions likely below", "Reds", (0, 1))
     network_panel(axes[3], p_below, f"Sample here next: {len(route)} sites for next month's route", "Reds", (0, 1),
-                  list(route.junction), [f"{k + 1}: {h:02d}h" for k, h in enumerate(route.hour)])
+                  list(route.junction), [route_tag(k, h) for k, h in enumerate(route.hour)])
     fig.tight_layout()
     return fig
 
@@ -482,8 +725,23 @@ st.pyplot(four_panels(), width='stretch')
 
 # ----------------------------------------------------------------------------- next samples with reasons
 st.subheader("Sample here next")
-st.dataframe(route.assign(hour=[f"{h:02d}:00" for h in route.hour])[["junction", "hour", "p_below", "water_age_h", "reason"]]
+st.dataframe(route.assign(hour=[hlabel(h) for h in route.hour])[["junction", "hour", "p_below", "water_age_h", "reason"]]
              .rename(columns={"p_below": f"P(daily min < {threshold:g})", "water_age_h": "water age (h)"}), width='stretch', hide_index=True)
+
+# ----------------------------------------------------------------------------- every junction (task 16)
+P_COL = f"P(daily min < {threshold:g})"
+every = pd.DataFrame({"junction": junctions, "median (mg/L)": pmin["median"].round(3).values,
+                      "lo90 (mg/L)": pmin["lo90"].round(3).values, "hi90 (mg/L)": pmin["hi90"].round(3).values,
+                      P_COL: pmin["p_below"].round(2).values,
+                      "hour of the daily minimum": [hlabel(int(h)) for h in np.argmin(hourly[0], axis=0)]})
+st.subheader("Every junction: the daily minimum")
+st.dataframe(every, width='stretch', hide_index=True)
+n_top = min(20, len(junctions))
+st.caption(f"Each junction's daily minimum (median and 90% band, mg/L), the probability it is below {threshold:g} mg/L "
+           f"and the hour of the day its median is lowest. The table's toolbar (top right of the table, with the pointer "
+           f"over it) downloads it as CSV. The {n_top} junctions most likely below {threshold:g} mg/L follow as a plain "
+           f"table, which screen readers read more easily than the grid above.")
+st.table(every.sort_values(P_COL, ascending=False, kind="stable").head(n_top).set_index("junction"))
 
 if ca:
     st.subheader("Nitrification watch (chloramine)")
@@ -575,9 +833,7 @@ left, right = st.columns([1, 1])
 with left:
     st.subheader("When is the network worst?")
     fig, ax = plt.subplots(figsize=(8, 3.2))
-    ax.bar(frac_by_hour.index, frac_by_hour.values * 100, color=["tab:red" if h >= 18 or h < 6 else "tab:blue" for h in frac_by_hour.index])
-    ax.axvspan(6.5, 17.5, color="gold", alpha=0.15, label="when you sample")
-    ax.set(xlabel="hour of day", ylabel=f"% junctions below {threshold:g} mg/L (median)"); ax.legend(loc="upper center")
+    worst_hour_bars(ax, f"% junctions below {threshold:g} mg/L (median)", "when you sample"); ax.legend(loc="upper center")
     st.pyplot(fig, width='stretch')
 with right:
     if tr is not None:
@@ -621,25 +877,28 @@ def pdf_bytes() -> bytes:
     gs = fig.add_gridspec(3, 4, height_ratios=[0.62, 1.5, 1.1])
     ax = fig.add_subplot(gs[0, :]); ax.axis("off")
     name = os.path.basename(net_path)
+    pdf_hour_note = (" (a model hour: this file starts at 08:00)" if is_net2 else
+                     f" (time of day; the file starts at {clock_label(0, clock_h)})" if use_clock else "")
     ax.text(0, 0.97, f"ResidualMap: monthly chlorine report, {name}", fontsize=18, fontweight="bold", va="top")
     gamma_pdf = "old-pipe factor not identifiable (one C value)" if uniform_c else f"old-pipe factor {model.map_params_[2]:.1f}" if model.map_params_ is not None else ""
     calib = (f"calibrated decay: bulk {model.map_params_[0]:{KB_FMT}} /day, wall {model.map_params_[1]:.2f} m/day, {gamma_pdf}; "
              f"demand ×{model.map_params_[3]:.2f}, roughness ×{model.map_params_[4]:.2f}, dose ×{model.map_dose_:.2f}") if model.map_params_ is not None else "no samples yet: map from the model's physics alone"
     ax.text(0, 0.74, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
                      f"{int((pmin['p_below'] > 0.5).sum())} of {len(junctions)} junctions likely below the minimum at their daily minimum · "
-                     f"worst hour {worst:02d}:00\n{calib}\n{oldest_line}", fontsize=10.5, va="top")
+                     f"worst hour {hlabel(worst)}{pdf_hour_note}\n{calib}\n{oldest_line}", fontsize=10.5, va="top")
     chem = "\n".join(w for line in pdf_chem_lines() for w in textwrap.wrap(line, PDF_CHEM_CHARS))
     ax.text(0, 0.36, chem, fontsize=9.5, va="top", color="0.15")
     axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
     top = max(1.2, float(dose))
-    network_panel(axes[0], med, f"Chlorine — {label} (mg/L)", "viridis", (0, top), list(S.junction), [f"{h}h" for h in S.hour])
+    network_panel(axes[0], med, f"Chlorine — {label} (mg/L)", "viridis", (0, top), list(S.junction), [htag(h) for h in S.hour],
+                  below=below_detection, above=above_range)
     network_panel(axes[1], hi - lo, "90% band width (mg/L)", "magma", (0, float((hi - lo).quantile(0.98))))
     network_panel(axes[2], p_below, f"P(residual < {threshold:g} mg/L)", "Reds", (0, 1))
-    network_panel(axes[3], p_below, f"Next route: {len(route)} sites", "Reds", (0, 1), list(route.junction), [f"{k + 1}: {h:02d}h" for k, h in enumerate(route.hour)])
+    network_panel(axes[3], p_below, f"Next route: {len(route)} sites", "Reds", (0, 1), list(route.junction), [route_tag(k, h) for k, h in enumerate(route.hour)])
     ax = fig.add_subplot(gs[2, :2]); ax.axis("off")
     ax.set_title("Sample here next", loc="left", fontsize=12, fontweight="bold")
     # the reason without its P(...) part (its own column), wrapped so none of it is cut off
-    rows = [[str(j), f"{h:02d}:00", f"{p:.2f}", "\n".join(textwrap.wrap(w, PDF_WHY_CHARS))]
+    rows = [[str(j), hlabel(h), f"{p:.2f}", "\n".join(textwrap.wrap(w, PDF_WHY_CHARS))]
             for j, h, p, w in zip(route.junction, route.hour, route.p_below, route.why)]
     if not rows:      # task 15b: every junction is sampled already (a small network)
         rows = [["none", "", "", "every junction of this network is sampled already"]]
@@ -653,9 +912,8 @@ def pdf_bytes() -> bytes:
     line_pt = unit * ax.get_position().height * fig.get_figheight() * 72
     tbl.auto_set_font_size(False); tbl.set_fontsize(min(7.5, 0.95 * line_pt))
     ax = fig.add_subplot(gs[2, 2:])
-    ax.bar(frac_by_hour.index, frac_by_hour.values * 100, color=["tab:red" if h >= 18 or h < 6 else "tab:blue" for h in frac_by_hour.index])
-    ax.axvspan(6.5, 17.5, color="gold", alpha=0.15, label="sampling window")
-    ax.set(xlabel="hour of day", ylabel=f"% junctions below {threshold:g} mg/L", title="When the network is worst"); ax.legend()
+    worst_hour_bars(ax, f"% junctions below {threshold:g} mg/L", "sampling window")
+    ax.set(title="When the network is worst"); ax.legend()
     fig.tight_layout()
     buf = io.BytesIO(); fig.savefig(buf, format="pdf"); plt.close(fig)
     return buf.getvalue()
@@ -663,3 +921,5 @@ def pdf_bytes() -> bytes:
 
 st.download_button("Download the one-page PDF report", data=pdf_bytes(), file_name=f"residualmap_{os.path.basename(net_path)}.pdf", mime="application/pdf")
 st.caption("Every number on this page is computed on this laptop from your .inp and your samples. Nothing is uploaded anywhere.")
+st.page_link(GET_STARTED, label="Bring your data: what to export from your software, templates for the grab log and "
+                                "tap map, and 'Check a file'")
