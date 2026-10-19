@@ -1,0 +1,12 @@
+# ResidualMap's Streamlit settings (iteration 5, task 15).  Streamlit reads this file next to app.py, and from the
+# working directory, so "streamlit run app.py" picks it up.
+#
+# server.address: listen on this laptop only.  Without it Streamlit listens on every network interface and prints a
+# Network URL, so anyone on the same Wi-Fi could open the app with a utility's model loaded.
+# browser.gatherUsageStats: Streamlit's usage statistics are off, so the browser sends nothing to Streamlit.
+
+[server]
+address = "localhost"
+
+[browser]
+gatherUsageStats = false

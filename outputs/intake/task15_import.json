@@ -1,0 +1,1256 @@
+{
+ "about": "Task 15's importer tests on files built by residualmap/fixtures.py from WNTR's bundled public networks (converter self-consistency on public models, not real utility files). Written by python -m residualmap.fixtures --record; the task15 checks rerun each part and compare.",
+ "sniff": {
+  "fixtures": 36,
+  "identified": 36,
+  "unknown": 0,
+  "decided_with_the_name": 2,
+  "name_use_stated": 2,
+  "backups": 3,
+  "kinds": 25,
+  "rows": [
+   {
+    "fixture": "net3_as_txt.txt",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "ok": true
+   },
+   {
+    "fixture": "net3_backup.inp.bak",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": true,
+    "expected_backup": true,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "ok": true
+   },
+   {
+    "fixture": "inp_with_bom.inp",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8 with a byte-order mark",
+    "ok": true
+   },
+   {
+    "fixture": "inp_comment_first.inp",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8; ';' comment lines come first",
+    "ok": true
+   },
+   {
+    "fixture": "inp_long_title.inp",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "ok": true
+   },
+   {
+    "fixture": "inp_utf16.inp",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-16 (little-endian, with a byte-order mark)",
+    "ok": true
+   },
+   {
+    "fixture": "net3_cp1252_title.inp",
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in cp1252 (Windows Western European)",
+    "ok": true
+   },
+   {
+    "fixture": "emailed_model.zip",
+    "expected": "epanet_inp_zip",
+    "kind": "epanet_inp_zip",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "it holds zone_model/zone7.inp",
+    "ok": true
+   },
+   {
+    "fixture": "dxf_with_999_comment.dxf",
+    "expected": "dxf_ascii",
+    "kind": "dxf_ascii",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "group codes and values, 1 comment group (999) first",
+    "ok": true
+   },
+   {
+    "fixture": "ascii_drawing.dxf.bak",
+    "expected": "dxf_ascii",
+    "kind": "dxf_ascii",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": true,
+    "expected_backup": true,
+    "confidence": "high",
+    "detail": "group codes and values",
+    "ok": true
+   },
+   {
+    "fixture": "binary.dxf",
+    "expected": "dxf_binary",
+    "kind": "dxf_binary",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "it starts with the binary DXF sentinel",
+    "ok": true
+   },
+   {
+    "fixture": "dwg_ac1027.dwg",
+    "expected": "dwg",
+    "kind": "dwg",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "AutoCAD 2013 format (AC1027)",
+    "ok": true
+   },
+   {
+    "fixture": "dwg_ac1032.dwg",
+    "expected": "dwg",
+    "kind": "dwg",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "AutoCAD 2018 format (AC1032)",
+    "ok": true
+   },
+   {
+    "fixture": "drawing.bak",
+    "expected": "dwg",
+    "kind": "dwg",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": true,
+    "expected_backup": true,
+    "confidence": "high",
+    "detail": "AutoCAD 2010 format (AC1024)",
+    "ok": true
+   },
+   {
+    "fixture": "dgn_v7.dgn",
+    "expected": "dgn_v7",
+    "kind": "dgn_v7",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "2D",
+    "ok": true
+   },
+   {
+    "fixture": "ole_dgn_v8.dgn",
+    "expected": "dgn_v8",
+    "kind": "dgn_v8",
+    "category": "drawing",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "an OLE compound file with streams named Dgn~",
+    "ok": true
+   },
+   {
+    "fixture": "jet_model.wtg.mdb",
+    "expected": "access_db",
+    "kind": "access_db",
+    "category": "vendor_model",
+    "by_extension": true,
+    "expected_by_extension": true,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "Standard Jet DB; the name ends in .wtg.mdb, which older WaterCAD and WaterGEMS versions use for the model (from the file name)",
+    "ok": true
+   },
+   {
+    "fixture": "model.wtg.sqlite",
+    "expected": "sqlite_model",
+    "kind": "sqlite_model",
+    "category": "vendor_model",
+    "by_extension": true,
+    "expected_by_extension": true,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "2 tables; the name ends in .wtg.sqlite, which WaterGEMS and WaterCAD use for the model database (from the file name)",
+    "ok": true
+   },
+   {
+    "fixture": "wtg_settings.wtg",
+    "expected": "wtg_settings",
+    "kind": "wtg_settings",
+    "category": "vendor_model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "root element HaestadDataSource, version 10.4",
+    "ok": true
+   },
+   {
+    "fixture": "mains.gpkg",
+    "expected": "geopackage",
+    "kind": "geopackage",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "application id GPKG; layers: water_mains (features)",
+    "ok": true
+   },
+   {
+    "fixture": "mains_geojson_as.json",
+    "expected": "geojson",
+    "kind": "geojson",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "12 features, lon/lat coordinates (WGS84)",
+    "ok": true
+   },
+   {
+    "fixture": "geojson_stateplane.geojson",
+    "expected": "geojson",
+    "kind": "geojson",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "12 features, projected coordinates (EPSG:2227, from its crs member)",
+    "ok": true
+   },
+   {
+    "fixture": "esri_features.json",
+    "expected": "esri_json",
+    "kind": "esri_json",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "esriGeometryPolyline, 6 features, spatial reference 2227",
+    "ok": true
+   },
+   {
+    "fixture": "wntr_sidecar.json",
+    "expected": "wntr_json",
+    "kind": "wntr_json",
+    "category": "model",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "WNTR version wntr-1.5.0",
+    "ok": true
+   },
+   {
+    "fixture": "gml_mains.gml",
+    "expected": "gml",
+    "kind": "gml",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "root element gml:FeatureCollection",
+    "ok": true
+   },
+   {
+    "fixture": "mains.kml",
+    "expected": "kml",
+    "kind": "kml",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "10 placemarks, 10 lines in the first 64 KB",
+    "ok": true
+   },
+   {
+    "fixture": "mains.kmz",
+    "expected": "kmz",
+    "kind": "kmz",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "it holds doc.kml",
+    "ok": true
+   },
+   {
+    "fixture": "mains_shp_nested_two_layers.zip",
+    "expected": "shapefile_zip",
+    "kind": "shapefile_zip",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "2 layers: export/water/mains; export/water/hydrants",
+    "ok": true
+   },
+   {
+    "fixture": "utility_gdb.zip",
+    "expected": "file_gdb_zip",
+    "kind": "file_gdb_zip",
+    "category": "gis",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "geodatabase utility.gdb",
+    "ok": true
+   },
+   {
+    "fixture": "grab_log.xlsx",
+    "expected": "xlsx",
+    "kind": "xlsx",
+    "category": "table",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "5 parts, typed by its [Content_Types].xml and xl/ folder",
+    "ok": true
+   },
+   {
+    "fixture": "old_excel_log.xls",
+    "expected": "xls_legacy",
+    "kind": "xls_legacy",
+    "category": "table",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "an OLE compound file with a Workbook stream",
+    "ok": true
+   },
+   {
+    "fixture": "log_semicolon.csv",
+    "expected": "delimited_text",
+    "kind": "delimited_text",
+    "category": "table",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "medium",
+    "detail": "separated by semicolons; first row: date, time, tap_id, free_chlorine_mgL; decimal commas",
+    "ok": true
+   },
+   {
+    "fixture": "log_tab.txt",
+    "expected": "delimited_text",
+    "kind": "delimited_text",
+    "category": "table",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "medium",
+    "detail": "separated by tabs; first row: date, time, tap_id, free_chlorine_mgL",
+    "ok": true
+   },
+   {
+    "fixture": "map_book.pdf",
+    "expected": "pdf",
+    "kind": "pdf",
+    "category": "document",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "PDF version 1.4",
+    "ok": true
+   },
+   {
+    "fixture": "plant.ifc",
+    "expected": "ifc",
+    "kind": "ifc",
+    "category": "bim",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "schema IFC4",
+    "ok": true
+   },
+   {
+    "fixture": "results.bin",
+    "expected": "epanet_bin",
+    "kind": "epanet_bin",
+    "category": "results",
+    "by_extension": false,
+    "expected_by_extension": false,
+    "backup": false,
+    "expected_backup": false,
+    "confidence": "high",
+    "detail": "EPANET version 20200, 97 nodes (5 tanks and reservoirs), 119 links",
+    "ok": true
+   }
+  ],
+  "tie_breaks": [
+   {
+    "fixture": "ole_header_only.xls",
+    "expected": "xls_legacy",
+    "kind": "xls_legacy",
+    "by_extension": true,
+    "confidence": "low",
+    "says_so": true,
+    "ok": true
+   },
+   {
+    "fixture": "ole_header_only.dgn",
+    "expected": "dgn_v8",
+    "kind": "dgn_v8",
+    "by_extension": true,
+    "confidence": "low",
+    "says_so": true,
+    "ok": true
+   }
+  ],
+  "tie_breaks_ok": 2,
+  "review_cases": 27,
+  "review_ok": 27,
+  "review_timed": 6,
+  "review_timed_within_bound": 6,
+  "review_raised": 0,
+  "xml_comment_run": 26,
+  "review_rows": [
+   {
+    "fixture": "swmm_sewer.inp",
+    "bytes": 629,
+    "expected": "swmm_inp",
+    "kind": "swmm_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "SWMM sections [CONDUITS], [OUTFALLS], [XSECTIONS] found in the first 64 KB",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "chlorine_decay.msx",
+    "bytes": 433,
+    "expected": "epanet_msx",
+    "kind": "epanet_msx",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "EPANET-MSX sections [COEFFICIENTS], [SPECIES], [TERMS] found in the first 64 KB, and no [JUNCTIONS] or [RESERVOIRS]",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "net3_cr_only.inp",
+    "bytes": 30753,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "net3_cr_cr_lf.inp",
+    "bytes": 31745,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "inp_title_over_64kb.inp",
+    "bytes": 113249,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the whole file (its first 64 KB holds none of [JUNCTIONS], [PIPES], [RESERVOIRS] or [TANKS]), text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "inp_patterns_first.inp",
+    "bytes": 131794,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the whole file (its first 64 KB holds none of [JUNCTIONS], [PIPES], [RESERVOIRS] or [TANKS]), text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "inp_comment_header_70kb.inp",
+    "bytes": 103249,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the whole file (its first 64 KB holds none of [JUNCTIONS], [PIPES], [RESERVOIRS] or [TANKS]), text in utf-8; ';' comment lines come first",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "finder_model.zip",
+    "bytes": 2150,
+    "expected": "epanet_inp_zip",
+    "kind": "epanet_inp_zip",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "it holds Zone3/zone.inp; 1 file that macOS or Windows adds (__MACOSX, ._ copies, .DS_Store, Thumbs.db) left out",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "finder_shapefile.zip",
+    "bytes": 1953,
+    "expected": "shapefile_zip",
+    "kind": "shapefile_zip",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "1 layer: mains/mains; 5 files that macOS or Windows adds (__MACOSX, ._ copies, .DS_Store, Thumbs.db) left out",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "city_mains_shp.zip",
+    "bytes": 170907,
+    "expected": "shapefile_zip",
+    "kind": "shapefile_zip",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "1 layer: mains",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "model_and_gis.zip",
+    "bytes": 176228,
+    "expected": "epanet_inp_zip",
+    "kind": "epanet_inp_zip",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "it holds model/zone3.inp",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "geojson_crs_string.geojson",
+    "bytes": 808,
+    "expected": "geojson",
+    "kind": "geojson",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "4 features, lon/lat coordinates (WGS84)",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "geojson_crs_name_number.geojson",
+    "bytes": 811,
+    "expected": "geojson",
+    "kind": "geojson",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "4 features, lon/lat coordinates (WGS84)",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "geojson_features_not_list.geojson",
+    "bytes": 44,
+    "expected": "geojson",
+    "kind": "geojson",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "a features member that is not a list, no coordinates",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "esri_sr_string.json",
+    "bytes": 100,
+    "expected": "esri_json",
+    "kind": "esri_json",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "esriGeometryPolyline, 0 features, spatial reference 102100",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "geojson_deep_geometry.geojson",
+    "bytes": 6094,
+    "expected": "geojson",
+    "kind": "geojson",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "no coordinates",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "json_deep.json",
+    "bytes": 200000,
+    "expected": "json_other",
+    "kind": "json_other",
+    "by_extension": false,
+    "confidence": "low",
+    "detail": "nested too deeply to read",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "kml_doctype_subset.kml",
+    "bytes": 1932,
+    "expected": "kml",
+    "kind": "kml",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "10 placemarks, 10 lines in the first 64 KB",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "xml_comment_run.xml",
+    "bytes": 274,
+    "expected": "text_other",
+    "kind": "text_other",
+    "by_extension": false,
+    "confidence": "medium",
+    "detail": "text in utf-8",
+    "raised": null,
+    "within_2_s": true,
+    "ok": true
+   },
+   {
+    "fixture": "xml_comment_run_long.xml",
+    "bytes": 60014,
+    "expected": "text_other",
+    "kind": "text_other",
+    "by_extension": false,
+    "confidence": "medium",
+    "detail": "text in utf-8",
+    "raised": null,
+    "within_2_s": true,
+    "ok": true
+   },
+   {
+    "fixture": "xml_pi_run.xml",
+    "bytes": 42028,
+    "expected": "text_other",
+    "kind": "text_other",
+    "by_extension": false,
+    "confidence": "medium",
+    "detail": "text in utf-8",
+    "raised": null,
+    "within_2_s": true,
+    "ok": true
+   },
+   {
+    "fixture": "slow_view.gpkg",
+    "bytes": 4096,
+    "expected": "geopackage",
+    "kind": "geopackage",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "a gpkg_contents view; layers not listed (its gpkg_contents is a view, not a plain table, so it is not read)",
+    "raised": null,
+    "within_2_s": true,
+    "ok": true
+   },
+   {
+    "fixture": "csv_quotes.csv",
+    "bytes": 60002,
+    "expected": null,
+    "kind": "delimited_text",
+    "by_extension": false,
+    "confidence": "medium",
+    "detail": "separated by commas; first row: a, a,a, a,a, a,a, a,a, a,a, a,a, a,a",
+    "raised": null,
+    "within_0.25_s": true,
+    "ok": true
+   },
+   {
+    "fixture": "net3_singular_headers.inp",
+    "bytes": 31245,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "net3_form_feed_headers.inp",
+    "bytes": 31253,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "net1_nul_padded.inp",
+    "bytes": 6447,
+    "expected": "epanet_inp",
+    "kind": "epanet_inp",
+    "by_extension": false,
+    "confidence": "high",
+    "detail": "28 EPANET sections found in the first 64 KB, text in utf-8",
+    "raised": null,
+    "ok": true
+   },
+   {
+    "fixture": "csv_quote_run.csv",
+    "bytes": 263,
+    "expected": null,
+    "kind": "text_other",
+    "by_extension": false,
+    "confidence": "medium",
+    "detail": "text in utf-8",
+    "raised": null,
+    "within_0.25_s": true,
+    "ok": true
+   }
+  ]
+ },
+ "encodings": {
+  "normalized": 3,
+  "of": 3,
+  "passed_through": 3,
+  "pass_through_of": 3,
+  "rows": [
+   {
+    "fixture": "inp_with_bom.inp",
+    "wntr_on_the_original": "raises ENSyntaxError",
+    "prepared": "b91fcf19_inp_with_bom.inp",
+    "new_file": true,
+    "decoded_as": "utf-8 with a byte-order mark",
+    "fixes": [
+     "Removed the byte-order mark at the start (WNTR stops at line 1 on it)."
+    ],
+    "wntr_loads_same_network": true,
+    "ok": true
+   },
+   {
+    "fixture": "net3_cp1252_title.inp",
+    "wntr_on_the_original": "raises UnicodeDecodeError",
+    "prepared": "e88dbd7f_net3_cp1252_title.inp",
+    "new_file": true,
+    "decoded_as": "cp1252 (Windows Western European)",
+    "fixes": [
+     "Decoded the text from cp1252 (Windows Western European) and saved it as UTF-8 (WNTR reads UTF-8 only)."
+    ],
+    "wntr_loads_same_network": true,
+    "ok": true
+   },
+   {
+    "fixture": "inp_utf16.inp",
+    "wntr_on_the_original": "raises UnicodeDecodeError",
+    "prepared": "b91fcf19_inp_utf16.inp",
+    "new_file": true,
+    "decoded_as": "utf-16 (little-endian, with a byte-order mark)",
+    "fixes": [
+     "Decoded the text from utf-16 (little-endian, with a byte-order mark) and saved it as UTF-8 (WNTR reads UTF-8 only)."
+    ],
+    "wntr_loads_same_network": true,
+    "ok": true
+   }
+  ],
+  "pass_through": [
+   {
+    "fixture": "net3_crlf.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true
+   },
+   {
+    "fixture": "net3_lf.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true
+   },
+   {
+    "fixture": "Net3.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true
+   }
+  ],
+  "review_passed_through": 8,
+  "review_pass_through_of": 8,
+  "review_pass_through": [
+   {
+    "fixture": "net3_cr_only.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "net3_cr_cr_lf.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "inp_title_over_64kb.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "inp_patterns_first.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "inp_comment_header_70kb.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "net3_singular_headers.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "net3_form_feed_headers.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net3",
+    "wntr_loads_same_network": true
+   },
+   {
+    "fixture": "net1_nul_padded.inp",
+    "same_path": true,
+    "same_file": true,
+    "bytes_unchanged": true,
+    "nothing_written": true,
+    "fixes": [],
+    "ok": true,
+    "network": "Net1",
+    "wntr_loads_same_network": true
+   }
+  ],
+  "review_cp1252_gaps": [
+   {
+    "fixture": "net3_cp1252_undefined_byte.inp",
+    "prepared": "d4df801a_net3_cp1252_undefined_byte.inp",
+    "decoded_as": "cp1252 (Windows Western European), with 1 byte it leaves undefined read as latin-1",
+    "fixes": [
+     "Decoded the text from cp1252 (Windows Western European), with 1 byte it leaves undefined read as latin-1 and saved it as UTF-8 (WNTR reads UTF-8 only)."
+    ],
+    "euro_sign_and_quotes_kept": true,
+    "wntr_loads_same_network": true,
+    "ok": true
+   }
+  ],
+  "review_upload_names": [
+   {
+    "case": "long",
+    "name_characters": 250,
+    "raised": null,
+    "ok": true,
+    "prepared": "b91fcf19_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.inp",
+    "prepared_bytes": 93,
+    "name_kept": false,
+    "files_left": [
+     "b91fcf19_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.inp"
+    ]
+   },
+   {
+    "case": "fits",
+    "name_characters": 151,
+    "raised": null,
+    "ok": true,
+    "prepared": "b91fcf19_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.inp",
+    "prepared_bytes": 160,
+    "name_kept": true,
+    "files_left": [
+     "b91fcf19_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.inp"
+    ]
+   }
+  ]
+ },
+ "duplicate_ids": {
+  "blocked": 4,
+  "of": 4,
+  "wntr_calls_while_blocking": 0,
+  "rows": [
+   {
+    "fixture": "net3_dup_junction.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is used more than once among the nodes (junctions, reservoirs, tanks): 10 (2 times in [JUNCTIONS]). WNTR would keep only the later of two lines in one section, without a word. Export the model with IDs, not labels."
+    ],
+    "export_advice": true
+   },
+   {
+    "fixture": "net3_junction_tank_collision.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is used more than once among the nodes (junctions, reservoirs, tanks): 1 ([JUNCTIONS] and [TANKS]). WNTR would load an ID listed in two sections (a junction that shares a tank's ID), and the simulation would then fail. Export the model with IDs, not labels."
+    ],
+    "export_advice": true
+   },
+   {
+    "fixture": "net3_dup_pipe.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is used more than once among the links (pipes, pumps, valves): 20 (2 times in [PIPES]). WNTR would keep only the later of two lines in one section, without a word. Export the model with IDs, not labels."
+    ],
+    "export_advice": true
+   },
+   {
+    "fixture": "net3_long_id_32.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is longer than EPANET allows (31 characters): JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ (32 characters, in [JUNCTIONS]). Export the model with IDs, not labels."
+    ],
+    "export_advice": true
+   }
+  ],
+  "without_the_scan": [
+   {
+    "fixture": "net3_dup_junction.inp",
+    "wntr": "loads without a word: 92 junctions from 93 lines"
+   },
+   {
+    "fixture": "net3_junction_tank_collision.inp",
+    "wntr": "loads without a word: 93 junctions from 93 lines; the simulator raises AttributeError"
+   },
+   {
+    "fixture": "net3_dup_pipe.inp",
+    "wntr": "loads without a word: 117 pipes from 118 lines"
+   },
+   {
+    "fixture": "net3_long_id_32.inp",
+    "wntr": "raises AssertionError"
+   }
+  ],
+  "id_of_31_characters_runs": true,
+  "review_blocked": 3,
+  "review_of": 3,
+  "review_rows": [
+   {
+    "fixture": "net1_accented_id_cp1252.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is longer than EPANET allows (31 characters; EPANET counts bytes, and an accented letter takes 2 or more in the UTF-8 copy it reads): Hydrant_Gr\u00fcnwald_Stra\u00dfe_000022x (33 bytes, in [JUNCTIONS]). Export the model with IDs, not labels."
+    ],
+    "export_advice": true,
+    "without_the_scan": "loads, and the simulator raises EpanetException"
+   },
+   {
+    "fixture": "net3_long_pattern_id.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is longer than EPANET allows (31 characters): PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP (33 characters, in [PATTERNS]). Export the model with IDs, not labels."
+    ],
+    "export_advice": true,
+    "without_the_scan": "raises AssertionError"
+   },
+   {
+    "fixture": "net3_singular_pipe_dup.inp",
+    "blocked": true,
+    "blocking": [
+     "1 ID is used more than once among the links (pipes, pumps, valves): 20 (2 times in [PIPES]). WNTR would keep only the later of two lines in one section, without a word. Export the model with IDs, not labels."
+    ],
+    "export_advice": true,
+    "without_the_scan": "loads, and the simulator runs"
+   }
+  ],
+  "blocked_by_wntr_leaves_nothing": {
+   "fixture": "net3_bom_missing_node.inp",
+   "blocked": true,
+   "blocked_by_wntr": true,
+   "fixes_it_needed": [
+    "Removed the byte-order mark at the start (WNTR stops at line 1 on it)."
+   ],
+   "prepared": null,
+   "nothing_left": true,
+   "no_folder_in_message": true
+  },
+  "blocked_by_the_test_run": {
+   "fixture": "net3_isolated_junction.inp",
+   "path": {
+    "blocked": true,
+    "blocking": [
+     "EPANET could not run the first hour of this model (EpanetException: (Error 200) one or more errors in input file). 1 node in the file is not connected to any pipe, pump or valve (9999), and EPANET stops on such a node. Open the model in EPANET or the modelling package, fix what it reports, and export it again."
+    ],
+    "blocked_by_test_run": true,
+    "names_the_lone_node": true,
+    "wntr_read_it": true,
+    "nothing_left": true
+   },
+   "bytes": {
+    "blocked": true,
+    "blocking": [
+     "EPANET could not run the first hour of this model (EpanetException: (Error 200) one or more errors in input file). 1 node in the file is not connected to any pipe, pump or valve (9999), and EPANET stops on such a node. Open the model in EPANET or the modelling package, fix what it reports, and export it again."
+    ],
+    "blocked_by_test_run": true,
+    "names_the_lone_node": true,
+    "wntr_read_it": true,
+    "nothing_left": true
+   },
+   "without_the_test_run": "loads, and the simulator raises EpanetException"
+  }
+ },
+ "zips": {
+  "refused": 3,
+  "of": 3,
+  "rows": [
+   {
+    "fixture": "zip_slip.zip",
+    "kind": "refused_zip",
+    "reason": "a member's path leaves the zip's own folder (../../evil.inp)",
+    "prepared": false,
+    "refused_at": "listing",
+    "refused": true
+   },
+   {
+    "fixture": "zip_ratio_bomb.zip",
+    "kind": "epanet_inp_zip",
+    "reason": "The zip is refused: member model.inp would unpack to 21 MB, 1029 times its packed size (more than 100 to 1).",
+    "prepared": false,
+    "refused_at": "reading the model",
+    "refused": true
+   },
+   {
+    "fixture": "zip_absolute.zip",
+    "kind": "refused_zip",
+    "reason": "a member's path leaves the zip's own folder (/tmp/evil.inp)",
+    "prepared": false,
+    "refused_at": "listing",
+    "refused": true
+   }
+  ],
+  "zip_member_opens_while_refusing": 0,
+  "two_models_blocked": true,
+  "emailed_model": {
+   "prepared": "b91fcf19_zone7.inp",
+   "fixes": [
+    "Read zone_model/zone7.inp from the zip in memory (the zip was not unpacked); the model is saved as a prepared copy."
+   ],
+   "ok": true
+  },
+  "padded_dbf": {
+   "kind": "shapefile_zip",
+   "dbf_ratio": 155.4,
+   "dbf_mb": 0.894
+  },
+  "total_cap_refuses_when_lowered": true,
+  "review_ok": 4,
+  "review_of": 4,
+  "review_rows": [
+   {
+    "fixture": "finder_model.zip",
+    "kind": "epanet_inp_zip",
+    "detail": "it holds Zone3/zone.inp; 1 file that macOS or Windows adds (__MACOSX, ._ copies, .DS_Store, Thumbs.db) left out",
+    "members": [
+     "Zone3/zone.inp"
+    ],
+    "prepared": "59c392bc_zone.inp",
+    "fixes": [
+     "Read Zone3/zone.inp from the zip in memory (the zip was not unpacked); the model is saved as a prepared copy."
+    ],
+    "blocking": [],
+    "ok": true
+   },
+   {
+    "fixture": "model_and_gis.zip",
+    "kind": "epanet_inp_zip",
+    "detail": "it holds model/zone3.inp",
+    "members": [
+     "model/zone3.inp"
+    ],
+    "prepared": "b91fcf19_zone3.inp",
+    "fixes": [
+     "Read model/zone3.inp from the zip in memory (the zip was not unpacked); the model is saved as a prepared copy."
+    ],
+    "blocking": [],
+    "ok": true,
+    "dbf_ratio": 159.4,
+    "dbf_mb": 11.595,
+    "records": 15000
+   },
+   {
+    "fixture": "finder_shapefile.zip",
+    "kind": "shapefile_zip",
+    "detail": "1 layer: mains/mains; 5 files that macOS or Windows adds (__MACOSX, ._ copies, .DS_Store, Thumbs.db) left out",
+    "members": [
+     "mains/mains.shp"
+    ],
+    "ok": true
+   },
+   {
+    "fixture": "city_mains_shp.zip",
+    "kind": "shapefile_zip",
+    "detail": "1 layer: mains",
+    "members": [
+     "mains.shp"
+    ],
+    "ok": true,
+    "dbf_ratio": 159.4,
+    "dbf_mb": 11.595,
+    "records": 15000
+   }
+  ],
+  "review_broken": [
+   {
+    "fixture": "zip_bad_offset.zip",
+    "kind": "epanet_inp_zip",
+    "raised": null,
+    "blocking": [
+     "The zip is refused: member zone_model/zone7.inp cannot be read (ValueError: negative seek value -27)."
+    ],
+    "refused": true,
+    "nothing_written": true,
+    "zipfile_alone": "raises ValueError"
+   }
+  ]
+ }
+}

@@ -16,6 +16,13 @@ operator could run by hand (last reading at the same tap; mean of all recent sam
                                        # plant's pH and Cl2:N the bulk rate gets the chloramine mode's prior (model
                                        # (c), the one held to task 12's bars), without them a uniform prior (model (b))
 
+Real data stays private (iteration 5, task 15): --inp goes through residualmap.importers.prepare_inp (identified by
+its content, decoded to UTF-8, IDs checked before WNTR parses), and the prepared model is copied to the git-ignored
+outputs/private/inputs/<sha1 of the file>[:8]_<stem>.inp, so a revised file sent under the same name gets its own grid.
+A real run writes to outputs/private/pilot by default (git-ignored), with import_report_<tag>.json beside the results;
+--synthetic still writes to outputs/pilot.  --inp with the name of a network bundled with WNTR (Net3, ky4, ...) runs
+that network by its name, as before task 15, with its report and no private copy.
+
 grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
                 or, for a chloraminated system (--disinfectant chloramine), total_chlorine_mgL instead (never both
                 columns: a log that mixes the two species is refused; docs/example_grab_log_total.csv)
@@ -30,6 +37,7 @@ plant_log.csv : month (YYYY-MM), temp_C                                      [op
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -41,13 +49,54 @@ from scipy.stats import norm
 from .chemistry import Chemistry, Warming
 from .chloramine import CA_DOSE_MGL
 from .features import build_features
+from .importers import Readiness, prepare_inp, stem as inp_stem
 from .simgp import DAY_HOURS, SimGP24
-from .simulate import build_scenario, load, nominal_scenario
+from .simulate import build_scenario, load, net_path, nominal_scenario
 
 LEVELS = (50, 80, 90, 95)
 
 
 SPECIES_COLUMN = {"free_chlorine": "free_chlorine_mgL", "chloramine": "total_chlorine_mgL"}
+
+# iteration 5, task 15: where a real run's inputs and results go (relative to the working directory, like the
+# synthetic default; outputs/private/ is git-ignored)
+PRIVATE_INPUTS = os.path.join("outputs", "private", "inputs")
+PRIVATE_OUT = os.path.join("outputs", "private", "pilot")
+SYNTHETIC_OUT = os.path.join("outputs", "pilot")
+
+
+def default_out(synthetic: bool) -> str:
+    """--out when it is not given: outputs/pilot for --synthetic (the committed demonstration), and the git-ignored
+    outputs/private/pilot for a utility's real data, so a real run never writes into a tracked folder."""
+    return SYNTHETIC_OUT if synthetic else PRIVATE_OUT
+
+
+def prepare_pilot_inp(inp: str, disinfectant: str = "free_chlorine",
+                      inputs_dir: str = PRIVATE_INPUTS) -> tuple[str | None, Readiness]:
+    """--inp through importers.prepare_inp, then a private copy named by its content: inputs_dir/<sha1 of the prepared
+    file>[:8]_<stem>.inp.  The grid cache is keyed by the model's file name, so two different files sent as zone.inp
+    get two grids, and a revised file is never served the old one.  A file that needed a fix (or came in a zip) is
+    already written there by prepare_inp, under its content name, and is used as it is (one copy).  The name of a
+    network bundled with WNTR (Net3, ky4, ...) that is not a file here runs by that name, as before task 15: it is
+    public, so it gets its report but no private copy, and its grid is the cached one.  (None, report) when the file
+    is not a model or has a blocking problem; nothing is copied then."""
+    if not os.path.exists(inp) and os.path.exists(net_path(inp)):
+        path, rep = prepare_inp(net_path(inp), inputs_dir, disinfectant)
+        return (inp if path is not None else None), rep
+    if not os.path.exists(inp):
+        raise FileNotFoundError(f"{inp}: no such file, and not the name of a network bundled with WNTR")
+    path, rep = prepare_inp(inp, inputs_dir, disinfectant)
+    if path is None or not rep.same_file:
+        return path, rep
+    with open(path, "rb") as fh:
+        data = fh.read()
+    dest = os.path.join(inputs_dir, f"{hashlib.sha1(data).hexdigest()[:8]}_{inp_stem(inp)}.inp")
+    if os.path.abspath(path) != os.path.abspath(dest) and not os.path.exists(dest):
+        os.makedirs(inputs_dir, exist_ok=True)
+        with open(dest, "wb") as fh:
+            fh.write(data)
+    rep.prepared = os.path.basename(dest)
+    return dest, rep
 
 
 def load_log(samples_csv: str, taps_csv: str, disinfectant: str = "free_chlorine") -> pd.DataFrame:
@@ -287,7 +336,8 @@ def main():
     ap.add_argument("--window", type=int, default=3, help="months of history to fit on")
     ap.add_argument("--synthetic", metavar="NETWORK", help="demonstrate on a synthetic six-month log from this bundled network")
     ap.add_argument("--plant", help="plant log CSV: month,temp_C[,toc_mgL,dose_mgL]; makes the model temperature-aware")
-    ap.add_argument("--out", default="outputs/pilot")
+    ap.add_argument("--out", default=None, help="where the results go: default outputs/private/pilot (git-ignored) for "
+                                                "real data, outputs/pilot with --synthetic")
     a = ap.parse_args()
     if a.threshold is None:
         a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
@@ -303,6 +353,7 @@ def main():
     if a.synthetic and a.disinfectant != "free_chlorine":
         ap.error("--synthetic makes a free-chlorine log; the chloramine mode's simulated test is "
                  "python -m residualmap.experiment <net> --disinfectant=chloramine")
+    a.out = a.out or default_out(bool(a.synthetic))
     os.makedirs(a.out, exist_ok=True)
     if a.synthetic:
         truth_kw = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}.get(a.synthetic, {})
@@ -312,11 +363,20 @@ def main():
     else:
         if not (a.inp and a.samples and a.taps):
             ap.error("--inp, --samples and --taps are required (or --synthetic NETWORK)")
-        log, inp, dose = load_log(a.samples, a.taps, a.disinfectant), a.inp, a.dose
+        try:
+            inp, report = prepare_pilot_inp(a.inp, a.disinfectant)
+        except FileNotFoundError as e:
+            sys.exit(str(e))
+        with open(os.path.join(a.out, f"import_report_{inp_stem(a.inp)}{'_plant' if a.plant else ''}.json"), "w") as f:
+            f.write(report.to_json() + "\n")
+        print(report.to_markdown())
+        if inp is None:
+            sys.exit(f"{a.inp}: {report.summary()} (the report is in {a.out})")
+        log, dose = load_log(a.samples, a.taps, a.disinfectant), a.dose
     plant = load_plant(a.plant) if a.plant else None
     preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
                               disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n)
-    tag = (a.synthetic or os.path.splitext(os.path.basename(inp))[0]) + ("_plant" if plant is not None else "")
+    tag = (a.synthetic or inp_stem(a.inp)) + ("_plant" if plant is not None else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
     summary.to_csv(os.path.join(a.out, f"validation_{tag}.csv"), index=False)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 40)

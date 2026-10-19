@@ -1,8 +1,10 @@
 """
-checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14).
+checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
+and access (task 15 on: group task15, files built by residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 530 s on this machine (69 checks after task 14: 68 in
-                                            # the committed report, plus the names check, skipped without the variable)
+                                            # the committed report, plus the names check, skipped without the variable;
+                                            # 76 after task 15)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 24 s)
     RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
@@ -2478,6 +2480,8 @@ def app_water_age_panels():
 
 # ----------------------------------------------------------------------------- task 14: app, capabilities, docs, numbers
 DASH = ("—", "–")       # em dash, en dash
+# iteration 5's new files, held to 'no em or en dashes' whole (task 15 on)
+IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/config.toml")
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -2812,13 +2816,17 @@ def _it4_texts() -> dict:
     ch = open(os.path.join(REPO, "CHANGELOG.md")).read()
     out["CHANGELOG iteration 4"] = ch[:ch.index("## 2026-09-21")]
     out["residualmap/capabilities.py"] = open(os.path.join(REPO, "residualmap", "capabilities.py")).read()
+    for f in IT5_FILES:        # iteration 5 (task 15 on): its new modules and files, whole
+        out[f] = open(os.path.join(REPO, f), encoding="utf-8").read()
     return out
 
 
 @check("task14")
 def no_dashes_in_iteration4_text():
     """No em or en dash in any iteration-4 text (journal, README sections, CHANGELOG entries, capabilities.py), and task
-    14 adds none to the files whose older parts have them (pilot protocol, app.py, feature dictionary, README)."""
+    14 adds none to the files whose older parts have them (pilot protocol, app.py, feature dictionary, README).  Since
+    iteration 5 (task 15) the same holds for the iteration-5 journal sections and CHANGELOG entries (both inside the
+    spans above) and for its new files, whole (IT5_FILES)."""
     bad = {k: [t.count(d) for d in DASH] for k, t in _it4_texts().items() if any(d in t for d in DASH)}
     assert not bad, bad
     now = {}
@@ -2890,6 +2898,427 @@ def no_listed_names_in_tracked_files():
     assert not unexpected, unexpected
     return {"names_checked": len(names), "text_files_scanned": n_files, "allowed_provenance_lines": allowed,
             "unexpected": 0}
+
+
+# ----------------------------------------------------------------------------- task 15: read any model file safely
+INTAKE_RECORD = os.path.join(REPO, "outputs", "intake", "task15_import.json")
+
+
+def _intake_record(part: str) -> dict:
+    """One part of the committed task-15 record (python -m residualmap.fixtures --record)."""
+    with open(INTAKE_RECORD) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_record(got: dict, part: str) -> dict:
+    want = _intake_record(part)
+    got = json.loads(json.dumps(got))
+    diff = _json_diff(got, want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+def _count_files(root: str) -> int:
+    return sum(len(fs) for _, _, fs in os.walk(root))     # does not follow the scratch cwd's cache link
+
+
+@check("task15")
+def sniff_identifies_realistic_files():
+    """importers.sniff on the 36 fixtures of fixtures.SNIFF_TABLE (model text in every encoding and wrapping the review
+    found, drawings, vendor model files, GIS layers, tables, a PDF, an IFC file and an EPANET results file): every one
+    comes back as its expected kind, none 'unknown'; the file name decided something only for the two files whose names
+    say they are WaterCAD or WaterGEMS databases, and then the detail says '(from the file name)'; the three .bak files
+    are reported as backup copies of what they contain.  Two OLE headers with no directory (TIE_BREAKS) cannot be typed
+    by content: the extension breaks the tie, with low confidence, and the result says so.  The review's cases
+    (fixtures.REVIEW_SNIFF: a SWMM model and an EPANET-MSX file, which share EPANET headers; CR-only and CR-CR-LF line
+    ends; node and link sections after the first 64 KB; zips made on a Mac; a city-size shapefile; malformed and deeply
+    nested JSON; a DOCTYPE with an internal subset; from the final verification, singular core headers such as [PIPE]
+    and a form feed before a header, both of which WNTR reads, and a small model padded with NUL bytes after [END])
+    each come back as their kind, by content, without an
+    exception; the inputs that took seconds to hours before the fixes (a run of XML comments or processing
+    instructions, a GeoPackage whose gpkg_contents is a slow view) each finish within fixtures.TIME_BOUND_S, and the
+    two quote-heavy CSV texts (the 263-byte one from the final verification) within fixtures.CSV_TIME_BOUND_S, a bound
+    the old code misses on any machine.  The whole result equals the committed outputs/intake/task15_import.json (part
+    'sniff'; timings are recorded as within the bound or not, never as seconds)."""
+    from . import fixtures as FX
+    from .importers import KINDS
+    with tempfile.TemporaryDirectory(prefix="rm_t15_") as d:
+        paths = FX.build_all(d, [r[0] for r in FX.SNIFF_TABLE] + [t[0] for t in FX.TIE_BREAKS]
+                             + [r[0] for r in FX.REVIEW_SNIFF])
+        got = FX.sniff_part(paths)
+    wrong = [(r["fixture"], r["kind"], r["by_extension"], r["backup"]) for r in got["rows"] if not r["ok"]]
+    assert not wrong, wrong
+    assert (got["fixtures"], got["identified"], got["unknown"]) == (36, 36, 0), got
+    assert got["decided_with_the_name"] == got["name_use_stated"] == 2, got
+    assert got["backups"] == 3 and got["tie_breaks_ok"] == len(FX.TIE_BREAKS) == 2, got
+    bad = [(r["fixture"], r["kind"], r["raised"]) for r in got["review_rows"] if not r["ok"]]
+    assert not bad and got["review_ok"] == got["review_cases"] == len(FX.REVIEW_SNIFF), bad
+    assert got["review_raised"] == 0 and got["review_timed_within_bound"] == got["review_timed"] > 0, got
+    assert not any(d in t for v in KINDS.values() for t in v[1:] for d in DASH), "dash in the advice"
+    _same_as_record(got, "sniff")
+    return {k: got[k] for k in ("fixtures", "identified", "unknown", "decided_with_the_name", "backups", "kinds",
+                                "tie_breaks_ok", "review_cases", "review_ok", "review_timed",
+                                "review_timed_within_bound")}
+
+
+@check("task15")
+def inp_encodings_normalized():
+    """prepare_inp on an .inp with a UTF-8 byte-order mark, one in cp1252 with an accented title and one in UTF-16
+    (each of which WNTR cannot read as it is: the control records ENSyntaxError for the first and UnicodeDecodeError for
+    the others): each gives a UTF-8 copy, named by its content, that WNTR loads with
+    Net3's nodes and links, and lists the decoding as a fix.  Net3.inp as WNTR ships it (CRLF), a CRLF copy and an LF
+    copy come back as the same path with the same bytes, and nothing is written.  The review's cases: CR-only and
+    CR-CR-LF line ends, a [TITLE] past 64 KB, a large [PATTERNS] block first and a 70 KB comment header also pass
+    through untouched, and WNTR reads each as Net3, as do Net3 with singular core headers and Net3 with a form feed
+    before each (the final verification), and Net1 padded with NUL bytes after its [END] passes through and reads as
+    Net1; a cp1252 file with a byte cp1252 leaves undefined keeps its euro sign and
+    curly quotes (only that byte is read as latin-1).  A clean model uploaded as bytes under a 250-character name (the
+    final verification: it raised OSError and left its temporary copy) is prepared under a shortened name, with one
+    file left and no exception, and a name that fits is kept as it is.  Equals the committed record (part
+    'encodings')."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t15_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.ENCODING_CASES + FX.PASS_THROUGH_CASES
+                             + FX.REVIEW_PASS_THROUGH + FX.REVIEW_ENCODING)
+        out = os.path.join(d, "prepared")
+        got = FX.encodings_part(paths, out)
+        written = sorted(os.listdir(out))
+    assert got["normalized"] == got["of"] == 3 and got["passed_through"] == got["pass_through_of"] == 3, got
+    assert all(r["wntr_on_the_original"].startswith("raises") for r in got["rows"]), got["rows"]   # the control
+    assert got["review_passed_through"] == got["review_pass_through_of"] == len(FX.REVIEW_PASS_THROUGH), got
+    gaps = got["review_cp1252_gaps"]
+    assert all(g["ok"] and g["euro_sign_and_quotes_kept"] and g["wntr_loads_same_network"] for g in gaps), gaps
+    assert written == sorted(r["prepared"] for r in got["rows"] + gaps), written
+    long_name, fits = got["review_upload_names"]
+    assert long_name["raised"] is None and long_name["ok"] and not long_name["name_kept"], long_name
+    assert long_name["files_left"] == [long_name["prepared"]] and long_name["prepared_bytes"] <= 255, long_name
+    assert fits["ok"] and fits["name_kept"] and fits["files_left"] == [fits["prepared"]], fits
+    _same_as_record(got, "encodings")
+    return {"normalized": got["normalized"], "passed_through": got["passed_through"],
+            "decoded_as": {r["fixture"]: r["decoded_as"] for r in got["rows"] + gaps},
+            "review_passed_through": got["review_passed_through"],
+            "long_upload_name": {k: long_name[k] for k in ("name_characters", "prepared_bytes", "files_left")}}
+
+
+@check("task15")
+def inp_duplicate_ids_block():
+    """A junction listed twice, a junction that shares a tank's ID, a pipe listed twice and a 32-character ID each block
+    in prepare_inp with 'export with IDs, not labels', and WNTR is never called (its model class and .inp reader are
+    traps during the four calls).  The control, WNTR on the same files with nothing in front: it keeps 92 of 93
+    junction lines and 117 of 118 pipe lines without a word, loads the junction-tank clash and then the simulator
+    raises AttributeError, and stops on the long ID with AssertionError.  A 31-character ID runs.  The review's cases
+    block the same way, before WNTR: a 31-character ID with two accented letters saved in cp1252 (33 bytes in the
+    UTF-8 copy; without the scan WNTR loads it and the simulator fails) and a 33-character pattern ID (without the
+    scan WNTR raises AssertionError).  A model blocked after the scan (a byte-order mark, so a copy is written, and a
+    pipe to a missing node, so WNTR stops) leaves nothing in the folder, and its message names no folder.  From the
+    final verification: a duplicated pipe under a singular [PIPE] header, which WNTR reads as [PIPES] and keeps the
+    later line of without a word, blocks the same way; and Net3 with a junction no pipe connects, which WNTR loads and
+    EPANET cannot run, is blocked by EPANET's test run of the first hour (given as a path and as bytes, leaving
+    nothing either way), naming the lone node.  Equals the committed record (part 'duplicate_ids')."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t15_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.DUPLICATE_CASES + ("net3_long_id_31.inp",)
+                             + FX.REVIEW_ID_BLOCKS + (FX.REVIEW_WNTR_BLOCK, FX.REVIEW_TEST_RUN_BLOCK))
+        out = os.path.join(d, "prepared")
+        got = FX.ids_part(paths, out)
+        written = sorted(os.listdir(out)) if os.path.isdir(out) else []
+    assert got["blocked"] == got["of"] == 4 and got["wntr_calls_while_blocking"] == 0, got
+    assert got["id_of_31_characters_runs"] and len(written) == 0, (got, written)    # the 31-character file is clean
+    assert got["review_blocked"] == got["review_of"] == len(FX.REVIEW_ID_BLOCKS), got
+    assert [r["without_the_scan"] for r in got["review_rows"]] == ["loads, and the simulator raises EpanetException",
+                                                                  "raises AssertionError",
+                                                                  "loads, and the simulator runs"], got["review_rows"]
+    t = got["blocked_by_the_test_run"]
+    assert t["without_the_test_run"] == "loads, and the simulator raises EpanetException", t
+    for how in ("path", "bytes"):
+        assert all(t[how][k] for k in ("blocked", "blocked_by_test_run", "names_the_lone_node", "wntr_read_it",
+                                       "nothing_left")), (how, t[how])
+    w = got["blocked_by_wntr_leaves_nothing"]
+    assert w["blocked_by_wntr"] and w["fixes_it_needed"] and w["prepared"] is None and w["nothing_left"], w
+    assert w["no_folder_in_message"], w
+    _same_as_record(got, "duplicate_ids")
+    return {"blocked": got["blocked"], "wntr_calls_while_blocking": 0,
+            "without_the_scan": {c["fixture"]: c["wntr"] for c in got["without_the_scan"]},
+            "review_blocked": got["review_blocked"],
+            "review_without_the_scan": {r["fixture"]: r["without_the_scan"] for r in got["review_rows"]},
+            "blocked_by_wntr_leaves_nothing": w["nothing_left"],
+            "blocked_by_the_test_run": {how: t[how]["blocked_by_test_run"] and t[how]["nothing_left"]
+                                        for how in ("path", "bytes")}}
+
+
+@check("task15")
+def zip_uploads_are_safe():
+    """Zips are read in memory only: a member path that climbs out of the zip (../../evil.inp) or starts at the root
+    (/tmp/evil.inp) is refused at the listing, and a model that would unpack to 21 MB at more than 100 to 1 is refused
+    when it is about to be read; no member is opened for any of the three (zipfile's open is counted).  A zip with two
+    models is blocked ('send one at a time'); the emailed zip's model is read in memory and written once, as a
+    prepared .inp; a zipped shapefile whose padded DBF packs far more than 100 to 1 but unpacks to under 10 MB passes;
+    a lowered total cap refuses.  The review's cases: a model and a shapefile zipped on a Mac (Finder's __MACOSX/ ._
+    copies and a .DS_Store are left out, so the zip holds one model or one layer), a city-size shapefile whose DBF is
+    over 10 MB and packs past 100 to 1 (only listed, so it passes) and the model zipped with that layer (only the
+    model is read, so it runs).  From the final verification: a zip whose end record puts every member at a negative
+    offset lists fine, and reading its model made zipfile raise ValueError (the control), which reached the app as a
+    traceback; it is refused now, with a plain message and nothing written.  The file counts of the checks' scratch
+    directory and of outputs/ are the same before and after, and only the prepared models are written.  Equals the
+    committed record (part 'zips')."""
+    from . import fixtures as FX
+    n_scratch, n_out = _count_files(os.getcwd()), _count_files(os.path.join(REPO, "outputs"))
+    with tempfile.TemporaryDirectory(prefix="rm_t15_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.REFUSED_ZIPS + ("zip_two_models.zip", "emailed_model.zip",
+                                                                      "shp_padded_dbf.zip") + FX.REVIEW_ZIPS
+                             + FX.REVIEW_BROKEN_ZIPS)
+        out = os.path.join(d, "prepared")
+        got = FX.zips_part(paths, out)
+        written = sorted(os.listdir(out))
+    assert (_count_files(os.getcwd()), _count_files(os.path.join(REPO, "outputs"))) == (n_scratch, n_out)
+    assert got["refused"] == got["of"] == 3 and got["zip_member_opens_while_refusing"] == 0, got
+    assert got["two_models_blocked"] and got["emailed_model"]["ok"], got
+    models = [r["prepared"] for r in got["review_rows"] if r["kind"] == "epanet_inp_zip"]
+    assert written == sorted([got["emailed_model"]["prepared"]] + models), written
+    assert got["padded_dbf"]["kind"] == "shapefile_zip" and got["padded_dbf"]["dbf_ratio"] > 100, got["padded_dbf"]
+    assert got["total_cap_refuses_when_lowered"]
+    assert got["review_ok"] == got["review_of"] == len(FX.REVIEW_ZIPS), got["review_rows"]
+    city = [r for r in got["review_rows"] if r["fixture"] == "city_mains_shp.zip"][0]
+    assert city["dbf_mb"] > 10 and city["dbf_ratio"] > 100, city            # what the first rule refused
+    assert all(b["kind"] == "epanet_inp_zip" and b["zipfile_alone"] == "raises ValueError" and b["refused"]
+               and b["nothing_written"] for b in got["review_broken"]), got["review_broken"]
+    _same_as_record(got, "zips")
+    return {"refused": got["refused"], "reasons": {r["fixture"]: r["reason"] for r in got["rows"]},
+            "padded_dbf_ratio": got["padded_dbf"]["dbf_ratio"], "files_written": len(written),
+            "review_ok": got["review_ok"], "city_dbf": {k: city[k] for k in ("records", "dbf_mb", "dbf_ratio")},
+            "broken_zips_refused": sum(b["refused"] for b in got["review_broken"])}
+
+
+APP_T15_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+app, bak, gpkg = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def upload(name, path):
+    at = AppTest.from_file(app, default_timeout=900).run()
+    [r for r in at.radio if r.label == "Model"][0].set_value("Upload my .inp")
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    up = at.file_uploader[0]
+    info = {"allowed_type": up.allowed_type, "label": up.label, "help": up.help}
+    up.set_value((name, open(path, "rb").read(), "application/octet-stream"))
+    at.run()
+    assert not at.exception, (name, [e.value for e in at.exception])
+    metric = [m for m in at.metric if m.label.startswith("Junctions likely below")]
+    info.update({"flagged": metric[0].value if metric else None, "flagged_label": metric[0].label if metric else None,
+                 "expanders": [e.label for e in at.expander],
+                 "readiness": [m.value for m in at.markdown if m.value.startswith("**Model readiness")],
+                 "warnings": [w.value for w in at.warning], "errors": [e.value for e in at.error],
+                 "subheaders": [s.value for s in at.subheader]})
+    return info
+
+print("APP_T15_JSON " + json.dumps({"bak": upload("net3_backup.inp.bak", bak), "gpkg": upload("mains.gpkg", gpkg)}))
+"""
+
+
+@check("task15", quick=False)
+def uploader_accepts_any_type():
+    """Headless AppTest of the app's uploader: it sets no file type (allowed_type is empty; the label 'EPANET .inp file'
+    is unchanged, so at.file_uploader[0] still finds it, and its help says any file is identified by its content).
+    net3_backup.inp.bak (Net3 under a backup name) runs the Net3 path: a readiness report that identifies an EPANET
+    model by its content, says the name marks it as a backup copy, says EPANET ran its first hour (the test run, after
+    the final verification) and lists the physics settings as not checked yet, and the default demo's map, 42 of 92
+    junctions flagged.  mains.gpkg (a GeoPackage) gets the plain advice that it
+    is a GIS layer and what to send instead, and the page stops before any simulation; nothing is written for it
+    (measured: no file named after it in outputs/app_uploads or outputs/cache).  The run's copy of the backup and its
+    grid (outputs/app_uploads and outputs/cache, git-ignored) are
+    deleted afterwards, and an earlier copy is moved aside first and put back.  AppTest's set_value may bypass a
+    browser's type filter, so one real-browser upload of a .bak is recorded in the journal (task 15)."""
+    import hashlib
+    from . import fixtures as FX
+    data = FX.FIXTURES["net3_backup.inp.bak"]()
+    up_name = f"{hashlib.sha1(data).hexdigest()[:8]}_net3_backup.inp"       # importers.prepare_inp's name for it
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    had_dir = os.path.isdir(up_dir)
+    mine = lambda d: [f for f in (os.listdir(d) if os.path.isdir(d) else []) if f == up_name or f"_{up_name}" in f
+                      or "mains" in f]
+    aside = tempfile.mkdtemp(prefix="rm_t15_aside_")
+    moved = [(d, f) for d in (up_dir, CACHE) for f in mine(d)]
+    built = []
+    try:
+        for d, f in moved:
+            os.makedirs(os.path.join(aside, os.path.basename(d)), exist_ok=True)
+            shutil.move(os.path.join(d, f), os.path.join(aside, os.path.basename(d), f))
+        with tempfile.TemporaryDirectory(prefix="rm_t15_") as fx:
+            paths = FX.build_all(fx, ["net3_backup.inp.bak", "mains.gpkg"])
+            try:
+                r = subprocess.run([PY, "-c", APP_T15_SCRIPT, os.path.join(REPO, "app.py"), paths["net3_backup.inp.bak"],
+                                    paths["mains.gpkg"]], cwd=os.getcwd(), capture_output=True, text=True,
+                                   env={**os.environ, "PYTHONPATH": REPO})
+            finally:
+                built = {d: mine(d) for d in (up_dir, CACHE)}
+                for d in (up_dir, CACHE):
+                    for f in mine(d):
+                        os.remove(os.path.join(d, f))
+                if not had_dir and os.path.isdir(up_dir) and not os.listdir(up_dir):
+                    os.rmdir(up_dir)
+    finally:
+        for d, f in moved:
+            os.makedirs(d, exist_ok=True)
+            shutil.move(os.path.join(aside, os.path.basename(d), f), os.path.join(d, f))
+        shutil.rmtree(aside, ignore_errors=True)
+    line = [x for x in r.stdout.splitlines() if x.startswith("APP_T15_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    res = json.loads(line[-1][len("APP_T15_JSON "):])
+    b, g = res["bak"], res["gpkg"]
+    for k in (b, g):
+        assert k["allowed_type"] == [] and k["label"] == "EPANET .inp file", k
+        assert "identified by its content" in (k["help"] or ""), k["help"]
+    assert b["flagged"] == f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}", b["flagged"]
+    assert "Model readiness report" in b["expanders"] and b["readiness"], b
+    assert "the name marks it as a backup copy" in b["readiness"][0] and not b["errors"], b
+    assert "Physics settings" in b["readiness"][0] and "not checked yet" in b["readiness"][0], b["readiness"][0]
+    assert "EPANET runs its first hour" in b["readiness"][0] and "| Test run |" in b["readiness"][0], b["readiness"][0]
+    assert built[up_dir] == [up_name] and f"grid24_full_{up_name}.pkl" in built[CACHE], built
+    gpkg_written = sorted(f for d in (up_dir, CACHE) for f in built[d] if "mains" in f)        # measured, not assumed
+    gpkg_stopped = g["flagged"] is None and not g["expanders"] and "What this model accounts for" not in g["subheaders"]
+    assert gpkg_stopped and not gpkg_written, (g, gpkg_written)
+    assert any("GIS layer (GeoPackage)" in w and "EPANET export" in w for w in g["warnings"]), g["warnings"]
+    return {"allowed_type": b["allowed_type"], "bak_flagged": b["flagged"], "bak_upload_name": "<sha1>[:8]_net3_backup.inp",
+            "gpkg_advice": g["warnings"][0][:160], "gpkg_stopped_before_any_run": gpkg_stopped,
+            "gpkg_files_written": len(gpkg_written)}
+
+
+def _pilot_inputs(d: str) -> dict:
+    """Two different models both named zone.inp (Net1, and Net1 with one junction's base demand doubled), a four-month
+    grab log at five taps and its tap map, all invented, for the pilot's real-data path."""
+    from .simulate import LIB
+    net1 = open(os.path.join(LIB, "Net1.inp"), "rb").read()
+    text = net1.decode("utf-8")
+    i = text.index("[JUNCTIONS]")
+    j = text.index("\n 22", i)
+    line = text[j + 1:text.index("\n", j + 1)]
+    tok = line.split()
+    other = text[:j + 1] + line.replace(tok[2], str(2 * float(tok[2])), 1) + text[text.index("\n", j + 1):]
+    assert other != text
+    paths = {}
+    for sub, data in (("a", net1), ("b", other.encode("utf-8"))):
+        os.makedirs(os.path.join(d, sub))
+        paths[sub] = os.path.join(d, sub, "zone.inp")
+        with open(paths[sub], "wb") as fh:
+            fh.write(data)
+    junctions = ["10", "11", "12", "21", "22"]
+    rows = ["date,time,tap_id,free_chlorine_mgL"]
+    for m in range(1, 5):
+        for k, _ in enumerate(junctions):
+            rows.append(f"2026-{m:02d}-{3 + 5 * k:02d},{8 + 2 * k:02d}:15,T{k + 1},{0.9 - 0.12 * k + 0.02 * m:.2f}")
+    paths["log"] = os.path.join(d, "grab_log.csv")
+    with open(paths["log"], "w") as fh:
+        fh.write("\n".join(rows) + "\n")
+    paths["taps"] = os.path.join(d, "tap_map.csv")
+    with open(paths["taps"], "w") as fh:
+        fh.write("tap_id,junction_id\n" + "".join(f"T{k + 1},{j}\n" for k, j in enumerate(junctions)))
+    return paths
+
+
+@check("task15", quick=False)
+def pilot_inp_is_content_hashed_and_private():
+    """The pilot's real-data path, run twice from a fresh working directory with two different models that are both
+    named zone.inp: each is copied to the git-ignored outputs/private/inputs/<sha1>[:8]_zone.inp, so the two get two
+    grids with different values (before task 15 the second run was served the first one's grid, which is keyed by the
+    file name).  A real run's results go to outputs/private/pilot by default, with import_report_zone.json beside them,
+    and outputs/pilot (tracked, the synthetic demonstration) is not created; --synthetic keeps outputs/pilot.  The
+    repository's .gitignore covers outputs/private/, and git status is unchanged.  After the review: --inp with the name
+    of a network bundled with WNTR (Net3) runs by that name as before task 15 (its report, no private copy, so the
+    cached grid is used), and a zipped model leaves one private copy, not two.  After the final verification, the
+    journal's claim for that run is measured, not assumed: 'pilot --inp Net3' on docs/example_grab_log.csv and
+    docs/example_tap_map.csv writes validation_Net3.json, validation_Net3.csv and predictions_Net3.csv byte-identical
+    to the committed files in outputs/pilot (whose all-taps mean is rmse 0.077 and coverage90 0.923)."""
+    import pickle as _pickle
+    from . import fixtures as FX
+    from .pilot import PRIVATE_INPUTS, PRIVATE_OUT, SYNTHETIC_OUT, default_out, prepare_pilot_inp
+    status0 = _git_status()
+    with tempfile.TemporaryDirectory(prefix="rm_t15_pilot_") as d:
+        pin = os.path.join(d, "inputs")
+        bundled, brep = prepare_pilot_inp("Net3", inputs_dir=pin)
+        assert bundled == "Net3" and brep.ok and brep.same_file and not os.path.exists(pin), (bundled, brep.blocking)
+        z = FX.build("emailed_model.zip", d)
+        zp, zrep = prepare_pilot_inp(z, inputs_dir=pin)
+        assert zrep.ok and sorted(os.listdir(pin)) == [os.path.basename(zp)], os.listdir(pin)
+        zipped_copies = len(os.listdir(pin))
+    with tempfile.TemporaryDirectory(prefix="rm_t15_pilot_") as d:      # the bundled name, end to end
+        os.makedirs(os.path.join(d, "outputs"))
+        os.symlink(CACHE, os.path.join(d, "outputs", "cache"))          # Net3's committed grid is read, not rebuilt
+        r = subprocess.run([PY, "-m", "residualmap.pilot", "--inp", "Net3",
+                            "--samples", os.path.join(REPO, "docs", "example_grab_log.csv"),
+                            "--taps", os.path.join(REPO, "docs", "example_tap_map.csv")],
+                           cwd=d, capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+        assert r.returncode == 0, r.stderr[-2000:]
+        bundled_same = {}
+        for f in ("validation_Net3.json", "validation_Net3.csv", "predictions_Net3.csv"):
+            with open(os.path.join(d, PRIVATE_OUT, f), "rb") as a, open(os.path.join(REPO, "outputs", "pilot", f),
+                                                                         "rb") as b:
+                bundled_same[f] = a.read() == b.read()
+    assert all(bundled_same.values()), bundled_same
+    assert default_out(True) == SYNTHETIC_OUT == os.path.join("outputs", "pilot")
+    assert default_out(False) == PRIVATE_OUT == os.path.join("outputs", "private", "pilot")
+    for f in ("outputs/private/pilot/x.csv", "outputs/private/inputs/x.inp"):
+        ign = subprocess.run(["git", "-C", REPO, "check-ignore", "-q", f], capture_output=True)
+        assert ign.returncode == 0, f"{f} is not git-ignored"
+    with tempfile.TemporaryDirectory(prefix="rm_t15_pilot_") as d:
+        p = _pilot_inputs(d)
+        runs = {}
+        for sub in ("a", "b"):
+            r = subprocess.run([PY, "-m", "residualmap.pilot", "--inp", p[sub], "--samples", p["log"], "--taps", p["taps"]],
+                               cwd=d, capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+            assert r.returncode == 0, (sub, r.stderr[-2000:])
+            runs[sub] = sorted(os.listdir(os.path.join(d, PRIVATE_INPUTS)))
+        inputs = runs["b"]
+        grids = sorted(f for f in os.listdir(os.path.join(d, "outputs", "cache")) if f.startswith("grid24_full_"))
+        assert len(inputs) == 2 and all(f.endswith("_zone.inp") for f in inputs) and len(runs["a"]) == 1, runs
+        assert grids == sorted(f"grid24_full_{f}.pkl" for f in inputs), (grids, inputs)
+        Z = [_pickle.load(open(os.path.join(d, "outputs", "cache", g), "rb"))[1] for g in grids]
+        grid_diff = float(np.abs(Z[0] - Z[1]).max())
+        assert grid_diff > 0, grid_diff
+        out = sorted(os.listdir(os.path.join(d, PRIVATE_OUT)))
+        assert {"import_report_zone.json", "predictions_zone.csv", "validation_zone.csv", "validation_zone.json"} <= set(out), out
+        assert not os.path.exists(os.path.join(d, "outputs", "pilot")), "a real run wrote to outputs/pilot"
+        rep = json.load(open(os.path.join(d, PRIVATE_OUT, "import_report_zone.json")))
+        assert rep["ok"] and rep["prepared"] == inputs[[f.startswith(rep["sha1"][:8]) for f in inputs].index(True)], rep
+    assert _git_status() == status0, "git status changed"
+    return {"private_inputs": len(inputs), "grids": len(grids), "grid_values_differ": grid_diff > 0,
+            "default_out_real": PRIVATE_OUT, "default_out_synthetic": SYNTHETIC_OUT, "results": out,
+            "bundled_name_runs_by_name": bundled, "zipped_model_private_copies": zipped_copies,
+            "bundled_name_results_byte_identical_to_outputs_pilot": sorted(bundled_same)}
+
+
+STREAMLIT_CFG_SCRIPT = r"""
+import json, sys
+from streamlit import config
+config._main_script_path = sys.argv[1]          # what 'streamlit run <app.py>' sets before it reads the config
+config.get_config_options(force_reparse=True)
+print("CFG_JSON " + json.dumps({"address": config.get_option("server.address"),
+                                "stats": config.get_option("browser.gatherUsageStats")}))
+"""
+
+
+@check("task15")
+def streamlit_config_private():
+    """.streamlit/config.toml holds server.address = 'localhost' (Streamlit otherwise listens on every network
+    interface) and browser.gatherUsageStats = false, and Streamlit's own config loader, set up the way 'streamlit run
+    app.py' sets it up and started from another folder, reads both."""
+    import tomllib
+    path = os.path.join(REPO, ".streamlit", "config.toml")
+    with open(path, "rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg.get("server", {}).get("address") == "localhost", cfg
+    assert cfg.get("browser", {}).get("gatherUsageStats") is False, cfg
+    with tempfile.TemporaryDirectory(prefix="rm_t15_cfg_") as d:
+        r = subprocess.run([PY, "-c", STREAMLIT_CFG_SCRIPT, os.path.join(REPO, "app.py")], cwd=d, capture_output=True,
+                           text=True, env={**os.environ, "PYTHONPATH": REPO})
+    line = [x for x in r.stdout.splitlines() if x.startswith("CFG_JSON ")]
+    assert r.returncode == 0 and line, r.stderr[-2000:]
+    got = json.loads(line[-1][len("CFG_JSON "):])
+    assert got == {"address": "localhost", "stats": False}, got
+    return {"file": {"server.address": cfg["server"]["address"], "browser.gatherUsageStats": False},
+            "streamlit_reads": got}
 
 
 # ----------------------------------------------------------------------------- runner

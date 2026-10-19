@@ -8,3 +8,4 @@ temp.rpt
 .venv/
 outputs/app_uploads/
 outputs/chem/checks_run.json
+outputs/private/

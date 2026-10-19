@@ -56,7 +56,7 @@ The claim to test is not "the map looks plausible"; it is that the model predict
 - *Seen taps* — the fixed route. These test the month-to-month forecast: can the model, given last quarter's readings, say what this tap will read this month?
 - *New taps* — the 2–3 rotating validation sites, junctions the model has never had a reading from. These test the map: the claim that we can say what the chlorine is where nobody sampled. This is the number that matters, and it is why the protocol adds rotating sites: a fixed route alone can never validate the map.
 
-**Metrics** (all in `outputs/pilot/validation_<name>.csv`):
+**Metrics** (all in `outputs/private/pilot/validation_<name>.csv` for a real run, git-ignored; `outputs/pilot` holds the synthetic demonstration from `--synthetic`):
 - **RMSE and MAE** of the predicted median against the reading, mg/L.
 - **Coverage** of the 50 / 80 / 90 / 95% bands: the share of readings inside each band. A calibrated model gives ≈ 0.50 / 0.80 / 0.90 / 0.95. Under-coverage means the band is too narrow (the model is over-confident); over-coverage means it is too wide to be useful.
 - **Band width**: median width of the 90% band, mg/L — coverage is cheap if the band is a mile wide.

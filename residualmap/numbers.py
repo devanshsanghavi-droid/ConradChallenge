@@ -1,6 +1,8 @@
 """
 numbers.py: every iteration-4 number quoted in the README and the journal traces to a committed file under outputs/
-(iteration 4, task 14).
+(iteration 4, task 14), and every iteration-5 number too (task 15 on: the journal's 'Iteration 5, inputs and access'
+sections, which follow iteration 4's to the end of the file, the README sections and limitations bullets that name
+iteration 5 or its tasks, and the files under outputs/intake/, which count as committed once they are not git-ignored).
 
     python -m residualmap.numbers            # exits 0 when every number is traced or classified, 1 otherwise
     python -m residualmap.numbers --list     # also prints every number that is not traced to a file, with its class
@@ -11,9 +13,11 @@ Two layers.
 1. The registry (REGISTRY).  Each headline number of task 14's own text (the journal's 'Capabilities after iteration
    4' and 'Iteration 4 summary' sections and the README's 'Iteration 4 in one page', their lists of regressions
    included) is tied to one file and key under outputs/, or to one rule over a file (DERIVED, for a range or a share
-   the text quotes), and one format, with a few words of the text around it.  The check: the value, formatted and put
-   into those words, is in that section.  The app's 'What this model accounts for' table needs no registry: it reads its numbers
-   from outputs/ at run time (residualmap/capabilities.py, SOURCES), and every source must resolve.
+   the text quotes), and one format, with a few words of the text around it.  Since task 15 it also holds the headline
+   numbers of each iteration-5 task section (its numbers table and findings) and of the README's iteration-5 bullets.
+   The check: the value, formatted and put into those words, is in that section.  The app's 'What this model accounts
+   for' table needs no registry: it reads its numbers from outputs/ at run time (residualmap/capabilities.py,
+   SOURCES), and every source must resolve.
 
 2. The scan.  Every number in the iteration-4 parts of the README and the journal (the journal from 'Iteration 4,
    chemistry' to its end; the README's iteration-4 sections, its app section and the limitations bullets that name an
@@ -54,8 +58,10 @@ JOURNAL = os.path.join(REPO, "docs", "iteration3_journal.md")
 README = os.path.join(REPO, "README.md")
 JOURNAL_START = "## Iteration 4, chemistry (tasks 8 to 14)"
 IT4_DIRS = ("outputs/chem/", "outputs/chem_2ra/", "outputs/chloramine/")
+IT5_DIRS = ("outputs/intake/",)                       # iteration 5 (task 15 on)
 SELF_REPORT = "outputs/chem/checks_report.json"      # the saved checks' report: its numbers-scan entry is left out
 IT4_TASK = re.compile(r"\b(?:tasks?|Task) (?:8|9|10b?|11|12|13|14)\b|\biteration 4\b|\bIteration 4\b")
+IT5_TASK = re.compile(r"\b(?:tasks?|Task) (?:15b?|16[bc]?|17|18|19|20|21)\b|\b[Ii]teration 5\b")
 
 MONTHS = ("January|February|March|April|May|June|July|August|September|October|November|December|"
           "Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec")
@@ -98,6 +104,9 @@ _T14 = ("runs", "post_task14")
 _T2 = ("acceptance", "T2")
 _MAT14 = ("acceptance", "materiality", "cells", 14)       # Net2, 2ra, straddle_min, 15 samples, RMSE: the material cell
 _FA = ("false_alarms_no_bar", 0)                          # Net3, 2ra, random, 8 samples
+T15, L15 = "Task 15", "Honest limitations (iteration-5"      # iteration 5's sections (task 15 on)
+_I15 = "outputs/intake/task15_import.json"
+_T15R = ("runs", "post_task15_review")          # the rerun on the final tree, after the review
 
 
 def _age(net: str, *keys) -> tuple:
@@ -296,6 +305,63 @@ REGISTRY: list[tuple] = [
     ("README", ONE, "of {} junctions", (_BR, _T14 + ("app_default_demo", "junctions")), "d"),
     ("README", ONE, "finds {} of 36", (_BR, _T14 + ("app_default_demo", "found")), "d"),
     ("README", ONE, "with {} false alarm", (_BR, _T14 + ("app_default_demo", "false_alarms")), "d"),
+] + [
+    # iteration 5, task 15: the journal's 'Task 15' section and the README's iteration-5 limitations bullet
+    ("journal", T15, "| {} of 36, 0 unknown, 25 kinds", (_I15, ("sniff", "identified")), "d"),
+    ("journal", T15, "36 of {}, 0 unknown, 25 kinds", (_I15, ("sniff", "fixtures")), "d"),
+    ("journal", T15, "36 of 36, {} unknown, 25 kinds", (_I15, ("sniff", "unknown")), "d"),
+    ("journal", T15, "0 unknown, {} kinds |", (_I15, ("sniff", "kinds")), "d"),
+    ("journal", T15, "All 36 of the fixture table come back as their kind, across {} kinds", (_I15, ("sniff", "kinds")), "d"),
+    ("journal", T15, "said so | {}; 2 |", (_I15, ("sniff", "decided_with_the_name")), "d"),
+    ("journal", T15, "said so | 2; {} |", (_I15, ("sniff", "name_use_stated")), "d"),
+    ("journal", T15, "decided something for {} of them", (_I15, ("sniff", "decided_with_the_name")), "d"),
+    ("journal", T15, "reported as such | {} of 3 |", (_I15, ("sniff", "backups")), "d"),
+    ("journal", T15, "The {} `.bak` files", (_I15, ("sniff", "backups")), "d"),
+    ("journal", T15, "(tie-breaks) | {} of 2 |", (_I15, ("sniff", "tie_breaks_ok")), "d"),
+    ("journal", T15, "loads as Net3 (`inp_encodings_normalized`) | {} of 3 |", (_I15, ("encodings", "normalized")), "d"),
+    ("journal", T15, "Each of the {} prepared copies", (_I15, ("encodings", "normalized")), "d"),
+    ("journal", T15, "nothing written | {} of 3 |", (_I15, ("encodings", "passed_through")), "d"),
+    ("journal", T15, "while blocking | {} of 4; 0 |", (_I15, ("duplicate_ids", "blocked")), "d"),
+    ("journal", T15, "| 4 of 4; {} |", (_I15, ("duplicate_ids", "wntr_calls_while_blocking")), "d"),
+    ("journal", T15, "With the scan, all {} block before WNTR", (_I15, ("duplicate_ids", "blocked")), "d"),
+    ("journal", T15, "(`zip_uploads_are_safe`) | {} of 3 |", (_I15, ("zips", "refused")), "d"),
+    ("journal", T15, "passes ({} to 1, 0.894 MB)", (_I15, ("zips", "padded_dbf", "dbf_ratio")), ".1f"),
+    ("journal", T15, "155.4 to 1, {} MB)", (_I15, ("zips", "padded_dbf", "dbf_mb")), ".3f"),
+    ("journal", T15, "padded table packs {} to 1", (_I15, ("zips", "padded_dbf", "dbf_ratio")), ".1f"),
+    ("journal", T15, "but unpacks to {} MB passes", (_I15, ("zips", "padded_dbf", "dbf_mb")), ".3f"),
+    ("README", L15, "identified all {} of its pre-registered test files", (_I15, ("sniff", "identified")), "d"),
+    ("README", L15, "and all {} cases the review and its final verification added", (_I15, ("sniff", "review_ok")), "d"),
+    ("journal", T15, "| {} of 50 files byte-identical", (_BR, _T15R + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T15, "50 of {} files byte-identical both times", (_BR, _T15R + ("vs_committed", "n_files")), "d"),
+    # the review's cases (fixtures.REVIEW_*), in the numbers table and Found item 9
+    ("journal", T15, "| {} of 27; 6 of 6 within their bounds", (_I15, ("sniff", "review_ok")), "d"),
+    ("journal", T15, "| 27 of {}; 6 of 6 within their bounds", (_I15, ("sniff", "review_cases")), "d"),
+    ("journal", T15, "| 27 of 27; {} of 6 within their bounds", (_I15, ("sniff", "review_timed_within_bound")), "d"),
+    ("journal", T15, "| 27 of 27; 6 of {} within their bounds", (_I15, ("sniff", "review_timed")), "d"),
+    ("journal", T15, "Net1 (`inp_encodings_normalized`) | {} of 8 |", (_I15, ("encodings", "review_passed_through")), "d"),
+    ("journal", T15, "Net1 (`inp_encodings_normalized`) | 8 of {} |", (_I15, ("encodings", "review_pass_through_of")), "d"),
+    ("journal", T15, "leaves its copy | {} of 3; no |", (_I15, ("duplicate_ids", "review_blocked")), "d"),
+    # the final verification's cases, in the numbers table and Found item 10
+    ("journal", T15, "uploaded under a {}-character name (`inp_encodings_normalized`)",
+     (_I15, ("encodings", "review_upload_names", 0, "name_characters")), "d"),
+    ("journal", T15, "| a {}-byte name, one file left", (_I15, ("encodings", "review_upload_names", 0, "prepared_bytes")), "d"),
+    ("journal", T15, "; a {}-byte name | a 93-byte name", (_I15, ("encodings", "review_upload_names", 1, "prepared_bytes")),
+     "d"),
+    ("journal", T15, "uploaded under a {}-character name (legal on APFS)",
+     (_I15, ("encodings", "review_upload_names", 0, "name_characters")), "d"),
+    ("journal", T15, "(the case gives a {}-byte name", (_I15, ("encodings", "review_upload_names", 0, "prepared_bytes")), "d"),
+    ("journal", T15, "a {}-byte text with a line of 250 quote marks", (_I15, ("sniff", "review_rows", 26, "bytes")), "d"),
+    ("journal", T15, "the model with that layer | {} of 4;", (_I15, ("zips", "review_ok")), "d"),
+    ("journal", T15, "the city table ({} MB at 159.4 to 1)", (_I15, ("zips", "review_rows", 3, "dbf_mb")), ".3f"),
+    ("journal", T15, "the city table (11.595 MB at {} to 1)", (_I15, ("zips", "review_rows", 3, "dbf_ratio")), ".1f"),
+    ("journal", T15, "{} records with three blank", (_I15, ("zips", "review_rows", 3, "records")), ",d"),
+    ("journal", T15, "unpack to {} MB at 159.4 to 1", (_I15, ("zips", "review_rows", 3, "dbf_mb")), ".3f"),
+    ("journal", T15, "file of {} comments it ran", (_I15, ("sniff", "xml_comment_run")), "d"),
+    ("journal", T15, "write all {} files byte-identical", (_BR, _T15R + ("vs_committed", "n_files")), "d"),
+    ("journal", T15, "default demo {} of 92 flagged", (_BR, _T15R + ("app_default_demo", "flagged")), "d"),
+    ("journal", T15, "flagged, {} of 36 found, 1 false alarm", (_BR, _T15R + ("app_default_demo", "found")), "d"),
+    ("journal", T15, "36 of {} found, 1 false alarm", (_BR, _T15R + ("app_default_demo", "unsampled_violations")), "d"),
+    ("journal", T15, "36 of 36 found, {} false alarm", (_BR, _T15R + ("app_default_demo", "false_alarms")), "d"),
 ]
 
 
@@ -308,8 +374,12 @@ class Section:
 
 
 def tracked_outputs() -> list[str]:
+    """The committed JSON and CSV files under outputs/, plus iteration 5's files under outputs/intake/ that are not
+    git-ignored and not committed yet (a task's record is committed with the task, after its checks pass)."""
     out = subprocess.run(["git", "-C", REPO, "ls-files", "outputs"], capture_output=True, text=True).stdout.split()
-    return [f for f in out if f.endswith((".json", ".csv"))]
+    out += subprocess.run(["git", "-C", REPO, "ls-files", "--others", "--exclude-standard", *IT5_DIRS],
+                          capture_output=True, text=True).stdout.split()
+    return sorted({f for f in out if f.endswith((".json", ".csv"))})
 
 
 _VALUES: dict[str, np.ndarray] = {}
@@ -442,12 +512,17 @@ def sections() -> list[Section]:
     for s in re.split(r"(?m)^(?=## )", r):
         head = s.splitlines()[0] if s.strip() else ""
         title = head.lstrip("# ").strip()
-        if "iteration 4" in head.lower() or title.startswith("The app"):
+        if "iteration 4" in head.lower() or "iteration 5" in head.lower() or title.startswith("The app"):
             out.append(Section("README", title, s, _cited(s, tracked)))
         elif title == "Honest limitations":
             bullets = [b for b in re.split(r"(?m)^(?=- )", s) if b.startswith("- ") and IT4_TASK.search(b)]
             text = "\n".join(bullets)
             out.append(Section("README", "Honest limitations (iteration-4 bullets)", text, _cited(text, tracked)))
+            bullets5 = [b for b in re.split(r"(?m)^(?=- )", s) if b.startswith("- ") and IT5_TASK.search(b)
+                        and not IT4_TASK.search(b)]
+            if bullets5:
+                text = "\n".join(bullets5)
+                out.append(Section("README", "Honest limitations (iteration-5 bullets)", text, _cited(text, tracked)))
     return out
 
 
@@ -479,7 +554,8 @@ def scan(verbose: bool = False) -> Result:
     res = Result()
     tracked = tracked_outputs()
     it4 = [f for f in tracked if f.startswith(IT4_DIRS)]
-    p_it4, p_all, p_code = pool(it4), pool(tracked), code_values()
+    it5 = [f for f in tracked if f.startswith(IT5_DIRS)]
+    p_it4, p_it5, p_all, p_code = pool(it4), pool(it5), pool(tracked), code_values()
     for sec in sections():
         p_sec = pool(sec.cited)
         # paragraph-level pools: the files a paragraph cites (a table also takes its caption paragraph's), tried first
@@ -514,7 +590,7 @@ def scan(verbose: bool = False) -> Result:
             hit = None
             for level, p in (("file cited in its paragraph", p_par.get(bi, np.zeros(0))),
                              ("file cited in its section", p_sec), ("iteration-4 outputs", p_it4),
-                             ("outputs", p_all)):
+                             ("iteration-5 outputs", p_it5), ("outputs", p_all)):
                 if found(p, v, half, pct):
                     hit = (level, p)
                     break
@@ -633,8 +709,8 @@ def main(argv=None) -> int:
                   f"be caught {caught} of {tested} times ({caught / tested:.0%})")
     print("  (an integer is matched at plus or minus 0.5, and an 'X of Y' count found in no file is accepted when X/Y "
           "is a stored rate; the registry below is the exact check for the numbers it covers)")
-    print(f"registry: {sum(ok for ok, _, _ in res.registry)} of {len(res.registry)} task-14 headline numbers match "
-          f"their file and key")
+    print(f"registry: {sum(ok for ok, _, _ in res.registry)} of {len(res.registry)} headline numbers (task 14, and "
+          f"iteration 5's) match their file and key")
     for ok, entry, msg in res.registry:
         if not ok:
             print(f"  MISMATCH {entry[:3]}: {msg}")
@@ -644,7 +720,7 @@ def main(argv=None) -> int:
     for sec, tok, ctx in res.unexplained:
         print(f"  [{sec}] {tok!r}  ...{ctx.strip()[:120]}...")
     ok = not res.unexplained and res.sources_ok and all(ok for ok, _, _ in res.registry)
-    print("OK: every iteration-4 number traces to outputs/ or is classified" if ok else "FAIL")
+    print("OK: every iteration-4 and iteration-5 number traces to outputs/ or is classified" if ok else "FAIL")
     return 0 if ok else 1
 
 

@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 68,
+ "n_pass": 75,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,35 +1306,35 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 147,
+    "registry_ok": 197,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 965,
-     "date": 66,
-     "identifier": 547,
+     "code or path": 1161,
+     "date": 67,
+     "identifier": 582,
      "link target": 12,
      "run cost (logs, df)": 6,
      "seed range": 20,
-     "setting or literature value written in the code": 14,
+     "setting or literature value written in the code": 18,
      "time of day": 46
     },
     "traced": {
-     "iteration-4 outputs": 188,
-     "file cited in its section": 3050,
-     "file cited in its paragraph": 4035,
+     "iteration-4 outputs": 204,
+     "file cited in its section": 3053,
+     "file cited in its paragraph": 4200,
      "outputs": 5
     },
-    "n_tokens": 7299,
+    "n_tokens": 7487,
     "power_caught_of_tested": {
      "decimal": [
-      757,
-      8469
+      776,
+      8497
      ],
      "integer": [
-      784,
-      5323
+      818,
+      5643
      ]
     }
    }
@@ -1344,7 +1344,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 21,
+    "iteration4_texts_checked": 27,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -1362,6 +1362,148 @@
       27,
       28
      ]
+    }
+   }
+  },
+  {
+   "name": "sniff_identifies_realistic_files",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "fixtures": 36,
+    "identified": 36,
+    "unknown": 0,
+    "decided_with_the_name": 2,
+    "backups": 3,
+    "kinds": 25,
+    "tie_breaks_ok": 2,
+    "review_cases": 27,
+    "review_ok": 27,
+    "review_timed": 6,
+    "review_timed_within_bound": 6
+   }
+  },
+  {
+   "name": "inp_encodings_normalized",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "normalized": 3,
+    "passed_through": 3,
+    "decoded_as": {
+     "inp_with_bom.inp": "utf-8 with a byte-order mark",
+     "net3_cp1252_title.inp": "cp1252 (Windows Western European)",
+     "inp_utf16.inp": "utf-16 (little-endian, with a byte-order mark)",
+     "net3_cp1252_undefined_byte.inp": "cp1252 (Windows Western European), with 1 byte it leaves undefined read as latin-1"
+    },
+    "review_passed_through": 8,
+    "long_upload_name": {
+     "name_characters": 250,
+     "prepared_bytes": 93,
+     "files_left": [
+      "b91fcf19_ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ.inp"
+     ]
+    }
+   }
+  },
+  {
+   "name": "inp_duplicate_ids_block",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "blocked": 4,
+    "wntr_calls_while_blocking": 0,
+    "without_the_scan": {
+     "net3_dup_junction.inp": "loads without a word: 92 junctions from 93 lines",
+     "net3_junction_tank_collision.inp": "loads without a word: 93 junctions from 93 lines; the simulator raises AttributeError",
+     "net3_dup_pipe.inp": "loads without a word: 117 pipes from 118 lines",
+     "net3_long_id_32.inp": "raises AssertionError"
+    },
+    "review_blocked": 3,
+    "review_without_the_scan": {
+     "net1_accented_id_cp1252.inp": "loads, and the simulator raises EpanetException",
+     "net3_long_pattern_id.inp": "raises AssertionError",
+     "net3_singular_pipe_dup.inp": "loads, and the simulator runs"
+    },
+    "blocked_by_wntr_leaves_nothing": true,
+    "blocked_by_the_test_run": {
+     "path": true,
+     "bytes": true
+    }
+   }
+  },
+  {
+   "name": "zip_uploads_are_safe",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "refused": 3,
+    "reasons": {
+     "zip_slip.zip": "a member's path leaves the zip's own folder (../../evil.inp)",
+     "zip_ratio_bomb.zip": "The zip is refused: member model.inp would unpack to 21 MB, 1029 times its packed size (more than 100 to 1).",
+     "zip_absolute.zip": "a member's path leaves the zip's own folder (/tmp/evil.inp)"
+    },
+    "padded_dbf_ratio": 155.4,
+    "files_written": 3,
+    "review_ok": 4,
+    "city_dbf": {
+     "records": 15000,
+     "dbf_mb": 11.595,
+     "dbf_ratio": 159.4
+    },
+    "broken_zips_refused": 1
+   }
+  },
+  {
+   "name": "uploader_accepts_any_type",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "allowed_type": [],
+    "bak_flagged": "42 of 92",
+    "bak_upload_name": "<sha1>[:8]_net3_backup.inp",
+    "gpkg_advice": "This file is a GIS layer (GeoPackage): application id GPKG; layers: water_mains (features). ResidualMap reads EPANET models. A GIS layer holds pipes and their s",
+    "gpkg_stopped_before_any_run": true,
+    "gpkg_files_written": 0
+   }
+  },
+  {
+   "name": "pilot_inp_is_content_hashed_and_private",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "private_inputs": 2,
+    "grids": 2,
+    "grid_values_differ": true,
+    "default_out_real": "outputs/private/pilot",
+    "default_out_synthetic": "outputs/pilot",
+    "results": [
+     "import_report_zone.json",
+     "predictions_zone.csv",
+     "validation_zone.csv",
+     "validation_zone.json"
+    ],
+    "bundled_name_runs_by_name": "Net3",
+    "zipped_model_private_copies": 1,
+    "bundled_name_results_byte_identical_to_outputs_pilot": [
+     "predictions_Net3.csv",
+     "validation_Net3.csv",
+     "validation_Net3.json"
+    ]
+   }
+  },
+  {
+   "name": "streamlit_config_private",
+   "group": "task15",
+   "pass": true,
+   "detail": {
+    "file": {
+     "server.address": "localhost",
+     "browser.gatherUsageStats": false
+    },
+    "streamlit_reads": {
+     "address": "localhost",
+     "stats": false
     }
    }
   },

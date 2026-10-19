@@ -24,11 +24,18 @@ on the edge of the decay grid, a labelled fallback for the chloramine demo truth
 lines for the disinfectant, the measured species, the threshold and its source, how the seasons are handled, and
 'validated in simulation only'.  No temperature or TOC input to the decay model: both were tested in simulation and
 not adopted (chloramine mode asks for this month's water temperature for the nitrification watch only).
+
+Iteration 5, task 15: the uploader takes any file and identifies it by its content (residualmap/importers.py).  An
+EPANET model goes through prepare_inp: a byte-order mark, UTF-16 or a Windows code page is fixed in a copy, IDs are
+checked before WNTR parses, and a 'Model readiness report' says what came from the file, what was derived, what is
+assumed and what is missing (the model's physics settings are listed as not checked yet).  Any other file gets plain
+advice on what to send instead, and the page stops.  A clean UTF-8 .inp is stored exactly as before
+(outputs/app_uploads/<sha1>[:8]_<name>), so its grid cache name is unchanged.  .streamlit/config.toml keeps the
+server on localhost and usage statistics off, from the next start of the server.
 """
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import io
 import json
 import os
@@ -50,6 +57,7 @@ from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, 
 from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
 from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
 from residualmap.features import build_features
+from residualmap.importers import prepare_inp
 from residualmap.route import plan_route
 from residualmap.simgp import DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_edge_mass, simulator_grid_24h
 from residualmap.simulate import LIB, build_scenario, hidden_chem_draws, nominal_scenario, source_nodes
@@ -73,28 +81,59 @@ st.set_page_config(page_title="ResidualMap", layout="wide")
 st.title("ResidualMap")
 st.caption("Your EPANET model + the grab samples you already take → a chlorine map of every junction, "
            "with an honest band, the junctions likely below 0.2 mg/L at any hour of the day, and where to sample next.")
+intake_box = st.container()        # the uploaded file's readiness report or advice (iteration 5, task 15)
+UPLOAD_HELP = "any file: it is identified by its content"
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def upload_model(data: bytes, name: str, disinfectant: str):
+    """importers.prepare_inp on an upload, cached per file, name and disinfectant: (path or None, readiness report).
+    A clean UTF-8 .inp is written as outputs/app_uploads/<sha1>[:8]_<name>, as before task 15; a fixed copy as
+    <sha1 of the new text>[:8]_<stem>.inp; a file that is not a model, or is blocked, leaves nothing there."""
+    return prepare_inp(data, UPLOAD_DIR, disinfectant, name=name)
+
+
+def show_intake(box, rep) -> None:
+    """The upload's advice (not a model), its blocking problems, or its readiness report, in the main area."""
+    if rep.not_a_model:
+        box.warning(rep.advice())
+        return
+    if rep.blocking:
+        box.error("This model cannot run yet. " + " ".join(rep.blocking))
+    with box.expander("Model readiness report", expanded=bool(rep.blocking or rep.fixes or rep.warnings)):
+        st.markdown(rep.to_markdown())
 
 
 # ----------------------------------------------------------------------------- inputs
 with st.sidebar:
     st.header("1. Your network")
     src = st.radio("Model", ["Example network", "Upload my .inp"], horizontal=True)
+    up = None
     if src == "Upload my .inp":
-        up = st.file_uploader("EPANET .inp file", type=["inp"])
+        up = st.file_uploader("EPANET .inp file", type=None, help=UPLOAD_HELP)
         if up is None:
             st.stop()
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        digest = hashlib.sha1(up.getvalue()).hexdigest()[:8]
-        net_path = os.path.join(UPLOAD_DIR, f"{digest}_{os.path.basename(up.name)}")
-        if not os.path.exists(net_path):
-            with open(net_path, "wb") as fh:
-                fh.write(up.getvalue())
     else:
         net_path = EXAMPLES[st.selectbox("Example", list(EXAMPLES))]
     ca = st.radio("Disinfectant", DISINFECTANTS, index=0,
                   help="A chloraminated system measures TOTAL chlorine, which decays far more slowly than free chlorine. "
                        "The chloramine mode uses its own decay ranges, dose axis, likelihood scale and threshold; free and "
                        "total chlorine readings are never mixed.") == DISINFECTANTS[1]
+    if up is not None:
+        disinfectant = "chloramine" if ca else "free_chlorine"
+        try:            # prepare_inp turns what is in a file into plain problems; this is the last guard for the rest
+            net_path, readiness = upload_model(up.getvalue(), up.name, disinfectant)
+            if net_path is not None and not os.path.exists(net_path):     # the stored copy was removed since
+                upload_model.clear()
+                net_path, readiness = upload_model(up.getvalue(), up.name, disinfectant)
+        except Exception as e:  # noqa: BLE001
+            net_path, readiness = None, None
+            intake_box.error(f"This file could not be read ({type(e).__name__}). Send the model's EPANET export "
+                             f"(.inp) again, on its own.")
+        if readiness is not None:
+            show_intake(intake_box, readiness)
+        if net_path is None:
+            st.stop()
     if ca:
         dose = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
                                help="Total chlorine (chloramine) at the source. The model treats it as uncertain and lets "
