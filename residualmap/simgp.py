@@ -24,6 +24,7 @@ See pinn.py for the graph-PINN baseline that tests this claim rather than assert
 from __future__ import annotations
 
 import itertools
+import multiprocessing
 import os
 import pickle
 import shutil
@@ -193,7 +194,9 @@ def build_grid_24h(sc, grid: str = "full", n_jobs: int | None = None, cond: Chem
         jobs = [(sc.wn_name, kb, kw, g, sc.source_dose, dm, rm, list(sc.junctions), os.path.join(tmp, f"g{i}")) + extra
                 for i, (kb, kw, g, dm, rm) in enumerate(params)]
         if n_jobs > 1 and len(jobs) > 8:
-            with ProcessPoolExecutor(max_workers=n_jobs) as ex:
+            # spawn, said explicitly (iteration 5, task 20): the Mac's default already, so nothing here changes;
+            # Linux's default, fork, inside a threaded server such as the hosted demo's can deadlock
+            with ProcessPoolExecutor(max_workers=n_jobs, mp_context=multiprocessing.get_context("spawn")) as ex:
                 rows = list(ex.map(_grid_member, jobs, chunksize=4))
         else:
             rows = [_grid_member(j) for j in jobs]
@@ -427,7 +430,8 @@ class SimGP24:
     def __init__(self, sc, X: pd.DataFrame, seed: int = 0, lik_sd: float | None = None,
                  cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
                  grid: str = "full", local_hydraulic: bool = True, doses=None, smooth_hours: bool = True,
-                 threshold: float | None = None, cond: Chemistry | None = None, log_prior: np.ndarray | None = None):
+                 threshold: float | None = None, cond: Chemistry | None = None, log_prior: np.ndarray | None = None,
+                 grid_data: tuple | None = None):
         # lik_sd, doses and threshold left as None follow the condition's disinfectant (task 12 review): free chlorine
         # (cond None) gets the committed LIK_SD, DOSE_GRID and 0.2, exactly as before; a chloramine condition gets
         # LIK_SD_CA, DOSES_CA and 0.5 (chemistry.DEFAULT_THRESHOLD_MGL), so the chloramine grid never runs on free
@@ -442,7 +446,12 @@ class SimGP24:
         # task 12: the grid's chemistry condition (None: the committed free-chlorine grids; a chloramine condition with
         # grid='chloramine') and an optional log prior over the grid members (None: uniform, the committed arithmetic)
         self.cond, self.log_prior = cond, log_prior
-        self.params, self.Z = simulator_grid_24h(sc, cache_dir, grid, cond=cond)  # members x 24 x J
+        # grid_data (iteration 5, task 20): the grid as build_grid_24h returns it, for the hosted demo's uploads, whose
+        # grid is kept in the visitor's session and never cached on disk; None reads or builds the cached grid as before
+        if grid_data is not None:
+            check_grid_disinfectant(grid, cond)
+        self.params, self.Z = (simulator_grid_24h(sc, cache_dir, grid, cond=cond) if grid_data is None
+                               else grid_data)  # members x 24 x J
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
         if self.n_hyd > 1:
             check_grid_order(self.params, self.n_hyd)

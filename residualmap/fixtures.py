@@ -2568,6 +2568,139 @@ FIXTURES.update(REVIEW_16B_FIXTURES)
 TAP_FIXTURES = TAP_FIXTURES + tuple(REVIEW_16B_FIXTURES)
 
 
+# ----------------------------------------------------------------------------- task 20: the hosted demo's limits
+# A square grid model of n x n junctions, invented (schematic coordinates, 100 m apart, Hazen-Williams, LPS), for the
+# hosted demo's limit checks (the review of task 20): a model far over the 300-junction limit whose zip is well under
+# the 5 MB file limit (n = 180: 32,400 junctions, about 4 MB of text in a zip of about 1 MB), and the same padded with
+# comment lines so that its zip unpacks past 5 MB.  Not in FIXTURES, since build_all would then write megabytes for
+# every check that builds them all: the task-20 checks call these directly.
+def cloud_grid_inp(n: int, pad_bytes: int = 0) -> bytes:
+    """An n x n grid model fed from one reservoir; pad_bytes of ';' comment lines after its title."""
+    out = ["[TITLE]", f"Synthetic {n} x {n} grid (ResidualMap fixture, invented)"]
+    pad = ";" + "padding comment line, ignored by EPANET " * 2 + "\n"
+    text_pad = pad * (pad_bytes // len(pad) + 1) if pad_bytes else ""
+    out += [text_pad.rstrip("\n")] if text_pad else []
+    out += ["", "[JUNCTIONS]"]
+    out += [f"J{i}_{j} {100 + (7 * i + 3 * j) % 20} 0.1" for i in range(n) for j in range(n)]
+    out += ["", "[RESERVOIRS]", "R1 200", "", "[PIPES]", "P0 R1 J0_0 100 600 130 0 Open"]
+    k = 1
+    for i in range(n):
+        for j in range(n):
+            for di, dj in ((0, 1), (1, 0)):
+                if i + di < n and j + dj < n:
+                    out.append(f"P{k} J{i}_{j} J{i + di}_{j + dj} {50 + (11 * k) % 150} {(150, 200, 300)[k % 3]} "
+                               f"{90 + (13 * k) % 50} 0 Open")
+                    k += 1
+    out += ["", "[COORDINATES]", "R1 -100 -100"]
+    out += [f"J{i}_{j} {j * 100} {i * 100}" for i in range(n) for j in range(n)]
+    out += ["", "[TIMES]", "Duration 24:00", "Hydraulic Timestep 1:00", "", "[OPTIONS]", "Units LPS",
+            "Headloss H-W", "", "[END]", ""]
+    return "\n".join(out).encode("ascii")
+
+
+def cloud_grid_zip(n: int, pad_bytes: int = 0) -> bytes:
+    """cloud_grid_inp(n, pad_bytes) as the one member of a zip, as a model is often emailed."""
+    return _zip([(f"grid{n}.inp", cloud_grid_inp(n, pad_bytes))])
+
+
+# The final verification of task 20: models under both of those limits that cost far more than their size says, each
+# the 17 x 17 grid (289 junctions) with one thing added, and a small grab-log workbook whose shared strings unpack to
+# far more than the file is.  Invented; not in FIXTURES either.
+CLOUD_COST_N = 17
+CLOUD_PATTERN = "1 " + " ".join(f"{0.8 + 0.4 * ((i * 7) % 10) / 10:.2f}" for i in range(24))
+
+
+def _cloud_grid_text(n: int = CLOUD_COST_N) -> str:
+    return cloud_grid_inp(n).decode("ascii")
+
+
+def cloud_parallel_pipes_inp(total_bytes: int = 4_700_000, n: int = CLOUD_COST_N) -> bytes:
+    """The n x n grid and parallel pipes between neighbouring junctions until the file is about total_bytes (the
+    verification's 4.7 MB file had about 125,000 links: 127 s and 3.7 GB to prepare under the old limits)."""
+    text = _cloud_grid_text(n)
+    jn = [f"J{i}_{j}" for i in range(n) for j in range(n)]
+    extra, size, k = [], len(text), 0
+    while size < total_bytes:
+        a = k % (n * n)
+        line = f"Q{k} {jn[a]} {jn[(a + 1) % (n * n)]} 100 150 100 0 Open"
+        extra.append(line)
+        size += len(line) + 1
+        k += 1
+    return text.replace("\n\n[COORDINATES]", "\n" + "\n".join(extra) + "\n\n[COORDINATES]", 1).encode("ascii")
+
+
+def cloud_pattern_step_inp(step: str = "0:01", n: int = CLOUD_COST_N) -> bytes:
+    """The n x n grid with a 24-step demand pattern and PATTERN TIMESTEP step (h:mm; the verification's 1-minute step
+    took 38 s a 7-day run, and a 10-second step more than 400 s, against 0.7 s at an hour)."""
+    return _cloud_grid_text(n).replace("[TIMES]", f"[PATTERNS]\n{CLOUD_PATTERN}\n\n[TIMES]\nPattern Timestep {step}",
+                                       1).encode("ascii")
+
+
+def cloud_rules_inp(n_rules: int = 300, step: str = "0:00:01", n: int = CLOUD_COST_N) -> bytes:
+    """The n x n grid with a tank and n_rules rule-based controls checked every step (h:mm:ss; 300 rules every second
+    took 34 s a run, every minute 0.6 s)."""
+    text = _cloud_grid_text(n).replace("[PIPES]", "[TANKS]\nT0 100 5 0 10 10 0\n\n[PIPES]", 1)
+    text = text.replace("\n\n[COORDINATES]", "\nPT0 T0 J0_5 100 150 100 0 Open\n\n[COORDINATES]", 1)
+    rules = [f"RULE R{k}\nIF SYSTEM CLOCKTIME >= {k % 12 + 1}:{k % 60:02d} AM\nAND TANK T0 LEVEL ABOVE {k % 7}\n"
+             f"THEN PIPE P{k % 500 + 1} STATUS IS OPEN\nELSE PIPE P{k % 500 + 1} STATUS IS CLOSED\n" for k in range(n_rules)]
+    text = text.replace("[COORDINATES]", "[RULES]\n" + "\n".join(rules) + "\n\n[COORDINATES]", 1)
+    return text.replace("[TIMES]", f"[TIMES]\nRule Timestep {step}", 1).encode("ascii")
+
+
+def cloud_controls_inp(total_bytes: int = 4_900_000, n: int = CLOUD_COST_N) -> bytes:
+    """The n x n grid with timed controls, one a second, until the file is about total_bytes (about 150,000 lines:
+    its intake ran past 90 s)."""
+    text = _cloud_grid_text(n)
+    lines, size, k = [], len(text), 1
+    while size < total_bytes:
+        line = (f"LINK P{1 + k % 500} {'OPEN' if k % 2 else 'CLOSED'} AT TIME {k // 3600}:{(k // 60) % 60:02d}:"
+                f"{k % 60:02d}")
+        lines.append(line)
+        size += len(line) + 1
+        k += 1
+    return text.replace("[COORDINATES]", "[CONTROLS]\n" + "\n".join(lines) + "\n\n[COORDINATES]", 1).encode("ascii")
+
+
+SHARED_STRINGS_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+
+
+def shared_strings_bomb_xlsx(unpacked_bytes: int = 190_000_000) -> bytes:
+    """A 20-row grab log (written by openpyxl) whose workbook also declares a shared-strings part of about
+    unpacked_bytes of one repeated string (the verification's: a 466 KB file unpacking to 190 MB, 407 to 1, which
+    openpyxl read in 32 s and 1 GB, even in read-only mode)."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["date", "time", "tap_id", "free_chlorine_mgL"])
+    for d in range(1, 21):
+        ws.append([f"2026-09-{d:02d}", "10:00", f"T{d % 3 + 1}", 0.5])
+    buf = io.BytesIO()
+    wb.save(buf)
+    item = "<si><t>x</t></si>"
+    k = unpacked_bytes // len(item)
+    strings = (f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{k}" '
+               f'uniqueCount="{k}">' + item * k + "</sst>").encode("ascii")
+    import re
+    src = zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+    parts = []
+    for i in src.infolist():
+        data = src.read(i.filename)
+        if i.filename == "[Content_Types].xml":
+            data = data.replace(b"</Types>", f'<Override PartName="/xl/sharedStrings.xml" '
+                                             f'ContentType="{SHARED_STRINGS_TYPE}" /></Types>'.encode("ascii"))
+        if i.filename == "docProps/core.xml":        # openpyxl stamps the time of writing: fixed, so the bytes are too
+            data = re.sub(rb"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", b"2026-01-01T00:00:00Z", data)
+        parts.append((i.filename, data))
+    parts.append(("xl/sharedStrings.xml", strings))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for fname, data in parts:
+            zi = zipfile.ZipInfo(fname, date_time=ZIP_TIME)
+            zi.external_attr = 0o644 << 16
+            z.writestr(zi, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+    return out.getvalue()
+
+
 # (fixture, kind it must come back as, the file name may decide something, a backup copy)
 SNIFF_TABLE: list[tuple[str, str, bool, bool]] = [
     ("net3_as_txt.txt", "epanet_inp", False, False), ("net3_backup.inp.bak", "epanet_inp", False, True),

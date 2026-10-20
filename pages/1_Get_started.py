@@ -16,17 +16,24 @@ map's grid is never built), from a copy in a temporary folder under the git-igno
 A table is read as a grab log on its own (its columns guessed, its rows counted, the main page's 3-month window
 given, every row that would not be used listed with its reason), as a tap map, or as a junction list (a junction
 column and no tap column: not a tap map, said so).  Anything else gets its advice.  Nothing is kept.
+
+Iteration 5, task 20 (residualmap/cloud.py): in cloud mode a privacy notice opens the page, the intro no longer says
+everything runs on this laptop, and 'Check a file' is turned off (no uploader) unless cloud uploads are allowed; then a
+file of up to cloud.UPLOAD_MB MB is checked in a temporary folder under the system's temporary directory, not under
+outputs/, deleted at once, with the hosted demo's model limits (cloud.intake_limits): since the final verification
+of task 20 the model is checked in a process of its own, in that folder and with a time limit (cloud.prepare_upload),
+and an Excel table is held to cloud.WORKBOOK_MB once unpacked (TABLE_LIMITS).  The guide's words that tell a
+visitor to upload, or name the repository's folders, are swapped for the hosted demo's (cloud.guide_section).  The
+sidebar names this page 'Get started' (cloud.run_pages).
 """
 from __future__ import annotations
 
-import contextlib
 import csv
 import datetime as dt
 import io
 import os
 import re
 import sys
-import tempfile
 
 import streamlit as st
 
@@ -34,6 +41,7 @@ APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if APP_ROOT not in sys.path:
     sys.path.insert(0, APP_ROOT)
 
+from residualmap import cloud  # noqa: E402
 from residualmap.importers import (LOG_WINDOW_MONTHS, LogRefused, dropped_lines, guess_log_columns,  # noqa: E402
                                    guess_tap_columns, have_openpyxl, prepare_inp, read_grab_log, read_table, sniff,
                                    xlsx_bytes)
@@ -48,6 +56,9 @@ TEMPLATE_FILES = (("grab_log_template.csv", "Grab log, free chlorine (CSV)"),
                   ("plant_log_template.csv", "Plant log, optional, read by the pilot script only (CSV)"))
 XLSX_TEMPLATE = ("grab_log_template.xlsx", "Grab log, free chlorine (Excel)")
 DISINFECTANTS = {"Free chlorine": "free_chlorine", "Chloramine (total chlorine)": "chloramine"}
+CLOUD = cloud.is_cloud(APP_ROOT)              # task 20: the hosted demo
+UPLOADS = cloud.uploads_allowed(APP_ROOT)     # always True in local mode
+TABLE_LIMITS = cloud.table_limits() if CLOUD else {}     # task 20: a workbook's size once unpacked, in the hosted demo
 
 
 def guide_sections(path: str = GUIDE) -> dict[str, str]:
@@ -81,7 +92,7 @@ def check_table(data: bytes, name: str, species: str, s) -> None:
     junction list (a GIS or EPANET junction export) when it has a junction column but no tap column (the review of
     task 16: this crashed the page); else as a grab log read without a tap map, with the main page's window."""
     try:
-        t = read_table(data, name)
+        t = read_table(data, name, **TABLE_LIMITS)
     except LogRefused as e:
         st.warning(str(e) + ("" if s.category == "table" else f" {s.advice}"))
         return
@@ -99,7 +110,7 @@ def check_table(data: bytes, name: str, species: str, s) -> None:
                     f"template in step 2).")
         return
     try:
-        g = read_grab_log(data, name, None, disinfectant=species)
+        g = read_grab_log(data, name, None, disinfectant=species, **TABLE_LIMITS)
     except LogRefused as e:
         st.warning(f"As a grab log: {e}")
         return
@@ -122,12 +133,14 @@ def check_table(data: bytes, name: str, species: str, s) -> None:
 
 st.set_page_config(page_title="ResidualMap: bring your data", layout="wide")
 st.title("Bring your data")
-st.caption("Three steps: export the network from the software that holds it, put your grab samples in a log ResidualMap "
-           "reads, and check any file before you use it on the main page. Everything runs on this laptop.")
+if CLOUD:      # task 20: the privacy notice at the top of the page
+    st.info(cloud.notice(UPLOADS))
+st.caption(cloud.get_started_intro(CLOUD, UPLOADS))
 
 # ----------------------------------------------------------------------------- step 1
 st.header("Step 1. Which software holds your network?")
-sections = guide_sections()
+# task 20: in cloud mode the guide's words that tell a visitor to upload, or name the repository's folders, are swapped
+sections = {k: cloud.guide_section(k, v, CLOUD, UPLOADS) for k, v in guide_sections().items()}
 choices = [k for k in sections if k != SAMPLES_SECTION]
 choice = st.radio("Which software holds your network?", choices, index=0)
 st.markdown(sections[choice])
@@ -153,26 +166,38 @@ else:
 
 # ----------------------------------------------------------------------------- step 3
 st.header("Step 3. Check a file")
+if not UPLOADS:      # task 20: the hosted demo, examples only
+    st.caption(cloud.CHECK_OFF)
+    st.stop()
 st.caption("Give it any file: a model, a drawing, a GIS layer, a grab log, a tap map. It says what the file is, by what "
            "is inside it, and what to send instead. A model gets the same readiness report as on the main page: the "
            "model is opened and run for one hour to make sure it works, but no map is built. Nothing is kept.")
 species_label = st.radio("Disinfectant", list(DISINFECTANTS), index=0, horizontal=True, key="check_disinfectant")
-up = st.file_uploader("Check a file", type=None, help="any file: it is identified by its content")
+up = st.file_uploader("Check a file", type=None, help="any file: it is identified by its content",
+                      max_upload_size=cloud.UPLOAD_MB if CLOUD else None)
+if up is not None and CLOUD and cloud.too_big(up.size):      # task 20: the hosted demo's limit
+    st.error(cloud.too_big(up.size))
+    st.stop()
 if up is not None:
     data, name, species = up.getvalue(), up.name, DISINFECTANTS[species_label]
     s = sniff(data, name)
     st.subheader("What this file is")
     st.markdown(f"**{s.sentence()}**")
     if s.is_model:
-        os.makedirs(CHECK_DIR, exist_ok=True)
-        try:
-            with tempfile.TemporaryDirectory(prefix="check_", dir=CHECK_DIR) as d:
-                path, rep = prepare_inp(data, d, species, name=name)
+        # under the git-ignored outputs/private/check_a_file in local mode, as before; in cloud mode under the system's
+        # temporary directory, so nothing is written under outputs/ (task 20); deleted at once either way
+        # and in cloud mode with the hosted demo's limits (cloud.intake_limits): a zip's model over the file limit is
+        # refused before it is unpacked, and a model over the junction limit before WNTR parses it
+        with cloud.temporary_folder("check_", CHECK_DIR) as d:
+            path, rep = (cloud.prepare_upload(data, d, species, name, APP_ROOT) if CLOUD else
+                         prepare_inp(data, d, species, name=name))
+            refusal = cloud.limit_refusal(rep) if CLOUD else None
+            if refusal:
+                st.error(refusal)
+            else:
                 st.markdown(rep.to_markdown())
-        finally:
-            with contextlib.suppress(OSError):
-                os.rmdir(CHECK_DIR)              # only when empty: another check may be running
-        st.caption("This is the readiness report the main page shows when you upload this model there.")
+        if not refusal:
+            st.caption("This is the readiness report the main page shows when you upload this model there.")
     elif s.category == "table" or s.kind == "text_other":     # text with a title line before its header too
         try:
             check_table(data, name, species, s)

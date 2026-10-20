@@ -1,13 +1,15 @@
-wntr>=1.5
-scikit-learn>=1.4
-numpy
-pandas
-scipy
-networkx
-matplotlib
-streamlit>=1.30
+wntr==1.5.0
+scikit-learn==1.9.1
+numpy==2.5.3
+pandas==3.0.6
+scipy==1.18.1
+networkx==3.7
+matplotlib==3.11.2
+streamlit==1.64.0
 # the saved checks only (python -m residualmap.checks): reads the app's PDF (iteration 4, task 14)
-pypdf
+pypdf==6.19.0
 # iteration 5, task 16: Excel grab logs and the .xlsx template (read through pandas; without it an Excel log is refused with "save it as CSV")
 openpyxl==3.1.5
 et-xmlfile==2.0.0
+# iteration 5, task 20: every line is pinned to the version installed in .venv, so the hosted demo's build on Streamlit
+# Community Cloud matches this Mac (the requirements_pinned check)

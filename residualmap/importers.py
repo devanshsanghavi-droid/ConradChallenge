@@ -36,7 +36,8 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   was found and EPANET ran the model's first hour (a test run, set up as the app's first run, in a temporary folder;
   WNTR reads a junction no pipe connects, and EPANET then stops).  An upload name too long for a file name once the
   digest is added is shortened (prepared_name).  Nothing in a file makes it raise: any failure after the file is read
-  is a blocking problem.
+  is a blocking problem.  Since task 20 it takes the hosted demo's limits (max_model_bytes, max_junctions), checked
+  before a zip's model is unpacked and before WNTR parses the text; without them it takes any size, as before.
 - Task 15b, the model's physics, each a row of the readiness report (fix_reactions_text, dw_to_hw, _physics_report):
   reaction orders other than 1 are set to 1; per-pipe BULK and per-tank TANK lines are cleared and a LIMITING
   POTENTIAL set to 0 (per-pipe WALL lines are ignored, since the grid sets every wall rate); a Darcy-Weisbach model is
@@ -127,6 +128,8 @@ ZIP_MAX_TOTAL = 200_000_000           # uncompressed bytes in all members (200 M
 ZIP_RATIO_MAX = 100                    # compression ratio refused, for the member that is read ...
 ZIP_RATIO_MIN_SIZE = 10_000_000        # ... when it is over this many uncompressed bytes (10 MB)
 ZIP_MAX_MEMBERS = 10000
+WORKBOOK_RATIO_MIN_SIZE = 1_000_000     # task 20: with read_table's max_unpacked, a workbook part over this many bytes
+                                       # unpacked is held to ZIP_RATIO_MAX, as read_zip_member holds a model
 JSON_MAX_BYTES = 50 * 1024 * 1024      # JSON files parsed whole up to this size, by their first 64 KB above it
 TEXT_SCAN_MAX = 50 * 1024 * 1024       # an EPANET-looking text whose sections start after 64 KB is searched whole up to this
 JSON_MAX_DEPTH = 64                    # nesting followed when coordinates are collected from a GeoJSON geometry
@@ -175,6 +178,9 @@ _INP_HEADER = re.compile(r"(?m)^[^\S\n]*\[([A-Za-z]+)\](?=[^\S\n]|;|$)")
 NODE_SECTIONS = ("JUNCTIONS", "RESERVOIRS", "TANKS")
 LINK_SECTIONS = ("PIPES", "PUMPS", "VALVES")
 NAMED_SECTIONS = ("PATTERNS", "CURVES")   # their first token is a pattern or curve ID, repeated on continuation lines
+# task 20: the sections prepare_inp's max_model_lines leaves out, the title and the drawing's own (EPANET draws them
+# and does not simulate them); every other section's data lines count
+UNSIMULATED_SECTIONS = ("TITLE", "COORDINATES", "VERTICES", "LABELS", "BACKDROP")
 
 
 def _canonical_section(name: str) -> str:
@@ -1201,6 +1207,7 @@ class IdScan:
     warnings: list = field(default_factory=list)
     n_coordinates: int = 0                            # data lines in [COORDINATES]
     coordinate_ids: set = field(default_factory=set)  # the node IDs those lines name
+    lines: dict = field(default_factory=dict)         # section -> data lines, every section (task 20's line limit)
 
 
 def _where(sections: list[str]) -> str:
@@ -1218,7 +1225,8 @@ def scan_inp_ids(text: str) -> IdScan:
       copy is UTF-8, so an accented ID of 31 characters in a Windows code page can be too long once copied (WNTR,
       which counts characters, stops on 32 with an AssertionError).
     IDs that differ only by upper and lower case are a warning (some EPANET versions treat them as one ID).  Also
-    collects the node IDs of the [COORDINATES] lines, for the readiness report.
+    collects the node IDs of the [COORDINATES] lines, for the readiness report, and (task 20) the data lines of every
+    section, for the hosted demo's limits (prepare_inp's max_model_lines).
     The text is read the way WNTR's reader reads it, so no header form WNTR accepts gets past the scan: lines end at
     LF, CR or CR-LF only (str.splitlines would also split at a form feed or a vertical tab, which WNTR reads as
     spaces), a header's name is matched like WNTR's ([PIPE] is [PIPES]: _canonical_section), and [END] ends the
@@ -1239,6 +1247,7 @@ def scan_inp_ids(text: str) -> IdScan:
         if section is None:
             continue
         tok = s.split()
+        out.lines[section] = out.lines.get(section, 0) + 1
         if section in NODE_SECTIONS or section in LINK_SECTIONS:
             group = "node" if section in NODE_SECTIONS else "link"
             out.counts[section] = out.counts.get(section, 0) + 1
@@ -1676,31 +1685,38 @@ def run_cost(n_junctions: int, disinfectant: str, uniform_c: bool = False, secon
     of the last day and junction: 64.8 KB per junction for the 675-run free-chlorine grid, 138.2 KB for chloramine's
     1440 runs), the temporary EPANET files of one run per worker while it builds, and, given one timed 7-day run, the
     minutes it takes (runs times that run, over the measured effective speedup EFFECTIVE_SPEEDUP, not the worker
-    count).  'large': more junctions than LARGE_JUNCTIONS, which needs an explicit confirm."""
+    count).  'large': more junctions than LARGE_JUNCTIONS, which needs an explicit confirm.
+    Iteration 5, task 20: workers given explicitly and fewer than EFFECTIVE_SPEEDUP (the hosted demo's 2) cap the
+    speedup at the worker count, recorded as 'speedup'; left as None (every caller before task 20) nothing changes."""
     from .simgp import GRIDS
     grid = grid_for(disinfectant, uniform_c)
     runs = 1
     for axis in GRIDS[grid]:
         runs *= len(axis)
     mb = runs * 24 * n_junctions * FLOAT32_BYTES / 1e6
+    capped = workers is not None and workers < EFFECTIVE_SPEEDUP
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
     out = {"grid": grid, "runs_per_dose": runs, "grid_file_mb": round(mb, 1), "junctions": n_junctions,
            "large": n_junctions > LARGE_JUNCTIONS, "workers": workers,
            "temp_files_mb": round(TEMP_MB_PER_JUNCTION * n_junctions * workers, 1)}
     if seconds_per_run is not None:
-        est = estimate_seconds(float(seconds_per_run), runs)
+        speedup = float(workers) if capped else EFFECTIVE_SPEEDUP
+        est = estimate_seconds(float(seconds_per_run), runs, speedup)
         out["seconds_per_run"] = round(float(seconds_per_run), 3)
         out["estimate_s"] = est                   # unrounded: what run_cost_gate scores
         out["minutes"] = round(est / 60, 1)
+        if capped:
+            out["speedup"] = speedup
     return out
 
 
-def estimate_seconds(seconds_per_run: float, runs: int) -> float:
+def estimate_seconds(seconds_per_run: float, runs: int, speedup: float = EFFECTIVE_SPEEDUP) -> float:
     """The grid build's time estimate (task 15b, item 10, as the plan states it): one timed 7-day run times the number
     of runs, over the assumed effective parallel speedup EFFECTIVE_SPEEDUP.  On a small model, where starting the
     workers takes most of the time, the build takes longer than this, and on a large one less
-    (outputs/intake/run_cost_timing.json: Net3's builds took 1.4 to 2.1 times the estimate, ky10's 0.64)."""
-    return seconds_per_run * runs / EFFECTIVE_SPEEDUP
+    (outputs/intake/run_cost_timing.json: Net3's builds took 1.4 to 2.1 times the estimate, ky10's 0.64).  speedup:
+    a smaller one when fewer workers than that run the grid (run_cost, the hosted demo's 2 workers, task 20)."""
+    return seconds_per_run * runs / speedup
 
 
 def prepared_name(digest: str, name: str, keep_name: bool) -> str:
@@ -1715,7 +1731,11 @@ def prepared_name(digest: str, name: str, keep_name: bool) -> str:
 
 
 def prepare_inp(src, out_dir: str, disinfectant: str = "free_chlorine", name: str | None = None,
-                parse: bool = True) -> tuple[str | None, Readiness]:
+                parse: bool = True, max_junctions: int | None = None, max_model_bytes: int | None = None,
+                workers: int | None = None, max_links: int | None = None, max_tanks_reservoirs: int | None = None,
+                max_model_lines: int | None = None, min_pattern_step_s: float | None = None,
+                min_rule_step_s: float | None = None, max_seconds_per_run: float | None = None,
+                max_run_minutes: float | None = None) -> tuple[str | None, Readiness]:
     """(inp_path, Readiness) for a model file given as a path or as bytes.
 
     A clean UTF-8 file given as a path comes back as that path, untouched.  Clean bytes are written to out_dir as
@@ -1730,7 +1750,25 @@ def prepare_inp(src, out_dir: str, disinfectant: str = "free_chlorine", name: st
 
     Never raises for what is in the file: a failure anywhere after the file is read (a zip that breaks on reading, a
     copy that cannot be saved, an error no test foresaw) comes back as a blocking problem in plain words, with
-    nothing left in out_dir.  A wrong disinfectant, or a path that does not exist, still raises."""
+    nothing left in out_dir.  A wrong disinfectant, or a path that does not exist, still raises.
+
+    Limits (iteration 5, task 20, the hosted demo; None, the default, takes any size as before): max_model_bytes, the
+    largest model taken, a zip's model by the size its directory declares, before it is unpacked; max_junctions, the
+    largest model by its [JUNCTIONS] lines, counted in the text by scan_inp_ids before WNTR parses it, so a model over
+    the limit costs no load, no test run and no timed run.  Either refusal is a blocking problem, recorded in
+    rep.flags['over_limit'] ({'what': 'model_bytes' or 'junctions', 'value', 'limit'}, and for a size, 'unpacked':
+    whether it is a zip's model).  workers: the grid's worker
+    count for the run cost (run_cost).
+    The final verification of task 20 found models under both limits that cost far more than their size says (a
+    model of 289 junctions and about 120,000 parallel pipes, 4.7 MB, took 127 s and 3.7 GB to prepare; a 60-second
+    pattern step took 38 s a run), so a run can also be held, in the text before WNTR parses it, to max_links (pipes,
+    pumps and valves), max_tanks_reservoirs and max_model_lines (data lines in every section but
+    UNSIMULATED_SECTIONS); once WNTR has read it and before EPANET runs it, to a pattern time step of at least
+    min_pattern_step_s (EPANET cuts its hydraulic step to the pattern step) and, for a model with rule-based
+    controls, a rule time step of at least min_rule_step_s; and after its one timed 7-day run, to max_seconds_per_run
+    and an estimated grid build (run_cost) of at most max_run_minutes.  Each refusal is recorded in
+    rep.flags['over_limit'] with its 'what' ('links', 'tanks_reservoirs', 'model_lines', 'pattern_step_s',
+    'rule_step_s', 'seconds_per_run', 'run_minutes'), and nothing is kept."""
     if disinfectant not in DISINFECTANT_WORDS:
         raise ValueError(f"disinfectant must be one of {sorted(DISINFECTANT_WORDS)}")
     if isinstance(src, (bytes, bytearray, memoryview)):
@@ -1743,7 +1781,11 @@ def prepare_inp(src, out_dir: str, disinfectant: str = "free_chlorine", name: st
             data = fh.read()
     rep = Readiness(name=os.path.basename(name), disinfectant=disinfectant, sha1=_sha1(data))
     try:
-        return _prepare(data, path, name, out_dir, disinfectant, parse, rep)
+        lim = {"max_junctions": max_junctions, "max_model_bytes": max_model_bytes, "max_links": max_links,
+               "max_tanks_reservoirs": max_tanks_reservoirs, "max_model_lines": max_model_lines,
+               "min_pattern_step_s": min_pattern_step_s, "min_rule_step_s": min_rule_step_s,
+               "max_seconds_per_run": max_seconds_per_run, "max_run_minutes": max_run_minutes}
+        return _prepare(data, path, name, out_dir, disinfectant, parse, rep, lim, workers)
     except Exception as e:  # noqa: BLE001  (a crafted or broken file must reach the user as a plain problem)
         rep.prepared, rep.same_file = None, False
         rep.blocking.append(f"This file could not be prepared ({type(e).__name__}); nothing was kept. Send the "
@@ -1865,8 +1907,23 @@ def _reaction_rows(rep: Readiness) -> None:
             DERIVED if bits else FROM_FILE)
 
 
+def _over_limit(rep: Readiness, what: str, value, limit, sentence: str,
+                unpacked: bool | None = None) -> tuple[None, Readiness]:
+    """A model over one of prepare_inp's limits (task 20): blocked, with nothing read further or kept.  unpacked: for
+    a size refusal, whether it is a zip's model by its declared size.  A count is kept as an integer, a time (seconds
+    or minutes) rounded to 3 decimals."""
+    num = lambda v: int(v) if float(v).is_integer() else round(float(v), 3)
+    rep.flags["over_limit"] = {"what": what, "value": num(value), "limit": num(limit)}
+    if unpacked is not None:
+        rep.flags["over_limit"]["unpacked"] = unpacked
+    rep.blocking.append(sentence)
+    return None, rep
+
+
 def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectant: str, parse: bool,
-             rep: Readiness) -> tuple[str | None, Readiness]:
+             rep: Readiness, lim: dict | None = None, workers: int | None = None) -> tuple[str | None, Readiness]:
+    lim = lim or {}
+    max_model_bytes = lim.get("max_model_bytes")
     s = sniff(data, name)
     rep.sniff = s.as_dict()
     if s.kind == "epanet_inp_zip":
@@ -1875,7 +1932,14 @@ def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectan
                                 f"model at a time.")
             return None, rep
         try:
-            data = read_zip_member(data, s.members[0])
+            if max_model_bytes is not None:       # task 20: by the declared size, before the member is unpacked
+                size = next(i.file_size for i in zip_listing(data) if i.filename == s.members[0])
+                if size > max_model_bytes:
+                    return _over_limit(rep, "model_bytes", size, max_model_bytes,
+                                       f"The model in this zip is {size / 1e6:.1f} MB once unpacked, more than the "
+                                       f"{max_model_bytes / 1e6:g} MB this run takes, so it was not unpacked; nothing "
+                                       f"was kept.", unpacked=True)
+            data = read_zip_member(data, s.members[0], **({} if max_model_bytes is None else {"limit": max_model_bytes}))
         except ZipRefused as e:
             rep.blocking.append(f"The zip is refused: {e}.")
             return None, rep
@@ -1891,12 +1955,31 @@ def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectan
     elif not s.is_model:
         rep.not_a_model = True
         return None, rep
+    if max_model_bytes is not None and len(data) > max_model_bytes:
+        return _over_limit(rep, "model_bytes", len(data), max_model_bytes,
+                           f"The model is {len(data) / 1e6:.1f} MB, more than the {max_model_bytes / 1e6:g} MB this "
+                           f"run takes, so it was not read; nothing was kept.", unpacked=False)
     rep.add("File", "an EPANET model (.inp), identified by its content"
             + ("; the name marks it as a backup copy" if s.backup else ""), FROM_FILE)
     text, how = decode_text(data)
     rep.add("Text encoding", how, FROM_FILE)
     _decode_fix(rep, data, how)
     ids = scan_inp_ids(text)
+    lines_in = ids.counts.get
+    sizes = (("junctions", lines_in("JUNCTIONS", 0), "max_junctions", "junctions"),      # task 20: before WNTR parses it
+             ("links", lines_in("PIPES", 0) + lines_in("PUMPS", 0) + lines_in("VALVES", 0), "max_links",
+              "links (pipes, pumps and valves)"),
+             ("tanks_reservoirs", lines_in("TANKS", 0) + lines_in("RESERVOIRS", 0), "max_tanks_reservoirs",
+              "tanks and reservoirs"),
+             ("model_lines", sum(v for k, v in ids.lines.items() if k not in UNSIMULATED_SECTIONS), "max_model_lines",
+              "lines of model data (its title and drawing sections aside)"))
+    for what, count, key, words in sizes:
+        limit = lim.get(key)
+        if limit is not None and count > limit:
+            _remove_stale(out_dir, _stale_names(name, [data, text.encode("utf-8")]), path)
+            return _over_limit(rep, what, count, limit,
+                               f"This model has {count:,} {words}, more than the {limit:,} this run takes, so it was "
+                               f"not read further; nothing was kept.")
     rep.blocking += ids.blocking
     rep.warnings += ids.warnings
     fixed, rinfo = (text, None) if rep.blocking else fix_reactions_text(text)
@@ -1923,7 +2006,7 @@ def _prepare(data: bytes, path: str | None, name: str, out_dir: str, disinfectan
         rep.prepared = os.path.basename(out_path)
         replacement = None
         if parse:
-            accepted, replacement = _read_and_report(read_path, out_path, rep, ids, disinfectant, fixed)
+            accepted, replacement = _read_and_report(read_path, out_path, rep, ids, disinfectant, fixed, workers, lim)
         else:
             accepted = True
         if accepted and replacement is not None:      # a Darcy-Weisbach model, converted: the copy holds the new text
@@ -2275,6 +2358,55 @@ def _dw_report(rep: Readiness, conv: dict) -> None:
                             f"the model with Hazen-Williams, or ask your modeller.")
 
 
+def _step_limits(rep: Readiness, wn, ids: IdScan, lim: dict) -> bool:
+    """prepare_inp's time-step limits (task 20), read from WNTR's load, which is what EPANET is given, before EPANET
+    runs the model: True (and the model refused) when its pattern time step is under min_pattern_step_s (EPANET cuts
+    every hydraulic step to it: a 60-second step made one 7-day run of a 289-junction grid take 38 s instead of 0.7),
+    or, when the file has rule-based controls ([RULES] lines), its rule time step is under min_rule_step_s (300 rules
+    checked every second took 34 s a run; every 60 s, 0.6)."""
+    t = wn.options.time
+    pattern = float(t.pattern_timestep or 3600)     # EPANET reads a step of 0 as an hour
+    floor = lim.get("min_pattern_step_s")
+    if floor is not None and pattern < floor:
+        _over_limit(rep, "pattern_step_s", pattern, floor,
+                    f"This model's patterns step every {_duration(pattern)}, shorter than the {_duration(floor)} this "
+                    f"run takes (EPANET would solve the network at every step), so it was not run; nothing was kept.")
+        return True
+    rule, floor = float(t.rule_timestep or 0), lim.get("min_rule_step_s")
+    if floor is not None and ids.lines.get("RULES", 0) and 0 < rule < floor:
+        _over_limit(rep, "rule_step_s", rule, floor,
+                    f"This model checks its rules every {_duration(rule)}, more often than the {_duration(floor)} "
+                    f"this run takes, so it was not run; nothing was kept.")
+        return True
+    return False
+
+
+def _run_limits(rep: Readiness, c: dict, lim: dict) -> bool:
+    """prepare_inp's limits on the timed 7-day run (task 20): True (and the model refused) when that run took more
+    than max_seconds_per_run, or the grid build it gives (run_cost's estimate) is more than max_run_minutes."""
+    most, secs = lim.get("max_seconds_per_run"), c["seconds_per_run"]
+    if most is not None and secs > most:
+        _over_limit(rep, "seconds_per_run", secs, most,
+                    f"One 7-day run of this model took {secs:.1f} s, more than the {most:g} s this run takes, so its "
+                    f"grid of {c['runs_per_dose']} runs was not started; nothing was kept.")
+        return True
+    most, minutes = lim.get("max_run_minutes"), c["estimate_s"] / 60
+    if most is not None and minutes > most:
+        _over_limit(rep, "run_minutes", minutes, most,
+                    f"This model's grid of {c['runs_per_dose']} runs would take about {minutes:.0f} min here, more "
+                    f"than the {most:g} min this run takes, so it was not started; nothing was kept.")
+        return True
+    return False
+
+
+def _duration(seconds: float) -> str:
+    """A time step in words: '60 s', '15 min', '1 h'."""
+    s = float(seconds)
+    if s < 60 or s % 60:
+        return f"{s:g} s"
+    return f"{s / 60:g} min" if s < 3600 or s % 3600 else f"{s / 3600:g} h"
+
+
 def _timed_member_run(path: str, gamma: float) -> float:
     """Seconds for one 7-day EPANET run of the file exactly as a grid member runs it (simulate_nominal_chlorine at
     kb 0.40, kw 0.70), in a temporary folder that is removed; it raises when EPANET cannot run it."""
@@ -2287,12 +2419,14 @@ def _timed_member_run(path: str, gamma: float) -> float:
 
 
 def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan, disinfectant: str,
-                     text: str) -> tuple[bool, str | None]:
+                     text: str, workers: int | None = None, lim: dict | None = None) -> tuple[bool, str | None]:
     """WNTR's load of the prepared copy, the report rows that need it, the physics checks (task 15b), EPANET's test run
     of the first hour, the Darcy-Weisbach conversion and its gate, and one timed 7-day run for the run cost.
     (accepted, replacement): accepted is False (with a blocking problem) when WNTR cannot read it, the model has no
     entry point, a physics check blocks or a run fails; replacement is the converted text of a Darcy-Weisbach model,
-    which _prepare saves instead of the copy read here."""
+    which _prepare saves instead of the copy read here.  workers: the grid's worker count for the run cost (None: the
+    default, as before task 20).  lim: prepare_inp's limits (task 20); the time steps are held to theirs before
+    EPANET runs the model, and the timed run to its own after it (_run_limits)."""
     import wntr
     from .simgp import GRIDS
     from .simulate import source_nodes
@@ -2335,6 +2469,8 @@ def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan,
     roughness = [float(wn.get_link(pn).roughness) for pn in scored]
     left_out = len(wn.pipe_name_list) - len(scored)
     n_junctions = wn.num_junctions
+    if _step_limits(rep, wn, ids, lim or {}):       # task 20: before EPANET runs it
+        return False, None
     problem = _test_run(wn)            # it changes wn's time and quality options: nothing below reads them
     if problem:
         rep.blocking.append(problem)
@@ -2393,13 +2529,17 @@ def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan,
                                 f"{msg[:200]}). Open the model in EPANET or the modelling package, fix what it reports, "
                                 f"and export it again.")
             return False, None
-    rep.run_cost = run_cost(n_junctions, disinfectant, uniform, secs)
+    rep.run_cost = run_cost(n_junctions, disinfectant, uniform, secs, workers)
     c = rep.run_cost
     est = c["estimate_s"]
+    if _run_limits(rep, c, lim or {}):              # task 20: after the timed run
+        return False, None
     rep.add(RUN_COST_ROW, f"{c['runs_per_dose']} EPANET runs per dose (the {c['grid']} grid), once per file: about "
                           + (f"{max(1, round(est)):d} s" if est < 60 else f"{c['minutes']:g} min")
                           + f" here, estimated as {c['runs_per_dose']} times one 7-day run ({c['seconds_per_run']:.2f} s) "
-                          f"over an assumed parallel speedup of {EFFECTIVE_SPEEDUP:g}. The real speedup grows with the "
+                          f"over an assumed parallel speedup of {c.get('speedup', EFFECTIVE_SPEEDUP):g}"
+                          + (f" (at most the {c['workers']} workers that build grids here)" if "speedup" in c else "")
+                          + f". The real speedup grows with the "
                           f"model's size, because starting the workers takes a fixed time: a small model's grid takes "
                           f"longer than this estimate, a large one's less. A grid file of about {c['grid_file_mb']:g} MB "
                           f"and up to "
@@ -2693,14 +2833,32 @@ def _xlsx_cells(data: bytes) -> tuple[list, list, str]:
         wb.close()
 
 
-def read_table(data: bytes, name: str = "") -> LogTable:
+def workbook_parts(data: bytes, max_unpacked: int) -> list[zipfile.ZipInfo]:
+    """The parts of an Excel workbook (a zip) under the hosted demo's limits (task 20), before openpyxl unpacks any of
+    them: at most max_unpacked bytes unpacked in all (zip_listing), and no part over WORKBOOK_RATIO_MIN_SIZE bytes
+    unpacked packed more than ZIP_RATIO_MAX to 1 (read_zip_member's rule for a model).  openpyxl loads the shared
+    strings, the styles and the theme whole, even in read-only mode: the final verification of task 20 sent a 466 KB
+    workbook whose shared strings unpacked to 190 MB, 407 to 1, which took 32 s and 1 GB to read.  Raises
+    ZipRefused."""
+    infos = zip_listing(data, max_total=max_unpacked)
+    for i in infos:
+        if i.file_size > WORKBOOK_RATIO_MIN_SIZE and i.file_size > ZIP_RATIO_MAX * max(i.compress_size, 1):
+            raise ZipRefused(f"its part {i.filename} would unpack to {i.file_size / 1e6:.0f} MB, "
+                             f"{i.file_size / max(i.compress_size, 1):.0f} times its packed size (more than "
+                             f"{ZIP_RATIO_MAX:g} to 1)")
+    return infos
+
+
+def read_table(data: bytes, name: str = "", max_unpacked: int | None = None) -> LogTable:
     """A grab log or tap map as a table: delimited text in any encoding decode_text reads (a byte-order mark, UTF-16, a
     Windows code page), separated by commas, semicolons, tabs or vertical bars (found by _table_layout, which also
     passes over a title or 'Lab:/Exported' lines before the header and Excel's 'sep=;' line), or an Excel workbook
     (.xlsx, its first sheet that holds a table, through openpyxl with the row and column caps of _xlsx_cells, typed
     cells kept).  The header is the first row with two or more filled cells (for text, the header _table_layout
     finds).  Each row's number is its line in the file (or its row in the sheet).  Raises LogRefused for anything else
-    (a legacy .xls, a PDF, a model), with the sniff's advice."""
+    (a legacy .xls, a PDF, a model), with the sniff's advice.  max_unpacked (task 20, the hosted demo; None, the
+    default, as before): a workbook is first held to workbook_parts' limits, so a small file that unpacks to far more
+    is refused before openpyxl opens it."""
     if len(data) > LOG_MAX_BYTES:
         raise LogRefused(f"The file is {len(data) / 1e6:.0f} MB, more than the {LOG_MAX_BYTES / 1e6:.0f} MB a log is read "
                          f"up to. Send the last few months only.")
@@ -2711,10 +2869,14 @@ def read_table(data: bytes, name: str = "") -> LogTable:
             raise LogRefused("This is an Excel workbook, and openpyxl, which reads one, is not installed here. Save "
                              "the sheet as CSV (File, Save As, CSV UTF-8) and upload that.")
         try:
-            zip_listing(data)                      # the size limits of a zip, before openpyxl unpacks anything
+            if max_unpacked is None:
+                zip_listing(data)                  # the size limits of a zip, before openpyxl unpacks anything
+            else:
+                workbook_parts(data, max_unpacked)     # task 20: the hosted demo's, tighter
             cells, numbers, how = _xlsx_cells(data)
         except ZipRefused as e:
-            raise LogRefused(f"The workbook is refused: {e}.") from None
+            raise LogRefused(f"The workbook is refused: {e}." + ("" if max_unpacked is None else
+                             " Save the sheet as CSV (File, Save As, CSV UTF-8) and upload that.")) from None
         except Exception as e:  # noqa: BLE001  (a damaged workbook)
             raise LogRefused(f"The workbook could not be read ({type(e).__name__}). Save the sheet as CSV and upload "
                              f"that.") from None
@@ -3229,10 +3391,12 @@ class GrabLog:
         return f, c, info
 
 
-def read_tap_map(data: bytes, name: str = "tap_map.csv", mapping: dict | None = None) -> tuple[dict, LogTable, dict]:
+def read_tap_map(data: bytes, name: str = "tap_map.csv", mapping: dict | None = None,
+                 max_unpacked: int | None = None) -> tuple[dict, LogTable, dict]:
     """(tap ID -> junction ID, the table, the columns used).  IDs are kept as text, leading zeros included.  A tap
-    listed twice with two different junctions is refused; listed twice with one junction, it is kept once."""
-    t = read_table(data, name)
+    listed twice with two different junctions is refused; listed twice with one junction, it is kept once.
+    max_unpacked: read_table's (task 20)."""
+    t = read_table(data, name, max_unpacked)
     cols = dict(guess_tap_columns(t.header))
     cols.update({k: v for k, v in (mapping or {}).items() if v})
     if cols["tap"] not in t.header or cols["junction"] not in t.header:
@@ -3326,7 +3490,8 @@ def _values_text(values) -> str:
 def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: bytes | None = None,
                   taps_name: str = "tap_map.csv", disinfectant: str = "free_chlorine", date_format: str | None = None,
                   mapping: dict | None = None, start_clock_h: float = 0.0, analyzer_hour: float = ANALYZER_HOUR,
-                  tap_mapping: dict | None = None, thin_analyzers: bool = True) -> GrabLog:
+                  tap_mapping: dict | None = None, thin_analyzers: bool = True,
+                  max_unpacked: int | None = None) -> GrabLog:
     """A grab log and its tap map read for the model (task 16).  The columns are guessed (guess_columns) and any
     given in mapping ({'tap', 'reading', 'date', 'time', 'analyte', 'unit'}, header names; 'time' None for one datetime
     column, 'analyte' or 'unit' None for none; and 'analyte_value', the one analyte whose rows are read) replace the
@@ -3349,13 +3514,14 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
     IDs that are numbers in the log and not found as written are matched by number (Excel drops leading zeros), with
     a warning.  taps_data None reads each tap ID as its own junction (the Get started page's check of a log alone).
     Raises LogRefused when the log cannot be read as it is (with a question when a date reads two ways or a log has
-    both species and no reading column was chosen)."""
+    both species and no reading column was chosen).  max_unpacked: read_table's, for the log and the tap map (task
+    20, the hosted demo)."""
     import pandas as pd
     if disinfectant not in DISINFECTANT_WORDS:
         raise ValueError(f"disinfectant must be one of {sorted(DISINFECTANT_WORDS)}")
     if date_format is not None and "%" not in date_format and date_format not in DATE_ORDERS:
         raise ValueError(f"date_format must be one of {sorted(DATE_ORDERS)} or a strptime format with '%'")
-    t = read_table(log_data, log_name)
+    t = read_table(log_data, log_name, max_unpacked)
     guess = guess_columns(t, disinfectant)
     cols = {k: guess[k] for k in ("tap", "reading", "date", "time", "analyte", "unit")}
     for k, v in (mapping or {}).items():
@@ -3474,7 +3640,8 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
     if zoned:
         warns.append(f"{zoned} date{'s' if zoned != 1 else ''} carry a time zone mark (Z, UTC or an offset): each time "
                      f"is read as written. If the log's times are UTC, export them in local time.")
-    taps, tmap_cols = (None, {}) if taps_data is None else read_tap_map(taps_data, taps_name, tap_mapping)[0::2]
+    taps, tmap_cols = ((None, {}) if taps_data is None else
+                       read_tap_map(taps_data, taps_name, tap_mapping, max_unpacked)[0::2])
     by_number = {}
     if taps is not None:
         for k in taps:

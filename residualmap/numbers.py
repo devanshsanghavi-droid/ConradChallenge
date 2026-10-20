@@ -133,6 +133,8 @@ _GR = ("georef", "review")
 _T16BS = ("runs", "post_task16b_final_verification")   # the rerun on the stopped tree, after the final verification
 _TM = ("urban_grid", "transmission_main_variants")
 _GF = ("georef", "review", "final")              # the final verification's georeference cases
+T20 = "Task 20"                                  # task 20's journal section (the hosted demo)
+_T20R = ("runs", "post_task20")                 # the rerun on task 20's tree
 
 
 def _age(net: str, *keys) -> tuple:
@@ -150,8 +152,71 @@ def _pct_range(ratios) -> str:
     return f"{lo} to {hi}%"
 
 
+def _check_detail(name: str) -> dict:
+    """One saved check's detail in the committed checks report (task 20 quotes the local app's numbers from it)."""
+    report = _json(PATH_OVERRIDE.get(SELF_REPORT, SELF_REPORT))
+    return next(c for c in report["checks"] if c["name"] == name)["detail"]
+
+
+def _cd(name: str, *keys):
+    """A value inside one saved check's detail, key by key (task 20's numbers table, after its review)."""
+    v = _check_detail(name)
+    for k in keys:
+        v = v[k]
+    return v
+
+
+_MD, _EX, _UP = "mode_detection_fails_safe", "cloud_mode_examples_only", "cloud_mode_uploads_leave_no_files"
+_LIM = (_MD, "limits_before_parsing")
+_CR = (_MD, "costly_models_refused")             # the final verification of task 20
+
+
 # Rules over a file, for numbers the text quotes as a range or a share: name -> (files it reads, function).
 DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
+    # task 20: the local app's chloramine demo on Net3 (EPA's chemistry in EPANET-MSX) and its Net2 map, which the
+    # hosted demo's numbers are compared with (app_task14_runs, in the committed checks report)
+    "t20_msx_chloramine_flagged_Net3": ((SELF_REPORT,), lambda: _check_detail("app_task14_runs")["chloramine_net3"]["flagged"]),
+    "t20_local_net2_flagged": ((SELF_REPORT,), lambda: _check_detail("app_task14_runs")["net2_flagged"]),
+    # task 20's own checks (the hosted demo, cloud mode), as its journal's numbers table quotes them, after its review
+    **{f"t20_{k}": ((SELF_REPORT,), (lambda keys: lambda: _cd(*keys))(keys)) for k, keys in {
+        "mode_cases": (_MD, "mode_cases"), "upload_cases": (_MD, "upload_cases"),
+        "req_lines": ("requirements_pinned", "lines"),
+        "hosted_upload_mb": ("hosted_start_settings", "streamlit_reads", "hosted", "upload_mb"),
+        "app_upload_mb": ("hosted_start_settings", "streamlit_reads", "app", "upload_mb"),
+        "cloud_flagged": (_EX, "cloud_default_demo", "flagged"), "cloud_found": (_EX, "cloud_default_demo", "found"),
+        "cloud_false_alarms": (_EX, "cloud_default_demo", "false_alarms"), "cloud_net2": (_EX, "cloud_net2_flagged"),
+        "cloud_ca": (_EX, "cloud_chloramine", "flagged"), "cloud_msx_calls": (_EX, "cloud_chloramine", "msx_calls"),
+        "texts": (_EX, "texts_shown_in_cloud"), "telling": (_EX, "texts_telling_to_upload"),
+        "guide_sections": (_EX, "guide_sections_read"), "guide_swaps": (_MD, "guide_swaps"),
+        "upload_flagged": (_UP, "net3_upload", "flagged"), "upload_found": (_UP, "net3_upload", "found"),
+        "ky4_junctions": (_UP, "ky4_refused", "junctions"), "limit_junctions": (_UP, "ky4_refused", "limit_junctions"),
+        "grid_junctions": _LIM + ("grid180.inp", "value"), "grid_inp_bytes": _LIM + ("grid180.inp", "bytes"),
+        "grid_zip_bytes": _LIM + ("grid180.zip", "bytes"), "pad_unpacked": _LIM + ("grid180_padded.zip", "value"),
+        "pad_zip_bytes": _LIM + ("grid180_padded.zip", "bytes"), "limit_s": (_MD, "limit_time_bound_s"),
+        "app_zip_bytes": (_UP, "zip_of_32400_junctions_refused", "zip_bytes"),
+        "app_limit_s": (_UP, "zip_of_32400_junctions_refused", "time_bound_s"),
+        "big_log_bytes": (_UP, "grab_log_or_tap_map_over_the_limit_refused", "bytes"),
+        "uploader_mb": (_UP, "uploaders_own_limit_mb"),
+        "rc_junctions": (_MD, "run_cost_under_the_limits", "junctions"),
+        "rc_speedup": (_MD, "run_cost_under_the_limits", "speedup"),
+        "rc_workers": (_MD, "run_cost_under_the_limits", "workers"),
+        "rc_local_speedup": (_MD, "run_cost_under_the_limits", "local_speedup"),
+        # after the final verification of task 20
+        "cost_junctions": (_MD, "cost_grid_junctions"),
+        "pipes_links": _CR + ("parallel_pipes.inp", "value"), "pipes_bytes": _CR + ("parallel_pipes.inp", "bytes"),
+        "links_limit": _CR + ("parallel_pipes.inp", "limit"),
+        "pstep_s": _CR + ("pattern_step_60s.inp", "value"), "pstep_limit": _CR + ("pattern_step_60s.inp", "limit"),
+        "rstep_s": _CR + ("rules_every_second.inp", "value"), "rstep_limit": _CR + ("rules_every_second.inp", "limit"),
+        "ctl_lines": _CR + ("timed_controls.inp", "value"), "ctl_bytes": _CR + ("timed_controls.inp", "bytes"),
+        "lines_limit": _CR + ("timed_controls.inp", "limit"),
+        "app_cost_s": (_UP, "costly_models_refused_in_the_app", "time_bound_s"),
+        "intake_s": (_UP, "intake_stopped_at_s"), "scratch_cwd": (_UP, "epanet_scratch_in_cwd_during_uploads"),
+        "scratch_steps": (_UP, "epanet_scratch_upload_steps_seen"),
+        "bomb_bytes": (_MD, "shared_strings_bomb_refused", "bytes"),
+        "bomb_unpacked": (_MD, "shared_strings_bomb_refused", "unpacked_bytes"),
+        "bomb_limit_mb": (_MD, "shared_strings_bomb_refused", "limit_mb"),
+        "bomb_app_s": (_UP, "shared_strings_bomb_refused_in_the_app", "time_bound_s"),
+        "allowed": (_EX, "allowed_mentions"), "rewordings": (_EX, "rewordings_caught")}.items()},
     # task 12, low-pH stress, random rule: model (c)'s RMSE over the uniform prior (b)'s at every n
     "ca_lowph_prior_cost": ((_C3,), lambda: _pct_range(
         [_json(_C3)["pooled"]["stress"]["c"]["random"][n]["rmse"] / _json(_C3)["pooled"]["stress"]["b"]["random"][n]["rmse"]
@@ -620,6 +685,72 @@ REGISTRY: list[tuple] = [
     ("journal", T16B, "{} of the 400 are flagged, and every tap", (_SN, _GF + ("strip_controls", "flagged_uncertain")), "d"),
     ("journal", T16B, "within {} m of each other are refused now", (_SN, _GF + ("settings", "same_place_m")), ".0f"),
     ("journal", T16B, "whose leverage is over {} (without it", (_SN, _GF + ("settings", "loo_leverage_max")), ".2f"),
+    # task 20 (journal 'Task 20', the hosted demo): the rerun on its tree, and the local app's numbers it compares with
+    ("journal", T20, "after the final verification's fixes) | {} of 50 files byte-identical", (_BR, _T20R + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T20, "after the final verification's fixes) | 50 of {} files byte-identical", (_BR, _T20R + ("vs_committed", "n_files")), "d"),
+    ("journal", T20, "files byte-identical; default demo {} of 92 flagged", (_BR, _T20R + ("app_default_demo", "flagged")), "d"),
+    ("journal", T20, "default demo 42 of 92 flagged, {} of 36 found, 1 false alarm | unchanged |", (_BR, _T20R + ("app_default_demo", "found")), "d"),
+    ("journal", T20, "with EPA's chemistry in EPANET-MSX flags {}: two different hidden truths", "t20_msx_chloramine_flagged_Net3", "s"),
+    ("journal", T20, "Net2 {}, as the local app", "t20_local_net2_flagged", "s"),
+    # task 20's numbers table, from its own checks (the review of task 20: they were not registered)
+    ("journal", T20, "| {} of 10 mode cases and 7 of 7 upload cases", "t20_mode_cases", "d"),
+    ("journal", T20, "10 of 10 mode cases and {} of 7 upload cases", "t20_upload_cases", "d"),
+    ("journal", T20, "| {} of 11 lines pinned to the", "t20_req_lines", "d"),
+    ("journal", T20, "reads address 0.0.0.0 and an upload limit of {} MB", "t20_hosted_upload_mb", "d"),
+    ("journal", T20, "reads localhost and {} MB, usage statistics off", "t20_app_upload_mb", "d"),
+    ("journal", T20, "cloud mode's default demo, Net3 | {} of 92 flagged", "t20_cloud_flagged", "d"),
+    ("journal", T20, "Net3 | 42 of 92 flagged, {} of 36 found, 1 false alarm; Net2", "t20_cloud_found", "d"),
+    ("journal", T20, "Net3 | 42 of 92 flagged, 36 of 36 found, {} false alarm; Net2", "t20_cloud_false_alarms", "d"),
+    ("journal", T20, "36 of 36 found, 1 false alarm; Net2 {}", "t20_cloud_net2", "s"),
+    ("journal", T20, "the reduced truth with its warning, {} flagged", "t20_cloud_ca", "s"),
+    ("journal", T20, "flagged, EPANET-MSX called {} times", "t20_cloud_msx_calls", "d"),
+    ("journal", T20, "in cloud mode flags {} on Net3 against the reduced truth", "t20_cloud_ca", "s"),
+    ("journal", T20, "| a Net3 upload: {} of 92 flagged", "t20_upload_flagged", "d"),
+    ("journal", T20, "a Net3 upload: 42 of 92 flagged, {} of 36 found", "t20_upload_found", "d"),
+    ("journal", T20, "| ky4, {} junctions, refused at", "t20_ky4_junctions", "d"),
+    ("journal", T20, "junctions, refused at {} before its grid is built", "t20_limit_junctions", "d"),
+    ("journal", T20, "| a {}-junction model, as a", "t20_grid_junctions", ",d"),
+    ("journal", T20, "model, as a {}-byte", "t20_grid_inp_bytes", ",d"),
+    ("journal", T20, "and as a {}-byte zip: refused by its junction lines", "t20_grid_zip_bytes", ",d"),
+    ("journal", T20, "each within {} s, nothing left in the folder", "t20_limit_s", ".0f"),
+    ("journal", T20, "padded to {} bytes once unpacked", "t20_pad_unpacked", ",d"),
+    ("journal", T20, "once unpacked, in a {}-byte zip: refused before it is unpacked", "t20_pad_zip_bytes", ",d"),
+    ("journal", T20, "| the {}-byte zip refused on the main page", "t20_app_zip_bytes", ",d"),
+    ("journal", T20, "each page run within {} s", "t20_app_limit_s", ".0f"),
+    ("journal", T20, "a grab log and a tap map of {} bytes refused", "t20_big_log_bytes", ",d"),
+    ("journal", T20, "every cloud uploader's own limit {} MB", "t20_uploader_mb", "d"),
+    ("journal", T20, "| {} strings of every element on both pages", "t20_texts", ",d"),
+    ("journal", T20, "the {} guide sections included: 0 mention", "t20_guide_sections", "d"),
+    ("journal", T20, "guide sections included: {} mention uploading", "t20_telling", "d"),
+    ("journal", T20, "apart from the {} texts that say they are not offered", "t20_allowed", "d"),
+    ("journal", T20, "the pattern catches {} of 7 rewordings", "t20_rewordings", "d"),
+    ("journal", T20, "the guide's {} swaps all apply", "t20_guide_swaps", "d"),
+    ("journal", T20, "| a {}-junction grid model: speedup", "t20_rc_junctions", "d"),
+    ("journal", T20, "grid model: speedup {}, at most its", "t20_rc_speedup", ".0f"),
+    ("journal", T20, "at most its {} workers (local mode:", "t20_rc_workers", "d"),
+    ("journal", T20, "workers (local mode: {}, unchanged)", "t20_rc_local_speedup", ".0f"),
+    # after the final verification of task 20 (its numbers table)
+    ("journal", T20, "each on the {}-junction grid", "t20_cost_junctions", "d"),
+    ("journal", T20, "-junction grid: {} links in", "t20_pipes_links", ",d"),
+    ("journal", T20, "links in {} bytes refused at", "t20_pipes_bytes", ",d"),
+    ("journal", T20, "bytes refused at {}; a 60 s pattern step", "t20_links_limit", "d"),
+    ("journal", T20, "refused at 600; a {} s pattern step", "t20_pstep_s", "d"),
+    ("journal", T20, "pattern step refused at {} s; rules", "t20_pstep_limit", "d"),
+    ("journal", T20, "rules checked every {} s refused at", "t20_rstep_s", "d"),
+    ("journal", T20, "every 1 s refused at {} s; 150,567", "t20_rstep_limit", "d"),
+    ("journal", T20, "; {} lines of timed controls in", "t20_ctl_lines", ",d"),
+    ("journal", T20, "timed controls in {} bytes refused at", "t20_ctl_bytes", ",d"),
+    ("journal", T20, "bytes refused at {}; each before EPANET", "t20_lines_limit", ",d"),
+    ("journal", T20, "each before EPANET runs it, within {} s, nothing kept", "t20_limit_s", ".0f"),
+    ("journal", T20, "the 1-minute model on the main page, each page run within {} s", "t20_app_cost_s", ".0f"),
+    ("journal", T20, "the 1-minute model's intake stopped at {} s", "t20_intake_s", ".0f"),
+    ("journal", T20, "while an upload ran: {} times", "t20_scratch_cwd", "d"),
+    ("journal", T20, "in {} of the upload steps", "t20_scratch_steps", "d"),
+    ("journal", T20, "a grab-log workbook of {} bytes whose", "t20_bomb_bytes", ",d"),
+    ("journal", T20, "shared strings unpack to {} bytes, after", "t20_bomb_unpacked", ",d"),
+    ("journal", T20, "refused at {} MB before openpyxl opens it, within", "t20_bomb_limit_mb", "d"),
+    ("journal", T20, "in 'Check a file', each page run within {} s | refused |", "t20_bomb_app_s", ".0f"),
+    ("journal", T20, "the saved check's copy of that workbook, {} bytes, written", "t20_bomb_bytes", ",d"),
 ]
 
 

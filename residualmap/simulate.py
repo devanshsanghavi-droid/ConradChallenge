@@ -32,6 +32,7 @@ import wntr
 from .chemistry import (CHLORAMINE, ER_TRUTH_RANGE_K, THETA_W_TRUTH_RANGE, TOC_REF_MGL, TREF_C, TRUTH_SEED_OFFSET,
                         Chemistry, Warming, apply_water_temperature, arrhenius, remove_epanet_files, set_bulk_kinetics,
                         toc_ratio, use_mg_per_litre)
+from .cloud import is_cloud
 
 DAY = 86400
 TRUTH_WALL_LAWS = ("theta_w", "arrhenius", "none")
@@ -118,6 +119,21 @@ def _last_day(df: pd.DataFrame, cols) -> pd.DataFrame:
     out = df.loc[df.index >= 6 * DAY, cols].copy()
     out.index = ((out.index - 6 * DAY) // 3600).astype(int)
     return out.loc[out.index < 24]
+
+
+def _run_sim(wn):
+    """EPANET through WNTR as nominal_scenario and the default truth have always run it: with WNTR's default file
+    prefix 'temp', so temp.inp, .rpt and .bin are written to the working directory.  In cloud mode (residualmap.cloud,
+    iteration 5, task 20) the run happens in its own temporary directory instead, so two visitors of the hosted demo
+    never share those files; the results are the same."""
+    if not is_cloud():
+        return wntr.sim.EpanetSimulator(wn).run_sim()
+    with tempfile.TemporaryDirectory(prefix="rm_cloud_epanet_") as tmp:
+        prefix = os.path.join(tmp, "temp")
+        try:
+            return wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=prefix)
+        finally:
+            remove_epanet_files(prefix)
 
 
 def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float, gamma: float,
@@ -284,7 +300,7 @@ def build_scenario(name: str = "Net3", seed: int = 0, sample_hour: int = 14,
                 ts.base_value = ts.base_value * global_mult * np.exp(rng_m.normal(0.0, 0.15))
         for res in source_nodes(wn):
             wn.add_source(f"src_{res}", res, "CONCEN", source_dose * rng_m.uniform(0.9, 1.1))
-        q = wntr.sim.EpanetSimulator(wn).run_sim().node["quality"]
+        q = _run_sim(wn).node["quality"]
     else:
         q, chem_info = _chem_truth(wn, seed, rng, rng_m, chem, source_dose, kb_per_day, kw_m_per_day, warming, name,
                                    truth_wall_law, chloramine_truth, two_reactant)
@@ -559,7 +575,7 @@ def nominal_scenario(name: str, sample_hour: int = 14, source_dose: float = 1.2)
     wn_nom = load(name)
     junctions = wn_nom.junction_name_list
     wn_nom.options.quality.parameter = "AGE"
-    res = wntr.sim.EpanetSimulator(wn_nom).run_sim()
+    res = _run_sim(wn_nom)
     age_by_hour = _last_day(res.node["quality"], junctions) / 3600.0
 
     pressure = _last_day(res.node["pressure"], junctions)

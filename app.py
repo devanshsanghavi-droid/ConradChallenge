@@ -69,6 +69,22 @@ the species is read inside brackets too ('Chlorine (Free)'), a second reading co
 also asks for the reading column, a long-format export whose analytes do not name the species stops with the
 question until 'Analyte value' names the analyte whose rows are read (or '(every row)'), and on the bundled Net2 an
 uploaded log's times of day are said to be read as model hours, unconverted.
+
+Iteration 5, task 20 (residualmap/cloud.py): this file is the entrypoint and its own main page.  As the entrypoint it
+names the sidebar's pages 'ResidualMap' and 'Get started' (st.navigation) and runs the chosen one; run as the page, it
+skips that.  In cloud mode (RESIDUALMAP_MODE=cloud, or the hosted demo's own start, hosted/streamlit_app.py) the Model
+radio offers the example networks only (Net3 and Net2), with demo off the samples are typed (no uploader), a privacy
+notice opens the page, the chloramine demo goes straight to the reduced truth with its warning, and the last line says
+where the numbers are computed.  With RESIDUALMAP_ALLOW_UPLOADS as well, an upload (every file, the grab log and tap
+map included, up to cloud.UPLOAD_MB MB, a zip's model too once unpacked, and a model of up to cloud.MAX_JUNCTIONS
+junctions, counted in its text before WNTR parses it) is prepared in a per-run temporary folder deleted when the run
+ends, and everything made from it (the prepared model, the grid, built in memory, the water age, the demo truth, the
+loss split, the grab log) is kept in this browser session only (cloud.session_cached), never in the process-wide
+caches, and nothing is written under outputs/.  Since the final verification of task 20 the model's intake runs in a
+process of its own with the hosted demo's other limits (links, tanks and reservoirs, lines, time steps, the timed
+run) and a time limit (cloud.prepare_upload), every EPANET run on the upload runs in a process whose working
+directory is that folder (in_folder), so EPANET's own scratch file goes with it, and an Excel grab log is held to
+cloud.WORKBOOK_MB once unpacked (TABLE_LIMITS).  Local mode runs exactly as before.
 """
 from __future__ import annotations
 
@@ -77,6 +93,7 @@ import hashlib
 import io
 import json
 import os
+import secrets
 import sys
 import textwrap
 import types
@@ -99,13 +116,19 @@ from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, LOG_WINDOW_MONTHS
                                    clock_minute_of, daytime_model_hours, distinct_values, dropped_lines, guess_columns,
                                    prepare_inp, read_grab_log, read_table, shows_clock, size_gate)
 from residualmap.route import plan_route
-from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path, grid_edge_mass,
-                               simulator_grid_24h)
+from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path,
+                               grid_edge_mass, simulator_grid_24h)
 from residualmap.simulate import LIB, build_scenario, hidden_chem_draws, nominal_scenario, source_nodes
 from residualmap import chloramine as CA
+from residualmap import cloud
 
 warnings.filterwarnings("ignore")
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+if not cloud.inside_page():     # task 20: the entrypoint names the pages and runs the chosen one (this file, as the page)
+    cloud.run_pages(__file__, os.path.join(APP_ROOT, "pages", "1_Get_started.py"))
+    st.stop()
+CLOUD = cloud.is_cloud(APP_ROOT)              # task 20: the hosted demo (residualmap/cloud.py); False runs as before
+UPLOADS = cloud.uploads_allowed(APP_ROOT)     # always True in local mode
 UPLOAD_DIR = os.path.join(APP_ROOT, "outputs", "app_uploads")   # absolute: the app never depends on its working directory
 AGE_RESULTS = os.path.join(APP_ROOT, "outputs", "chem", "water_age_{}.json")
 CACHE_DIR = os.path.join(APP_ROOT, "outputs", "cache")
@@ -117,14 +140,22 @@ TEXAS_EXAMPLE = {False: "Texas, for example, requires 0.2 mg/L free chlorine (30
                  True: "Texas, for example, requires 0.5 mg/L total chlorine in chloraminated systems (30 TAC 290.110)."}
 EXAMPLES = {"Net3 (EPANET example, 92 junctions)": "Net3", "Net2 (EPANET example, tank-fed, 35 junctions)": "Net2",
             "ky4 (KYPIPE dataset, 959 junctions; first run takes about 15 min)": "ky4"}
+if CLOUD:      # task 20: Net3 and Net2 only; ky4's grid would take hours on the hosted demo's small container
+    EXAMPLES = {k: v for k, v in EXAMPLES.items() if v in cloud.CLOUD_EXAMPLES}
 
 st.set_page_config(page_title="ResidualMap", layout="wide")
 st.title("ResidualMap")
 st.caption("Your EPANET model + the grab samples you already take → a chlorine map of every junction, "
            "with an honest band, the junctions likely below 0.2 mg/L at any hour of the day, and where to sample next.")
+if CLOUD:      # task 20: the privacy notice at the top of the page
+    st.info(cloud.notice(UPLOADS))
 intake_box = st.container()        # the uploaded file's readiness report or advice (iteration 5, task 15)
 UPLOAD_HELP = "any file: it is identified by its content"
-GET_STARTED = "pages/1_Get_started.py"      # task 16: what to export from each package, templates, 'Check a file'
+UPLOAD_MB = cloud.UPLOAD_MB if CLOUD else None     # task 20: the uploaders' own limit in the hosted demo
+TABLE_LIMITS = cloud.table_limits() if CLOUD else {}     # task 20: a workbook's size once unpacked, in the hosted demo
+# task 16: what to export from each package, templates, 'Check a file'; an absolute path since task 20, so the link
+# resolves from the hosted demo's start too (st.navigation registers the page by its path)
+GET_STARTED = os.path.join(APP_ROOT, "pages", "1_Get_started.py")
 LOG_HELP = ("Your grab-sample log as your lab or field system exports it: CSV (any separator, decimal commas, Windows "
             "encodings) or Excel (.xlsx). The columns are guessed from its header; check them below.")
 TAP_HELP = ("Which junction of the model each tap is at: two columns, tap ID and junction ID. The Get started page has "
@@ -150,12 +181,68 @@ def upload_model(data: bytes, name: str, disinfectant: str):
     return prepare_inp(data, UPLOAD_DIR, disinfectant, name=name)
 
 
+def session_token() -> str:
+    """This browser session's name for its temporary folder (cloud mode, task 20)."""
+    return st.session_state.setdefault("_residualmap_scratch", secrets.token_hex(8))
+
+
+def cloud_upload(data: bytes, name: str, disinfectant: str):
+    """upload_model for cloud mode (task 20): prepare_inp in this run's temporary folder (cloud.scratch_dir, deleted
+    when the run ends), with the prepared text and the readiness report kept in this browser session only, so a later
+    run writes the same file back to the same path and nothing is written under outputs/.  The cloud's limits
+    (cloud.intake_limits) refuse a zip's model over the file limit before it is unpacked, and a model over the
+    junction limit before WNTR parses it.  Since the final verification of task 20 prepare_inp runs in a process of
+    its own, in that folder and with a time limit (cloud.prepare_upload)."""
+    folder = cloud.scratch_dir(session_token())
+
+    def prepare_once():
+        path, rep = cloud.prepare_upload(data, folder, disinfectant, name, APP_ROOT)
+        if path is None:
+            return None, rep
+        with open(path, "rb") as fh:
+            return (os.path.basename(path), fh.read()), rep
+
+    saved, rep = cloud.session_cached(st.session_state, "upload", (hashlib.sha1(data).hexdigest(), name, disinfectant),
+                                      prepare_once)
+    if saved is None:
+        return None, rep
+    path = os.path.join(folder, saved[0])
+    if not os.path.exists(path):
+        with open(path, "wb") as fh:
+            fh.write(saved[1])
+    return path, rep
+
+
+def in_folder(fn, *args, **kwargs):
+    """fn(*args, **kwargs) for a visitor's upload in cloud mode, in a process of its own whose working directory is
+    this run's temporary folder (cloud.run_in_folder), so the scratch file EPANET writes to its working directory is
+    deleted with that folder (the final verification of task 20)."""
+    return cloud.run_in_folder(cloud.scratch_dir(session_token()), fn, *args, **kwargs)
+
+
+def run_cached(fn, session: bool, key: tuple, *args, job: tuple | None = None):
+    """fn(*args) through its st.cache_data or st.cache_resource decorator, as before task 20 (local mode, and the
+    example networks in cloud mode); with session True (a visitor's upload in cloud mode) its undecorated body, kept in
+    this browser session only under key (cloud.session_cached).  job: for a function that runs EPANET, the same work
+    as an importable function and its arguments, run in this run's folder (in_folder) in its place."""
+    if not session:
+        return fn(*args)
+    if job is not None:
+        return cloud.session_cached(st.session_state, fn.__name__, key, in_folder, *job)
+    return cloud.session_cached(st.session_state, fn.__name__, key, fn.__wrapped__, *args)
+
+
+def file_key(*args) -> tuple:
+    """A session cache key for arguments that hold a file's bytes: the bytes by their SHA-1."""
+    return tuple(hashlib.sha1(a).hexdigest() if isinstance(a, bytes) else a for a in args)
+
+
 @st.cache_data(show_spinner=False, max_entries=16)
 def log_header(data: bytes, name: str, disinfectant: str):
     """The grab log's header and the columns guessed from it (task 16, importers.guess_columns, an analyte column
     found by its values included): (header, guess), or (None, why) when the file cannot be read as a table."""
     try:
-        t = read_table(data, name)
+        t = read_table(data, name, **TABLE_LIMITS)
     except LogRefused as e:
         return None, str(e)
     except Exception as e:  # noqa: BLE001  (the last guard: a file the reader did not foresee)
@@ -167,7 +254,7 @@ def log_header(data: bytes, name: str, disinfectant: str):
 def column_values(data: bytes, name: str, column: str) -> list[str]:
     """The distinct values of one column of the grab log (the analyte column's, for 'Analyte value'), at most 200."""
     try:
-        return distinct_values(read_table(data, name), column)
+        return distinct_values(read_table(data, name, **TABLE_LIMITS), column)
     except Exception:  # noqa: BLE001  (log_header has already said why)
         return []
 
@@ -178,7 +265,8 @@ def grab_log(data: bytes, name: str, taps: bytes, taps_name: str, disinfectant: 
     """importers.read_grab_log on the uploads, cached per content and choice: (GrabLog, None), or (None, why)."""
     try:
         return read_grab_log(data, name, taps, taps_name, disinfectant, date_format=date_format, mapping=dict(mapping),
-                             start_clock_h=start_clock_h, analyzer_hour=analyzer_hour, thin_analyzers=thin), None
+                             start_clock_h=start_clock_h, analyzer_hour=analyzer_hour, thin_analyzers=thin,
+                             **TABLE_LIMITS), None
     except LogRefused as e:
         return None, str(e)
     except Exception as e:  # noqa: BLE001  (the last guard: a file the reader did not foresee)
@@ -215,10 +303,10 @@ def old_pipe_text(g: float, uniform_c: bool) -> str:
 # ----------------------------------------------------------------------------- inputs
 with st.sidebar:
     st.header("1. Your network")
-    src = st.radio("Model", ["Example network", "Upload my .inp"], horizontal=True)
+    src = st.radio("Model", ["Example network"] + (["Upload my .inp"] if UPLOADS else []), horizontal=True)
     up = None
     if src == "Upload my .inp":
-        up = st.file_uploader("EPANET .inp file", type=None, help=UPLOAD_HELP)
+        up = st.file_uploader("EPANET .inp file", type=None, help=UPLOAD_HELP, max_upload_size=UPLOAD_MB)
         if up is None:
             st.stop()
     else:
@@ -231,15 +319,24 @@ with st.sidebar:
     clock_h = 0.0              # task 16: an uploaded file's START CLOCKTIME, in hours (0 for every bundled example)
     if up is not None:
         disinfectant = "chloramine" if ca else "free_chlorine"
+        if CLOUD and cloud.too_big(up.size):        # task 20: the hosted demo's limit, before the file is read
+            intake_box.error(cloud.too_big(up.size))
+            st.stop()
         try:            # prepare_inp turns what is in a file into plain problems; this is the last guard for the rest
-            net_path, readiness = upload_model(up.getvalue(), up.name, disinfectant)
-            if net_path is not None and not os.path.exists(net_path):     # the stored copy was removed since
-                upload_model.clear()
+            if CLOUD:
+                net_path, readiness = cloud_upload(up.getvalue(), up.name, disinfectant)
+            else:
                 net_path, readiness = upload_model(up.getvalue(), up.name, disinfectant)
+                if net_path is not None and not os.path.exists(net_path):     # the stored copy was removed since
+                    upload_model.clear()
+                    net_path, readiness = upload_model(up.getvalue(), up.name, disinfectant)
         except Exception as e:  # noqa: BLE001
             net_path, readiness = None, None
             intake_box.error(f"This file could not be read ({type(e).__name__}). Send the model's EPANET export "
                              f"(.inp) again, on its own.")
+        if CLOUD and readiness is not None and cloud.limit_refusal(readiness):     # before WNTR parses it (task 20)
+            intake_box.error(cloud.limit_refusal(readiness))
+            st.stop()
         confirmed = show_intake(intake_box, readiness) if readiness is not None else False
         if net_path is None:
             st.stop()
@@ -263,17 +360,25 @@ with st.sidebar:
 
     st.header("2. Your samples")
     demo = st.toggle("Demo: simulate a hidden truth and draw samples from it", value=True,
-                     help="Off = upload your grab log and tap map, or type your own grab samples in the table.")
+                     help="Off = upload your grab log and tap map, or type your own grab samples in the table."
+                     if UPLOADS else cloud.DEMO_HELP_NO_UPLOADS)
     log_up = tap_up = None
     glog, glog_error = None, None
-    if not demo:       # task 16: the grab log and its tap map, after the model uploader (file_uploader[0] is unchanged)
-        log_up = st.file_uploader("Grab log (CSV or Excel)", type=None, help=LOG_HELP)
-        tap_up = st.file_uploader("Tap map (CSV)", type=None, help=TAP_HELP)
+    if not demo and not UPLOADS:      # task 20: the hosted demo, examples only: the samples are typed
+        st.caption(cloud.SAMPLES_OFF)
+    elif not demo:     # task 16: the grab log and its tap map, after the model uploader (file_uploader[0] is unchanged)
+        log_up = st.file_uploader("Grab log (CSV or Excel)", type=None, help=LOG_HELP, max_upload_size=UPLOAD_MB)
+        tap_up = st.file_uploader("Tap map (CSV)", type=None, help=TAP_HELP, max_upload_size=UPLOAD_MB)
+    for f in (log_up, tap_up) if CLOUD else ():     # task 20: the hosted demo's file limit, before either is read
+        if f is not None and cloud.too_big(f.size):
+            intake_box.error(cloud.too_big(f.size))
+            st.stop()
     if log_up is not None:
         log_bytes = log_up.getvalue()
         log_key = hashlib.sha1(log_bytes).hexdigest()[:10]
         species = "chloramine" if ca else "free_chlorine"
-        header, guess = log_header(log_bytes, log_up.name, species)
+        header, guess = run_cached(log_header, CLOUD, file_key(log_bytes, log_up.name, species), log_bytes, log_up.name,
+                                   species)
         if header is None:
             glog_error = guess
         else:
@@ -297,8 +402,9 @@ with st.sidebar:
                                                   [NO_ANALYTE])}
                 if mapping["analyte"]:     # the final verification of task 16: which analyte's rows are read
                     v = st.selectbox("Analyte value (the analyte whose rows are the reading)",
-                                     [ANALYTE_AUTO, ANALYTE_EVERY] + column_values(log_bytes, log_up.name,
-                                                                                   mapping["analyte"]),
+                                     [ANALYTE_AUTO, ANALYTE_EVERY] + run_cached(
+                                         column_values, CLOUD, file_key(log_bytes, log_up.name, mapping["analyte"]),
+                                         log_bytes, log_up.name, mapping["analyte"]),
                                      key=f"log_analyte_value_{log_key}_{mapping['analyte']}")
                     mapping["analyte_value"] = None if v == ANALYTE_AUTO else "*" if v == ANALYTE_EVERY else v
                 mapping["unit"] = pick_column("Units column", "unit", [NO_UNIT])
@@ -312,15 +418,17 @@ with st.sidebar:
                 if tap_up is not None:
                     args = (log_bytes, log_up.name, tap_up.getvalue(), tap_up.name, species, tuple(mapping.items()),
                             date_format, clock_h)
-                    glog, glog_error = grab_log(*args, ANALYZER_HOUR)
+                    glog, glog_error = run_cached(grab_log, CLOUD, file_key(*args, ANALYZER_HOUR), *args, ANALYZER_HOUR)
                     if glog is not None and glog.analyzer:
                         if st.checkbox(KEEP_ALL, value=False, key=f"log_keep_all_{log_key}"):
-                            glog, glog_error = grab_log(*args, ANALYZER_HOUR, False)
+                            glog, glog_error = run_cached(grab_log, CLOUD, file_key(*args, ANALYZER_HOUR, False), *args,
+                                                          ANALYZER_HOUR, False)
                         else:
                             a_hour = st.number_input("Online analyzer: keep the reading nearest this hour (0 to 23)", 0,
                                                      23, int(ANALYZER_HOUR), key=f"log_analyzer_{log_key}")
                             if float(a_hour) != ANALYZER_HOUR:
-                                glog, glog_error = grab_log(*args, float(a_hour))
+                                glog, glog_error = run_cached(grab_log, CLOUD, file_key(*args, float(a_hour)), *args,
+                                                              float(a_hour))
     if demo:
         n_demo = st.slider("Demo samples (daytime, random junctions)", 0, 15, 8)
         demo_seed = st.number_input("Demo scenario", 0, 99, 0)
@@ -369,12 +477,20 @@ def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = ""
     so a change to the chloramine grid's definition or physics version is never served a grid from before it."""
     sc = nominal_scenario(path, sample_hour=14, source_dose=dose)
     X = build_features(sc)
-    with workers_skip_this_app():
+    with workers_skip_this_app():      # n_jobs: None (the default) in local mode; 2 workers in cloud mode (task 20)
         if chloramine:
-            simulator_grid_24h(sc, CACHE_DIR, "chloramine", cond=CA.ca_condition())
+            simulator_grid_24h(sc, CACHE_DIR, "chloramine", n_jobs=cloud.grid_workers(APP_ROOT), cond=CA.ca_condition())
         else:
-            simulator_grid_24h(sc, CACHE_DIR, grid)
+            simulator_grid_24h(sc, CACHE_DIR, grid, n_jobs=cloud.grid_workers(APP_ROOT))
     return sc, X
+
+
+def prepare_in_session(path: str, dose: float, chloramine: bool, grid: str):
+    """prepare for a visitor's upload in cloud mode (task 20): the same nominal model, features and grid, the grid
+    built in memory (build_grid_24h) and never written to outputs/cache.  Returns (sc, X, (params, Z)); the caller
+    keeps it in the browser session only.  Since the final verification of task 20 it runs in this run's folder
+    (in_folder, cloud.upload_grid), its grid's workers too."""
+    return in_folder(cloud.upload_grid, path, dose, chloramine, grid, cloud.grid_workers(APP_ROOT))
 
 
 @st.cache_resource(show_spinner=False)
@@ -478,12 +594,18 @@ if up is not None:     # task 15b: refuse a grid build that would leave less tha
         if not disk_ok:
             st.error(disk_msg)
             st.stop()
+SESSION_ONLY = CLOUD and up is not None      # task 20: a visitor's upload, kept in this browser session only
+grid_data = None                             # the session's own grid (a cloud upload); None: the cached grid
 with st.spinner(f"Running {n_runs} EPANET simulations of your model over the decay and hydraulic-mismatch grid "
                 f"(once per network; cached afterwards)…"):
-    sc, X = (prepare(net_path, float(dose), True, cache_tag(CA.ca_condition(), "chloramine")) if ca else
-             prepare(net_path, float(dose)) if grid == "full" else prepare(net_path, float(dose), False, "", grid))
+    if SESSION_ONLY:
+        sc, X, grid_data = cloud.session_cached(st.session_state, "prepare", (net_path, float(dose), ca, grid),
+                                                prepare_in_session, net_path, float(dose), ca, grid)
+    else:
+        sc, X = (prepare(net_path, float(dose), True, cache_tag(CA.ca_condition(), "chloramine")) if ca else
+                 prepare(net_path, float(dose)) if grid == "full" else prepare(net_path, float(dose), False, "", grid))
 with st.spinner("Running 10 EPANET water-age simulations of your model (demand and roughness settings; once per network)…"):
-    band = water_age(net_path, sc)
+    band = run_cached(water_age, SESSION_ONLY, (net_path,), net_path, sc, job=(hydraulic_age_band, sc))
 junctions = list(sc.junctions)
 # task 16: hours on the page.  An uploaded file whose START CLOCKTIME is not midnight shows times of day (route hours,
 # worst hour, hour picker, hour of the daily minimum); every bundled example keeps model hours (Net2's with a caption)
@@ -513,7 +635,13 @@ if ca:
             f"chlorine ({'a common utility operating target, not a California rule' if abs(threshold - 0.5) < 1e-9 else 'set by you'}; "
             f"California requires a detectable residual). Tested in simulation only.{exp_note}")
 if demo:
-    if ca:
+    if ca and CLOUD:     # task 20: the hosted demo goes straight to the reduced truth, with its warning
+        with st.spinner("Simulating a hidden chloraminated network with EPANET (the reduced chloramine truth)…"):
+            tr = run_cached(demo_truth_ca_reduced, SESSION_ONLY, (net_path, float(dose), int(demo_seed)), net_path,
+                            float(dose), int(demo_seed),
+                            job=(cloud.upload_truth_reduced, net_path, float(dose), int(demo_seed)))
+        st.warning(cloud.REDUCED_TRUTH)
+    elif ca:
         from residualmap.msx import compiler_available
         how_long = ("about 15 s" if compiler_available() else
                     "several minutes: no C compiler was found, so the reactions run uncompiled")
@@ -528,7 +656,9 @@ if demo:
                        f"(task 12's first-order twin). It has the model's own kinetics, so the demo's scores flatter the "
                        f"model.")
     else:
-        tr = demo_truth(net_path, float(dose), int(demo_seed), demo_kb, demo_kw)
+        tr = run_cached(demo_truth, SESSION_ONLY, (net_path, float(dose), int(demo_seed), demo_kb, demo_kw), net_path,
+                        float(dose), int(demo_seed), demo_kb, demo_kw,
+                        job=(cloud.upload_truth, net_path, float(dose), int(demo_seed), demo_kb, demo_kw))
     rng = np.random.default_rng(int(demo_seed))
     n_demo = min(int(n_demo), len(junctions))          # task 15b: a network smaller than the slider (Net1 has 9)
     js = list(rng.choice(junctions, int(n_demo), replace=False)) if n_demo else []
@@ -607,12 +737,12 @@ S = pd.DataFrame({"junction": samples.junction.astype(str), "hour": samples.hour
 # model ------------------------------------------------------------------------------------
 if ca:
     model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid="chloramine",
-                    cond=CA.ca_condition(), lik_sd=LIK_SD_CA, doses=DOSES_CA)
+                    cond=CA.ca_condition(), lik_sd=LIK_SD_CA, doses=DOSES_CA, grid_data=grid_data)
     model.log_prior = CA.prior_log_vector(model.params, float(ph_log), float(cl2n_log))
 elif grid == "full":
-    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold))
+    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid_data=grid_data)
 else:
-    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid=grid)
+    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid=grid, grid_data=grid_data)
 model.fit(S if len(S) else None)
 hourly = model.predict_hours()
 pmin = model.predict_daily_min()
@@ -652,7 +782,7 @@ else:
     c4.metric("Calibrated decay", "no samples yet", "map = your model's physics alone")
 if is_net2:
     st.caption(f"Net2: every hour on this page is a {NET2_CAPTION}, and its demand patterns are 55 h long, so an hour "
-               f"of its day is an hour of that cycle (README, Net2).")
+               f"of its day is an hour of that cycle{'' if CLOUD else ' (README, Net2)'}.")     # task 20: not in cloud
 elif use_clock:
     st.caption(f"Hours are times of day: this file starts at {clock_label(0, clock_h)} (START CLOCKTIME), and every model "
                f"hour is shown as its time of day.")
@@ -804,7 +934,8 @@ with loss_col:
     if model.map_params_ is None:
         st.info("Enter at least one grab sample: the split uses the decay rates your samples calibrate.")
     else:
-        split = chlorine_loss(net_path, float(dose), tuple(model.map_params_), float(model.map_dose_), model, ca)
+        member = (net_path, float(dose), tuple(model.map_params_), float(model.map_dose_))
+        split = run_cached(chlorine_loss, SESSION_ONLY, (*member, ca), *member, model, ca, job=(loss_split, model))
         ws = split.wall_share.dropna()
         if ws.empty:
             st.info("Chlorine loss is under 2% at every junction for these decay rates: there is nothing to split.")
@@ -858,7 +989,7 @@ with right:
 st.subheader("What this model accounts for")
 try:
     st.table(accounts_for(APP_ROOT).set_index("point"))
-    st.caption(ACCOUNTS_FOR_NOTE)
+    st.caption(cloud.ACCOUNTS_FOR_NOTE if CLOUD else ACCOUNTS_FOR_NOTE)    # task 20: no folder names in the hosted demo
 except (OSError, KeyError, IndexError, ValueError, TypeError) as e:     # outputs/ missing or changed on this machine
     st.info(f"The table of what this model accounts for is read from the committed results in outputs/, which could "
             f"not be read here ({type(e).__name__}). The README and docs/iteration3_journal.md carry the same answer.")
@@ -921,6 +1052,10 @@ def pdf_bytes() -> bytes:
 
 
 st.download_button("Download the one-page PDF report", data=pdf_bytes(), file_name=f"residualmap_{os.path.basename(net_path)}.pdf", mime="application/pdf")
-st.caption("Every number on this page is computed on this laptop from your .inp and your samples. Nothing is uploaded anywhere.")
-st.page_link(GET_STARTED, label="Bring your data: what to export from your software, templates for the grab log and "
-                                "tap map, and 'Check a file'")
+if CLOUD:      # task 20: the hosted demo says where its numbers are computed
+    st.caption(cloud.footer(UPLOADS))
+else:
+    st.caption("Every number on this page is computed on this laptop from your .inp and your samples. Nothing is uploaded anywhere.")
+st.page_link(GET_STARTED, label=cloud.LINK_NO_CHECK if not UPLOADS else
+             "Bring your data: what to export from your software, templates for the grab log and tap map, and 'Check a "
+             "file'")

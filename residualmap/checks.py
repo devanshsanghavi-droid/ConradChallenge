@@ -1,13 +1,14 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: groups task15, task15b and task16, files built by residualmap/fixtures.py).
+and access (task 15 on: groups task15, task15b, task16, task16b and task20, files built by residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
                                             # after task 14; 69 checks after task 14: 68 in the committed report,
                                             # plus the names check, skipped without the variable; 76 after task 15;
                                             # 102 after task 16 and its review, 101 in the committed report;
-                                            # 103 after its final verification, 102 in the report; each run's
-                                            # time is in outputs/chem/checks_run.json)
+                                            # 103 after its final verification, 102 in the report; 109 after
+                                            # task 16b; 114 after task 20, 113 in the report; each run's time is
+                                            # in outputs/chem/checks_run.json)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 50 s after task 16)
     RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
@@ -2491,7 +2492,9 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "residualmap/intake_exp.py",                                        # task 15b
              "pages/1_Get_started.py", "docs/how_to_export_your_model.md",       # task 16
              "docs/templates/grab_log_template.csv", "docs/templates/grab_log_total_template.csv",
-             "docs/templates/tap_map_by_id_template.csv", "docs/templates/plant_log_template.csv")
+             "docs/templates/tap_map_by_id_template.csv", "docs/templates/plant_log_template.csv",
+             "residualmap/cloud.py", "hosted/streamlit_app.py", "hosted/.streamlit/config.toml",       # task 20
+             "docs/deploy_streamlit_cloud.md", "docs/privacy.md", "requirements.txt")
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -2886,7 +2889,8 @@ def no_listed_names_in_tracked_files():
         lengths.setdefault(n[0], set()).add(len(n))
     files = subprocess.run(["git", "-C", REPO, "ls-files"], capture_output=True, text=True).stdout.split()
     files += [f for f in subprocess.run(["git", "-C", REPO, "ls-files", "--others", "--exclude-standard"],
-                                        capture_output=True, text=True).stdout.split() if f.startswith("residualmap/")]
+                                        capture_output=True, text=True).stdout.split()
+              if f.startswith("residualmap/") or f in IT5_FILES]      # a task's new files before their commit (task 20)
     allowed, unexpected, n_files = 0, [], 0
     for f in files:
         if f.endswith((".png", ".pkl", ".pdf", ".bin", ".jpg")):
@@ -5041,6 +5045,784 @@ def tap_coordinates_review_cases():
     return {"cases": len(got) - 2, "models": sorted(m), "template_rows_through_load_log": tpl["accepted_rows_through_load_log"],
             "miles_metres_per_unit": mi["metres_per_unit"], "placeholder_pipes_left_out": len(ph["left_out"]),
             "final_cases": len(fin) - 2, "final_models": sorted(fin["models"])}
+
+
+# ----------------------------------------------------------------------------- task 20: a no-install route (hosted demo)
+HOSTED_START = os.path.join(REPO, "hosted", "streamlit_app.py")
+CLOUD_LIMIT_S = 5.0          # a model over the cloud's limits is refused within this many seconds (it took about 32 s)
+CLOUD_LIMIT_APP_S = 15.0     # ... and the whole page run that refuses it, in AppTest
+GET_STARTED_BEFORE_TASK20 = ("Three steps: export the network from the software that holds it, put your grab samples in a "
+                             "log ResidualMap reads, and check any file before you use it on the main page. Everything "
+                             "runs on this laptop.")
+
+
+@check("task20")
+def mode_detection_fails_safe():
+    """residualmap/cloud.py's mode: a simulated /mount/src/ checkout gives cloud mode with no variable, and no variable
+    plus no such path gives local mode; RESIDUALMAP_MODE 'cloud' (any case) gives cloud and 'local' gives local even
+    under /mount/src/, and any other value is cloud (the safe side).  Cloud uploads only with RESIDUALMAP_ALLOW_UPLOADS
+    set to a true word ('True' too, the text a TOML true would become), local mode always takes uploads; the grid's
+    workers are capped in cloud mode only.  The limits (cloud.UPLOAD_MB, cloud.MAX_JUNCTIONS) refuse one byte or one
+    junction over, not at the limit; the session cache keeps at most cloud.SESSION_KEEP results per kind.  What the
+    mode changes in simulate.py, measured: nominal_scenario('Net1') in local mode writes temp.inp, temp.rpt and
+    temp.bin to its working directory as it always has, and in cloud mode writes nothing there, with the same results.
+    The local Get started intro is the text before task 20, and no cloud text says the laptop.
+    The review of task 20: the intake's limits (cloud.intake_limits, importers.prepare_inp) refuse a 32,400-junction
+    grid model (fixtures.cloud_grid_inp(180), in a zip of about 1 MB, under the 5 MB file limit) by its [JUNCTIONS]
+    lines before WNTR parses it, as a file and as a zip, within CLOUD_LIMIT_S seconds each and with nothing left in
+    the folder, where the full intake took about 32 s and 2.5 GB before; the same model padded past 5 MB is refused
+    by its zip's declared size before it is unpacked; a 100-junction grid under the limits is prepared, its run cost
+    estimated for the cloud's 2 workers (speedup 2, said in the row), while without the limits nothing changes (no
+    'speedup', the assumed speedup of 4); every guide swap the Get started page makes in cloud mode (cloud.GUIDE_CLOUD)
+    finds its words in the guide, and the cloud texts name no repository folder.
+    The final verification of task 20: models under both of those limits that cost far more (fixtures.cloud_*: the
+    17 x 17 grid, 289 junctions, with about 124,000 parallel pipes in 4.7 MB, which took 127 s and 3.7 GB to prepare;
+    with a 1-minute pattern step, 38 s a run; with 300 rules checked every second, 34 s a run; with a timed control
+    every second in 4.9 MB, past 90 s) are each refused by intake_limits' other limits before EPANET runs them, within
+    CLOUD_LIMIT_S, with nothing left in the folder and a plain refusal (cloud.limit_refusal); the plain 17 x 17 grid
+    passes them, and is refused after its timed run when the minutes or seconds bound is set below its cost; and a
+    466 KB grab-log workbook whose shared strings unpack to 190 MB (fixtures.shared_strings_bomb_xlsx; 32 s and 1 GB to
+    read before) is refused by cloud.table_limits before openpyxl opens it, within CLOUD_LIMIT_S, while the Excel
+    template is read whole under the same limits."""
+    from . import cloud as C
+    from . import fixtures as FX
+    import io
+    import zipfile
+    from .importers import EFFECTIVE_SPEEDUP, RUN_COST_ROW, TEST_RUN_ROW, prepare_inp, scan_inp_ids
+    from .simulate import nominal_scenario
+    co, mount = C.MODE_ENV, "/mount/src/conradchallenge"
+    cases = [({}, mount, "cloud"), ({}, REPO, "local"), ({co: "cloud"}, REPO, "cloud"), ({co: " Cloud "}, REPO, "cloud"),
+             ({co: "local"}, mount, "local"), ({co: "clould"}, REPO, "cloud"), ({co: ""}, mount, "cloud"),
+             ({co: ""}, REPO, "local"), ({}, "/mount/srcx/app", "local"), ({}, "/mount/src", "cloud")]
+    got = [C.mode(root, env) for env, root, _ in cases]
+    assert got == [want for _, _, want in cases], list(zip(cases, got))
+    assert os.path.abspath(C.REPO_ROOT) == REPO and C.mode(None, {}) == "local"
+    up = C.UPLOADS_ENV
+    ucases = [({}, REPO, True), ({co: "cloud"}, REPO, False), ({co: "cloud", up: "true"}, REPO, True),
+              ({co: "cloud", up: "True"}, REPO, True), ({co: "cloud", up: "false"}, REPO, False),
+              ({}, mount, False), ({up: "1"}, mount, True)]
+    ugot = [C.uploads_allowed(root, env) for env, root, _ in ucases]
+    assert ugot == [want for _, _, want in ucases], list(zip(ucases, ugot))
+    assert C.grid_workers(REPO, {}) is None and C.grid_workers(mount, {}) == C.GRID_WORKERS
+    mb = C.UPLOAD_MB * 1_000_000
+    assert C.too_big(mb) is None and C.too_big(mb + 1) and C.too_big(0) is None
+    assert C.too_many_junctions(C.MAX_JUNCTIONS) is None and C.too_many_junctions(C.MAX_JUNCTIONS + 1)
+    assert C.too_many_junctions(None) is None and "959 junctions" in C.too_many_junctions(959)
+    store, calls = {}, []
+    for i in range(C.SESSION_KEEP + 2):
+        assert C.session_cached(store, "k", (i,), lambda v: calls.append(v) or v * 2, i) == 2 * i
+    assert C.session_cached(store, "k", (C.SESSION_KEEP + 1,), lambda v: calls.append(v), 0) == 2 * (C.SESSION_KEEP + 1)
+    kept = sorted(k[1][0] for k in store["_residualmap_session_results"])
+    assert len(calls) == C.SESSION_KEEP + 2 and kept == list(range(2, C.SESSION_KEEP + 2)), (calls, kept)
+    assert C.get_started_intro(False, True) == GET_STARTED_BEFORE_TASK20
+    texts = [C.notice(False), C.notice(True), C.get_started_intro(True, False), C.get_started_intro(True, True),
+             C.footer(False), C.footer(True), C.CHECK_OFF, C.SAMPLES_OFF, C.REDUCED_TRUTH, C.LINK_NO_CHECK,
+             C.DEMO_HELP_NO_UPLOADS, C.ACCOUNTS_FOR_NOTE, C.too_big(mb + 1, unpacked=True)] + [g[2] for g in C.GUIDE_CLOUD]
+    assert not any("laptop" in t for t in texts) and not any(d in t for t in texts for d in DASH)
+    assert not any(w in t for t in texts for w in ("outputs/", "docs/", ".py", "README")), texts
+    assert all("Snowflake" in t and "privacy policy" in t for t in texts[:2])
+    assert "on this server" not in C.REDUCED_TRUTH and "untested" in C.REDUCED_TRUTH
+    with open(os.path.join(REPO, "docs", "how_to_export_your_model.md"), encoding="utf-8") as fh:
+        guide = {h.partition("\n")[0].strip(): h.partition("\n")[2] for h in re.split(r"(?m)^## ", fh.read())[1:]}
+    assert all(old in guide[head] for head, old, _, _ in C.GUIDE_CLOUD), [g[:2] for g in C.GUIDE_CLOUD]
+    for head in {g[0] for g in C.GUIDE_CLOUD}:
+        assert C.guide_section(head, guide[head], False, True) == guide[head]          # local mode: unchanged
+    limits = C.intake_limits(mount)
+    assert limits == {"max_junctions": C.MAX_JUNCTIONS, "max_model_bytes": mb, "workers": C.GRID_WORKERS,
+                      "max_links": C.MAX_LINKS, "max_tanks_reservoirs": C.MAX_TANKS_RESERVOIRS,
+                      "max_model_lines": C.MAX_MODEL_LINES, "min_pattern_step_s": C.MIN_PATTERN_STEP_S,
+                      "min_rule_step_s": C.MIN_RULE_STEP_S, "max_seconds_per_run": C.MAX_SECONDS_PER_RUN,
+                      "max_run_minutes": C.MAX_RUN_MINUTES}, limits
+    big = {"grid180.inp": FX.cloud_grid_inp(180), "grid180.zip": FX.cloud_grid_zip(180),
+           "grid180_padded.zip": FX.cloud_grid_zip(180, pad_bytes=mb)}
+    assert C.too_big(len(big["grid180.zip"])) is None and C.too_big(len(big["grid180_padded.zip"])) is None
+    refused = {}
+    for fname, data in big.items():
+        with tempfile.TemporaryDirectory(prefix="rm_t20_lim_") as d:
+            t0 = time.perf_counter()
+            path, rep = prepare_inp(data, d, name=fname, **limits)
+            secs = time.perf_counter() - t0
+            left = os.listdir(d)
+        over = rep.flags.get("over_limit", {})
+        refused[fname] = {"bytes": len(data), "over_limit": over, "seconds": round(secs, 3)}
+        assert path is None and not left and secs < CLOUD_LIMIT_S, (fname, path, left, secs)
+        assert not any(item == TEST_RUN_ROW for item, _, _ in rep.rows) and not rep.run_cost, fname
+    assert refused["grid180.inp"]["over_limit"] == refused["grid180.zip"]["over_limit"] == \
+        {"what": "junctions", "value": 180 * 180, "limit": C.MAX_JUNCTIONS}, refused
+    pad = refused["grid180_padded.zip"]["over_limit"]
+    assert pad["what"] == "model_bytes" and pad["unpacked"] is True and pad["value"] > mb, pad
+    small = FX.cloud_grid_zip(10)
+    with tempfile.TemporaryDirectory(prefix="rm_t20_lim_") as d:
+        p_cloud, r_cloud = prepare_inp(small, d, name="grid10.zip", **limits)
+        p_local, r_local = prepare_inp(small, d, name="grid10.zip")
+    assert p_cloud and p_local and C.limit_refusal(r_cloud) is None, (r_cloud.blocking, r_local.blocking)
+    rc, rl = r_cloud.run_cost, r_local.run_cost
+    assert rc["speedup"] == C.GRID_WORKERS and rc["workers"] == C.GRID_WORKERS and "speedup" not in rl, (rc, rl)
+    row = {r[0]: r[1] for r in r_cloud.rows}[RUN_COST_ROW]
+    assert f"speedup of {C.GRID_WORKERS} (at most the {C.GRID_WORKERS} workers" in row, row
+    assert f"speedup of {EFFECTIVE_SPEEDUP:g}. " in {r[0]: r[1] for r in r_local.rows}[RUN_COST_ROW]
+    # the final verification of task 20: under both of those limits, and costly
+    costly = {"parallel_pipes.inp": (FX.cloud_parallel_pipes_inp(), "links"),
+              "pattern_step_60s.inp": (FX.cloud_pattern_step_inp("0:01"), "pattern_step_s"),
+              "rules_every_second.inp": (FX.cloud_rules_inp(300, "0:00:01"), "rule_step_s"),
+              "timed_controls.inp": (FX.cloud_controls_inp(), "model_lines")}
+    cost_refused = {}
+    for fname, (data, what) in costly.items():
+        n_junc = scan_inp_ids(data.decode("ascii")).counts["JUNCTIONS"]
+        assert C.too_big(len(data)) is None and n_junc == FX.CLOUD_COST_N ** 2 <= C.MAX_JUNCTIONS, (fname, n_junc)
+        with tempfile.TemporaryDirectory(prefix="rm_t20_cost_") as d:
+            t0 = time.perf_counter()
+            path, rep = prepare_inp(data, d, name=fname, **limits)
+            secs = time.perf_counter() - t0
+            left = os.listdir(d)
+        over = rep.flags.get("over_limit", {})
+        cost_refused[fname] = {"bytes": len(data), **over, "seconds": round(secs, 3)}
+        assert path is None and not left and secs < CLOUD_LIMIT_S and over.get("what") == what, (fname, over, secs)
+        assert C.limit_refusal(rep).endswith(C.LOCAL_TAIL) and not any(i == TEST_RUN_ROW for i, _, _ in rep.rows), fname
+    grid17 = FX.cloud_grid_inp(FX.CLOUD_COST_N)
+    with tempfile.TemporaryDirectory(prefix="rm_t20_cost_") as d:
+        p17, r17 = prepare_inp(grid17, d, name="grid17.inp", **limits)
+        c17 = r17.run_cost
+        timed = {}
+        for key, what in (("max_run_minutes", "run_minutes"), ("max_seconds_per_run", "seconds_per_run")):
+            low = (c17["estimate_s"] / 60 if key == "max_run_minutes" else c17["seconds_per_run"]) / 10
+            pt, rt = prepare_inp(grid17, d, name=f"grid17_{what}.inp", **{**limits, key: low})
+            timed[what] = rt.flags.get("over_limit", {})
+            assert pt is None and timed[what].get("what") == what and C.limit_refusal(rt).endswith(C.LOCAL_TAIL), timed
+        left17 = sorted(os.listdir(d))
+    assert p17 and C.limit_refusal(r17) is None and c17["minutes"] <= C.MAX_RUN_MINUTES, (r17.blocking, c17)
+    assert c17["seconds_per_run"] <= C.MAX_SECONDS_PER_RUN and left17 == [os.path.basename(p17)], left17
+    from .importers import LogRefused, read_table
+    bomb = FX.shared_strings_bomb_xlsx()
+    with zipfile.ZipFile(io.BytesIO(bomb)) as z:
+        bomb_unpacked = sum(i.file_size for i in z.infolist())
+    assert C.too_big(len(bomb)) is None and bomb_unpacked > C.WORKBOOK_MB * 1_000_000
+    t0 = time.perf_counter()
+    try:
+        read_table(bomb, "grab_log.xlsx", **C.table_limits())
+        bomb_refusal = None
+    except LogRefused as e:
+        bomb_refusal = str(e)
+    bomb_s = time.perf_counter() - t0
+    assert bomb_refusal and bomb_refusal.startswith("The workbook is refused") and bomb_s < CLOUD_LIMIT_S, bomb_refusal
+    small_bomb = FX.shared_strings_bomb_xlsx(15_000_000)      # under the 20 MB in all, but packed about 400 to 1
+    try:
+        read_table(small_bomb, "grab_log.xlsx", **C.table_limits())
+        ratio_refusal = None
+    except LogRefused as e:
+        ratio_refusal = str(e)
+    assert ratio_refusal and "times its packed size" in ratio_refusal and "sharedStrings" in ratio_refusal, ratio_refusal
+    from .importers import xlsx_bytes
+    template = xlsx_bytes([["date", "time", "tap_id", "free_chlorine_mgL"]] +
+                          [[f"2026-09-{d:02d}", "10:00", f"T{d % 3 + 1}", 0.5] for d in range(1, 21)], sheet="grab log")
+    assert len(read_table(template, "grab_log.xlsx", **C.table_limits()).rows) == 20
+    runs = {}
+    keep = os.environ.get(co)
+    old = os.getcwd()
+    try:
+        for m in ("local", "cloud"):
+            with tempfile.TemporaryDirectory(prefix="rm_t20_cwd_") as d:
+                os.chdir(d)
+                os.environ[co] = m
+                sc = nominal_scenario("Net1")
+                runs[m] = (sc, sorted(os.listdir(d)))
+                os.chdir(old)
+    finally:
+        os.chdir(old)
+        if keep is None:
+            os.environ.pop(co, None)
+        else:
+            os.environ[co] = keep
+    (a, files_local), (b, files_cloud) = runs["local"], runs["cloud"]
+    assert files_local == ["temp.bin", "temp.inp", "temp.rpt"] and files_cloud == [], (files_local, files_cloud)
+    assert a.age_by_hour_h.equals(b.age_by_hour_h) and a.node_hyd.equals(b.node_hyd) and a.pipes.equals(b.pipes)
+    return {"mode_cases": len(cases), "upload_cases": len(ucases), "cloud_grid_workers": C.GRID_WORKERS,
+            "upload_mb": C.UPLOAD_MB, "max_junctions": C.MAX_JUNCTIONS,
+            "nominal_run_files_in_cwd": {"local": files_local, "cloud": files_cloud},
+            "nominal_run_same_results": True, "guide_swaps": len(C.GUIDE_CLOUD),
+            "limits_before_parsing": {k: {"bytes": v["bytes"], **v["over_limit"]} for k, v in refused.items()},
+            "limit_time_bound_s": CLOUD_LIMIT_S,
+            "run_cost_under_the_limits": {"junctions": rc["junctions"], "workers": rc["workers"],
+                                          "speedup": rc["speedup"], "local_speedup": EFFECTIVE_SPEEDUP},
+            "costly_models_refused": {k: {x: v[x] for x in ("bytes", "what", "value", "limit")}
+                                      for k, v in cost_refused.items()},
+            "cost_grid_junctions": FX.CLOUD_COST_N ** 2,
+            "timed_run_bounds_refuse": sorted(timed),
+            "shared_strings_bomb_refused": {"bytes": len(bomb), "unpacked_bytes": bomb_unpacked,
+                                            "limit_mb": C.WORKBOOK_MB, "packed_over_100_to_1_refused": True},
+            "_volatile": {"limit_seconds": {k: v["seconds"] for k, v in refused.items()},
+                          "cost_seconds": {k: v["seconds"] for k, v in cost_refused.items()},
+                          "grid17_minutes": c17["minutes"], "grid17_seconds_per_run": c17["seconds_per_run"],
+                          "shared_strings_bomb_s": round(bomb_s, 3)}}
+
+
+@check("task20")
+def requirements_pinned():
+    """Every requirement line pins the version installed in .venv (name==version), so the hosted demo's build on
+    Streamlit Community Cloud installs what this Mac runs (open decision 7)."""
+    from importlib.metadata import version
+    lines = [ln.strip() for ln in open(os.path.join(REPO, "requirements.txt"), encoding="utf-8")
+             if ln.strip() and not ln.strip().startswith("#")]
+    pins = {}
+    for ln in lines:
+        m = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9.+!_-]+)", ln)
+        assert m, f"not pinned: {ln}"
+        name, want = m.groups()
+        have = version(name)
+        assert have == want, (name, want, have)
+        pins[name] = want
+    for name in ("wntr", "streamlit", "numpy", "pandas", "scipy", "scikit-learn", "networkx", "matplotlib"):
+        assert name in pins, name
+    return {"lines": len(lines), "pinned": pins}
+
+
+@check("task20")
+def hosted_start_settings():
+    """The hosted demo's start (hosted/streamlit_app.py) and its settings: hosted/.streamlit/config.toml sets
+    server.address '0.0.0.0', server.maxUploadSize 5 (MB, cloud.UPLOAD_MB) and usage statistics off, and Streamlit
+    1.64.0's own loader, set up as 'streamlit run hosted/streamlit_app.py' from the repository's root (where Community
+    Cloud starts every app), reads address 0.0.0.0 and an upload limit of 5 MB, while 'streamlit run app.py' from the
+    root still reads localhost and Streamlit's default 200 MB (the local default; from another folder in
+    streamlit_config_private).  This is Streamlit's loader on this Mac: Community Cloud's documentation says that a
+    subdirectory app takes its settings from the root, so whether the hosted file applies there is not verified here.  The start sets cloud mode itself, and its folder holds no requirements or packages
+    file (Community Cloud would take a dependency file next to the main file first)."""
+    import tomllib
+    with open(os.path.join(REPO, "hosted", ".streamlit", "config.toml"), "rb") as fh:
+        cfg = tomllib.load(fh)
+    from .cloud import UPLOAD_MB
+    assert cfg == {"server": {"address": "0.0.0.0", "maxUploadSize": UPLOAD_MB},
+                   "browser": {"gatherUsageStats": False}}, cfg
+    got = {}
+    script = STREAMLIT_CFG_SCRIPT.replace('"stats": config.get_option("browser.gatherUsageStats")',
+                                          '"stats": config.get_option("browser.gatherUsageStats"), '
+                                          '"upload_mb": config.get_option("server.maxUploadSize")')
+    assert script != STREAMLIT_CFG_SCRIPT
+    for key, main in (("hosted", HOSTED_START), ("app", os.path.join(REPO, "app.py"))):
+        r = subprocess.run([PY, "-c", script, main], cwd=REPO, capture_output=True, text=True,
+                           env={**os.environ, "PYTHONPATH": REPO})
+        line = [x for x in r.stdout.splitlines() if x.startswith("CFG_JSON ")]
+        assert r.returncode == 0 and line, r.stderr[-2000:]
+        got[key] = json.loads(line[-1][len("CFG_JSON "):])
+    assert got == {"hosted": {"address": "0.0.0.0", "stats": False, "upload_mb": UPLOAD_MB},
+                   "app": {"address": "localhost", "stats": False, "upload_mb": 200}}, got
+    src = open(HOSTED_START, encoding="utf-8").read()
+    assert 'os.environ["RESIDUALMAP_MODE"] = "cloud"' in src and "run_pages(" in src
+    others = sorted(f for f in os.listdir(os.path.dirname(HOSTED_START)) if f in ("requirements.txt", "packages.txt",
+                                                                                   "environment.yml", "pyproject.toml"))
+    assert not others, others
+    return {"streamlit_reads": got, "hosted_folder_dependency_files": 0}
+
+
+# what no string of the hosted demo may say with uploads off: the review of task 20 matched a few exact phrases in a
+# few kinds of element; its final verification found that plain rewordings passed, so every string of every element
+# is matched against any mention of uploading, of the 'Check a file' step, of dropping a file, of a repository folder
+# or file, or of the laptop, except the texts that say uploading and checking are not offered here (cloud_allowed)
+CLOUD_FORBIDDEN = re.compile(r"\bupload|check a file|\bgo to step 3\b|\b(?:drop|drag) (?:it|them|your|a|the)\b|"
+                             r"outputs/|docs/|templates/|\.py\b|\bREADME\b|laptop", re.I)
+# the final verification's rewordings, each of which CLOUD_FORBIDDEN must catch (the older pattern caught 1 of 7)
+CLOUD_FORBIDDEN_REWORDINGS = ("1. An `.inp` is ready: upload a copy as it is.",
+                              "Upload a grab log and a tap map under '2. Your samples'.",
+                              "Off = you can upload a grab log and a tap map.",
+                              "Use the Check a file step below to test any file.",
+                              "Uploading your grab log: turn the demo off first.",
+                              "Drop your model file in the box on the left.",
+                              "Go to step 3 and give it any file.")
+
+
+def cloud_allowed() -> set:
+    """The hosted demo's texts that mention uploading or 'Check a file' to say they are not offered there."""
+    from . import cloud as C
+    return {C.SAMPLES_OFF, C.CHECK_OFF, "Step 3. Check a file"}
+
+
+CLOUD_EXAMPLES_SCRIPT = r"""
+import json, os, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+import residualmap.chloramine as CA
+from residualmap import cloud
+app, page, hosted = sys.argv[1], sys.argv[2], sys.argv[3]
+CALLS = []
+def _no_msx(*a, **k):
+    CALLS.append(1)
+    raise RuntimeError("EPANET-MSX was called in cloud mode")
+CA.truth_in_subprocess = _no_msx
+
+from google.protobuf.json_format import MessageToDict
+
+def _strings(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            if k not in ("data", "arrowData", "bytes"):     # binary payloads (a table's Arrow bytes, an image)
+                yield from _strings(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _strings(v)
+
+def _walk(node):
+    p = getattr(node, "proto", None)
+    if p is not None:
+        try:
+            yield from _strings(MessageToDict(p))
+        except Exception:
+            pass
+    kids = getattr(node, "children", None)
+    if isinstance(kids, dict):
+        for c in kids.values():
+            yield from _walk(c)
+
+def texts(at):
+    # every string of every element (the final verification of task 20): its body, label, help, options, header,
+    # expander and button labels included, and every table's cells and headers
+    out = list(_walk(at._tree))
+    for t in list(at.table) + list(at.dataframe):
+        try:
+            df = t.value
+            out += [str(v) for v in df.astype(str).values.ravel().tolist()] + [str(c) for c in df.columns]
+        except Exception:
+            pass
+    return out
+
+def state(at):
+    assert not at.exception, [e.value for e in at.exception]
+    model = [r for r in at.radio if r.label == "Model"]
+    ex = [s for s in at.selectbox if s.label == "Example"]
+    metric = [m for m in at.metric if m.label.startswith("Junctions likely below")]
+    return {"model_options": model[0].options if model else None, "examples": ex[0].options if ex else None,
+            "texts": texts(at), "demo_help": [t.proto.help for t in at.toggle if t.label.startswith("Demo:")],
+            "uploaders": [u.label for u in at.file_uploader], "info": [i.value for i in at.info],
+            "warnings": [w.value for w in at.warning], "captions": [c.value for c in at.caption],
+            "flagged": metric[0].value if metric else None, "flagged_label": metric[0].label if metric else None,
+            "reveal": [m.value for m in at.markdown if "True daily-minimum violations" in m.value],
+            "pages": sorted([v.get("page_name"), v.get("url_pathname")] for v in at._registered_pages.values())}
+
+def fresh(f):
+    return AppTest.from_file(f, default_timeout=900).run()
+
+def reveal(at):
+    [t for t in at.toggle if t.label.startswith("Show the true daily-minimum map")][0].set_value(True)
+    return at.run()
+
+res = {}
+os.environ.pop(cloud.MODE_ENV, None)
+os.environ.pop(cloud.UPLOADS_ENV, None)
+res["local"] = state(fresh(app))
+for f in os.listdir("."):           # local mode writes EPANET's temp files to the working directory, as it always has
+    if f.startswith("temp."):
+        os.remove(f)
+os.environ[cloud.MODE_ENV] = "cloud"
+at = reveal(fresh(app)); res["cloud_default"] = state(at)
+[t for t in at.toggle if t.label.startswith("Demo:")][0].set_value(False); at.run(); res["cloud_demo_off"] = state(at)
+at = fresh(app)
+[r for r in at.radio if r.label == "Disinfectant"][0].set_value("Chloramine (total chlorine)"); at.run()
+res["cloud_chloramine"] = state(at)
+at = fresh(app); at.selectbox[0].set_value([o for o in at.selectbox[0].options if o.startswith("Net2")][0]); at.run()
+res["cloud_net2"] = state(at)
+p = fresh(page)
+res["cloud_page"] = state(p)
+radio = [r for r in p.radio if r.label.startswith("Which software")][0]
+res["cloud_page_guide_choices"] = len(radio.options)
+for o in radio.options:           # every section of the guide, as a visitor picks it
+    [r for r in p.radio if r.label.startswith("Which software")][0].set_value(o); p.run()
+    res["cloud_page"]["texts"] += texts(p)
+os.environ.pop(cloud.MODE_ENV, None)
+res["hosted"] = state(fresh(hosted))
+res["hosted_mode_set"] = os.environ.get(cloud.MODE_ENV)
+res["msx_calls"] = len(CALLS)
+res["cwd_after_cloud_runs"] = sorted(os.listdir("."))
+print("CLOUD_JSON " + json.dumps(res))
+"""
+
+
+@check("task20", quick=False)
+def cloud_mode_examples_only():
+    """Headless AppTest of the hosted demo's mode.  In local mode (no variable) the Model radio offers 'Example
+    network' and 'Upload my .inp' and the sidebar names the pages 'ResidualMap' and 'Get started' (st.navigation;
+    the main page was listed as 'app' before).  With RESIDUALMAP_MODE=cloud: the Model radio offers only 'Example
+    network', the example picker offers Net3 and Net2 only (no ky4), there is no file uploader on either page (the demo
+    on, the demo off, the Get started page), the privacy notice opens both pages, the Get started intro no longer says
+    the laptop and 'Check a file' says it is turned off, the last line says the numbers are computed on the demo's
+    server, the chloramine demo uses the reduced truth with its 'flatter the model' warning and never calls EPANET-MSX,
+    and the default demo still flags 42 of 92 and finds 36 of 36 with 1 false alarm (its EPANET runs now in temporary
+    directories: nothing is left in the working directory).  The hosted start (hosted/streamlit_app.py), run with no
+    variable, is in cloud mode with the same pages.
+    With uploads off, no string of any element either page shows (every guide section included) mentions uploading,
+    'Check a file' or dropping a file, or names a repository folder or file or the laptop (CLOUD_FORBIDDEN), apart
+    from the three texts that say uploading and checking are not offered here (cloud_allowed); since the final
+    verification of task 20 every string is read (bodies, labels, help, options, headers, expander and button labels,
+    table cells), not only six kinds of element, and the pattern catches each of the verification's seven rewordings
+    and every guide sentence that tells a local user to upload."""
+    from . import cloud as C
+    with tempfile.TemporaryDirectory(prefix="rm_t20_cwd_") as d:
+        env = {k: v for k, v in os.environ.items() if k not in (C.MODE_ENV, C.UPLOADS_ENV)}
+        r = subprocess.run([PY, "-c", CLOUD_EXAMPLES_SCRIPT, os.path.join(REPO, "app.py"), GET_STARTED_PAGE, HOSTED_START],
+                           cwd=d, capture_output=True, text=True, env={**env, "PYTHONPATH": REPO})
+    line = [x for x in r.stdout.splitlines() if x.startswith("CLOUD_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    res = json.loads(line[-1][len("CLOUD_JSON "):])
+    names = [["Get started", "Get_started"], ["ResidualMap", ""]]
+    lo = res["local"]
+    assert lo["model_options"] == ["Example network", "Upload my .inp"] and lo["pages"] == names, lo
+    assert any(o.startswith("ky4") for o in lo["examples"]) and not any(C.NOTICE_START in i for i in lo["info"])
+    assert lo["flagged"] == f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}"
+    notice = C.notice(False)
+    for k in ("cloud_default", "cloud_demo_off", "cloud_chloramine", "cloud_net2", "hosted"):
+        v = res[k]
+        assert v["model_options"] == ["Example network"], (k, v["model_options"])
+        assert len(v["examples"]) == 2 and [o.split()[0] for o in v["examples"]] == ["Net3", "Net2"], (k, v["examples"])
+        assert v["uploaders"] == [] and v["info"][:1] == [notice], (k, v["uploaders"], v["info"][:1])
+        assert v["pages"] == names, (k, v["pages"])
+        assert C.footer(False) in v["captions"] and not any("on this laptop" in c for c in v["captions"]), k
+    d0 = res["cloud_default"]
+    got = {**_reveal_counts(d0["reveal"][0]), "flagged": int(d0["flagged"].split()[0])}
+    assert got == APP_DEMO, got
+    assert C.SAMPLES_OFF in res["cloud_demo_off"]["captions"]
+    ca = res["cloud_chloramine"]
+    assert C.REDUCED_TRUTH in ca["warnings"] and "flatter" in C.REDUCED_TRUTH and C.REDUCED_TRUTH.startswith("Reduced demo truth")
+    assert ca["flagged_label"] == "Junctions likely below 0.5 mg/L (daily minimum)" and res["msx_calls"] == 0, ca["flagged_label"]
+    pg = res["cloud_page"]
+    assert pg["uploaders"] == [] and pg["info"][:1] == [notice], pg
+    assert C.get_started_intro(True, False) in pg["captions"] and C.CHECK_OFF in pg["captions"]
+    assert not any("this laptop" in c for c in pg["captions"]), pg["captions"]
+    assert res["hosted_mode_set"] == "cloud" and res["hosted"]["flagged"] == lo["flagged"]
+    assert res["cwd_after_cloud_runs"] == [], res["cwd_after_cloud_runs"]
+    # the review of task 20 and its final verification: with uploads off, no string either page shows mentions
+    # uploading or 'Check a file', or names a repository folder, apart from the texts that say they are not offered
+    shown = sorted({t for k in ("cloud_default", "cloud_demo_off", "cloud_chloramine", "cloud_net2", "cloud_page",
+                                "hosted") for t in res[k]["texts"]})
+    allowed = cloud_allowed()
+    told = [t for t in shown if CLOUD_FORBIDDEN.search(t) and t not in allowed]
+    assert not told, told
+    mentions = sorted(t for t in shown if t in allowed)
+    assert set(mentions) == allowed, mentions
+    assert all(CLOUD_FORBIDDEN.search(t) for t in CLOUD_FORBIDDEN_REWORDINGS)
+    with open(os.path.join(REPO, "docs", "how_to_export_your_model.md"), encoding="utf-8") as fh:
+        local_guide = [x for x in re.split(r"(?<=[.!?])\s+|\n", fh.read()) if re.search(r"\bupload", x, re.I)]
+    assert local_guide and all(CLOUD_FORBIDDEN.search(x) for x in local_guide), local_guide
+    mains = ("cloud_default", "cloud_demo_off", "cloud_chloramine", "cloud_net2", "hosted")
+    assert all(res[k]["demo_help"] == [C.DEMO_HELP_NO_UPLOADS] for k in mains), [res[k]["demo_help"] for k in mains]
+    assert C.ACCOUNTS_FOR_NOTE in res["cloud_default"]["captions"]
+    assert not any("(README, Net2)" in t for t in res["cloud_net2"]["texts"])
+    page_texts = "\n".join(res["cloud_page"]["texts"])
+    assert all(new in page_texts for _, _, new, _ in C.GUIDE_CLOUD if new), "a guide swap is missing"
+    return {"local_model_options": lo["model_options"], "cloud_model_options": d0["model_options"],
+            "cloud_examples": [o.split()[0] for o in d0["examples"]], "sidebar_pages": [n[0] for n in names][::-1],
+            "uploaders_in_cloud": 0, "cloud_default_demo": got, "cloud_net2_flagged": res["cloud_net2"]["flagged"],
+            "texts_shown_in_cloud": len(shown), "texts_telling_to_upload": 0,
+            "allowed_mentions": len(mentions), "rewordings_caught": len(CLOUD_FORBIDDEN_REWORDINGS),
+            "local_guide_sentences_caught": len(local_guide),
+            "guide_sections_read": res["cloud_page_guide_choices"],
+            "cloud_chloramine": {"flagged": ca["flagged"], "reduced_truth_warning": True, "msx_calls": 0},
+            "hosted_start_mode": res["hosted_mode_set"], "files_left_in_cwd_by_cloud_runs": 0}
+
+
+CLOUD_UPLOADS_SCRIPT = r"""
+import json, os, sys, tempfile, threading, time, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+from residualmap import cloud, fixtures as FX
+app, page, net3, ky4, log_template = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+
+def tmp_now():
+    return sorted(os.listdir(tempfile.gettempdir()))
+
+# the final verification of task 20: EPANET's own scratch file ('en' and six letters, written to the working directory
+# of the process that runs EPANET), wherever it appears while each step runs: the working directory, or a folder in
+# the system's temporary directory (the run's own folder is rm_cloud_..., 'Check a file''s check_...)
+PHASE, SEEN, STOP = ["start"], set(), threading.Event()
+def watch():
+    tmp = tempfile.gettempdir()
+    while not STOP.is_set():
+        try:
+            places = [("cwd", ".")] + [(e.name, e.path) for e in os.scandir(tmp) if e.is_dir()]
+        except OSError:
+            places = [("cwd", ".")]
+        for where, d in places:
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue
+            for f in names:
+                if f.startswith("en") and len(f) == 8:
+                    SEEN.add((PHASE[0], where))
+        time.sleep(0.004)
+threading.Thread(target=watch, daemon=True).start()
+
+def timed_run(t, phase):
+    PHASE[0] = phase
+    t0 = time.perf_counter()
+    t.run()
+    PHASE[0] = "between"
+    return round(time.perf_counter() - t0, 2)
+
+def state(at):
+    assert not at.exception, [e.value for e in at.exception]
+    metric = [m for m in at.metric if m.label.startswith("Junctions likely below")]
+    kept = at.session_state["_residualmap_session_results"] if "_residualmap_session_results" in at.session_state else {}
+    return {"model_options": [r for r in at.radio if r.label == "Model"][0].options,
+            "uploaders": [u.label for u in at.file_uploader], "info": [i.value for i in at.info],
+            "errors": [e.value for e in at.error], "flagged": metric[0].value if metric else None,
+            "reveal": [m.value for m in at.markdown if "True daily-minimum violations" in m.value],
+            "session_kinds": sorted({k[0] for k in kept}), "tmp": tmp_now()}
+
+res = {}
+at = AppTest.from_file(app, default_timeout=900)
+timed_run(at, "examples")
+res["tmp_start"] = tmp_now()
+[r for r in at.radio if r.label == "Model"][0].set_value("Upload my .inp"); timed_run(at, "examples")
+at.file_uploader[0].set_value(("Net3.inp", open(net3, "rb").read(), "application/octet-stream"))
+res["net3"] = {"seconds": timed_run(at, "upload:net3")}
+res["net3"].update(state(at))
+[t for t in at.toggle if t.label.startswith("Show the true daily-minimum map")][0].set_value(True)
+timed_run(at, "upload:net3_reveal")
+res["net3_reveal"] = state(at)
+at.file_uploader[0].set_value(("ky4.inp", open(ky4, "rb").read(), "application/octet-stream")); timed_run(at, "upload:ky4")
+res["ky4"] = state(at)
+at.file_uploader[0].set_value(("big.inp", b"[TITLE]\n" + b" " * 5_000_001, "application/octet-stream"))
+timed_run(at, "upload:big")
+res["big"] = state(at)
+# the final verification of task 20: models under the file and junction limits that cost far more (the 17 x 17 grid
+# with about 124,000 parallel pipes; with a 1-minute pattern step), each refused before EPANET runs it, timed
+for key, fname, data in (("many_pipes", "parallel_pipes.inp", FX.cloud_parallel_pipes_inp()),
+                         ("pattern_60s", "pattern_step_60s.inp", FX.cloud_pattern_step_inp("0:01"))):
+    at.file_uploader[0].set_value((fname, data, "application/octet-stream"))
+    res[key] = {"seconds": timed_run(at, "upload:" + key), "bytes": len(data)}
+    res[key].update(state(at))
+# ... and the intake's time limit: with the pattern-step limit lifted and the limit at INTAKE_S, the 1-minute model's
+# intake (its 7-day run took 38 s) is stopped, and its EPANET files go with the run's folder
+INTAKE_S = 5.0
+keep = (cloud.MIN_PATTERN_STEP_S, cloud.INTAKE_TIMEOUT_S)
+cloud.MIN_PATTERN_STEP_S, cloud.INTAKE_TIMEOUT_S = 1, INTAKE_S
+try:
+    at.file_uploader[0].set_value(("pattern_step_60s_timed.inp", FX.cloud_pattern_step_inp("0:01"), "application/octet-stream"))
+    res["intake_stopped"] = {"seconds": timed_run(at, "upload:intake_stopped"), "limit_s": INTAKE_S}
+    res["intake_stopped"].update(state(at))
+finally:
+    cloud.MIN_PATTERN_STEP_S, cloud.INTAKE_TIMEOUT_S = keep
+# the review of task 20: a 32,400-junction model in a zip of about 1 MB (under the file limit), refused by its junctions
+# before WNTR parses it, timed; the same model padded so its zip unpacks past 5 MB, refused before it is unpacked
+z = FX.cloud_grid_zip(180)
+at.file_uploader[0].set_value(("grid180.zip", z, "application/zip"))
+secs = timed_run(at, "upload:grid180_zip")
+res["grid180_zip"] = {**state(at), "bytes": len(z), "seconds": secs}
+zp = FX.cloud_grid_zip(180, pad_bytes=5_000_000)
+at.file_uploader[0].set_value(("grid180_padded.zip", zp, "application/zip")); timed_run(at, "upload:padded_zip")
+res["padded_zip"] = {**state(at), "bytes": len(zp)}
+res["model_uploader_mb"] = [u.proto.max_upload_size_mb for u in at.file_uploader]
+# the grab log and the tap map: a file over the limit is refused before it is read
+row = b"2026-09-01,10:00,T1,0.50\n"
+big_csv = b"date,time,tap_id,free_chlorine_mgL\n" + row * (6_000_000 // len(row) + 1)
+for slot in (0, 1):
+    g = AppTest.from_file(app, default_timeout=900).run()
+    [t for t in g.toggle if t.label.startswith("Demo:")][0].set_value(False); g.run()
+    res["log_uploaders"] = [[u.label, u.proto.max_upload_size_mb] for u in g.file_uploader]
+    g.file_uploader[0].set_value(("log.csv", big_csv if slot == 0 else open(log_template, "rb").read(), "text/csv"))
+    if slot == 1:
+        g.file_uploader[1].set_value(("taps.csv", big_csv, "text/csv"))
+    g.run()
+    res[("big_log", "big_tap_map")[slot]] = {**state(g), "bytes": len(big_csv)}
+# the final verification of task 20: a 466 KB grab-log workbook whose shared strings unpack to 190 MB, refused before
+# openpyxl opens it (it took 37 s and about 0.9 GB on this page before), timed
+bomb = FX.shared_strings_bomb_xlsx()
+g = AppTest.from_file(app, default_timeout=900).run()
+[t for t in g.toggle if t.label.startswith("Demo:")][0].set_value(False); g.run()
+g.file_uploader[0].set_value(("grab_log.xlsx", bomb, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+res["bomb_log"] = {"seconds": timed_run(g, "log:bomb"), "bytes": len(bomb)}
+res["bomb_log"].update(state(g))
+res["bomb_log"]["column_pickers"] = [s.label for s in g.selectbox if s.label in ("Tap column", "Reading column")]
+del g
+p = AppTest.from_file(page, default_timeout=900).run()
+res["page_uploader_mb"] = [u.proto.max_upload_size_mb for u in p.file_uploader]
+p.file_uploader[0].set_value(("Net3.inp", open(net3, "rb").read(), "application/octet-stream")); timed_run(p, "upload:page_net3")
+assert not p.exception, [e.value for e in p.exception]
+res["page"] = {"uploaders": [u.label for u in p.file_uploader], "info": [i.value for i in p.info],
+               "readiness": [m.value[:40] for m in p.markdown if m.value.startswith("**Model readiness")], "tmp": tmp_now()}
+for key, fname, data in (("page_grid180_zip", "grid180.zip", z), ("page_many_pipes", "parallel_pipes.inp",
+                                                                   FX.cloud_parallel_pipes_inp())):
+    p.file_uploader[0].set_value((fname, data, "application/octet-stream"))
+    secs = timed_run(p, "upload:" + key)
+    assert not p.exception, [e.value for e in p.exception]
+    res[key] = {"errors": [e.value for e in p.error], "seconds": secs, "tmp": tmp_now(),
+                "readiness": [m.value[:40] for m in p.markdown if m.value.startswith("**Model readiness")]}
+p.file_uploader[0].set_value(("grab_log.xlsx", bomb, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+secs = timed_run(p, "log:page_bomb")
+assert not p.exception, [e.value for e in p.exception]
+res["page_bomb"] = {"warnings": [w.value for w in p.warning], "seconds": secs, "tmp": tmp_now(),
+                    "readings": [m.value[:40] for m in p.markdown if m.value.startswith("**As a grab log")]}
+STOP.set()
+time.sleep(0.05)
+res["epanet_scratch_seen"] = sorted([list(x) for x in SEEN])
+print("UPLOADS_JSON " + json.dumps(res))
+"""
+
+
+def _outputs_snapshot() -> dict:
+    """(size, mtime_ns) of every file under outputs/, the cache included (git status cannot see the ignored ones)."""
+    out = {}
+    for dirpath, _, fnames in os.walk(os.path.join(REPO, "outputs")):
+        for fn in fnames:
+            p = os.path.join(dirpath, fn)
+            st = os.stat(p)
+            out[os.path.relpath(p, REPO)] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+@check("task20", quick=False)
+def cloud_mode_uploads_leave_no_files():
+    """Headless AppTest of cloud mode with uploads allowed (RESIDUALMAP_MODE=cloud, RESIDUALMAP_ALLOW_UPLOADS=true; off
+    by default, open decision 8), with the system's temporary directory pointed at a new empty folder: the Model radio
+    offers the upload; a Net3 upload runs (its grid built in memory) and gives the example's map, 42 of 92 flagged and
+    36 of 36 found with 1 false alarm; its results are kept in the session (st.session_state); a ky4 upload (959
+    junctions) is refused by the 300-junction limit before its grid is built, and a file over 5 MB by the size limit
+    once it reaches the app, before it is read; 'Check a file' on the Get started page gives Net3's readiness report.
+    The review of task 20: a 32,400-junction model in a zip of about 1 MB is refused by its junction count before WNTR
+    parses it, within CLOUD_LIMIT_APP_S seconds for the whole page run (the full intake took about 32 s and 2.5 GB
+    before), on the main page and in 'Check a file'; the same model padded so that its zip unpacks past 5 MB is
+    refused before it is unpacked; a grab log or a tap map over 5 MB is refused before it is read (it was taken whole
+    before), and every uploader in cloud mode carries the 5 MB limit itself, so the browser refuses a larger file.  After every run the temporary
+    directory holds only what was there before the first upload, and after the whole run nothing is left in it; no file
+    under outputs/ is new or changed (the cache and outputs/app_uploads included) and nothing is left in the working
+    directory.
+    The final verification of task 20: models under the file and junction limits that cost far more (the 17 x 17
+    grid with about 124,000 parallel pipes, 4.7 MB, which took 127 s and 3.7 GB to prepare; the same grid with a
+    1-minute pattern step, 38 s a run, whose page run took 67 s and started the grid) are refused before EPANET runs
+    them, each page run within CLOUD_LIMIT_APP_S (the many-pipes model in 'Check a file' too); with the pattern-step
+    limit lifted, the 1-minute model's intake is stopped at its time limit (here 5 s); a 466 KB grab-log workbook
+    whose shared strings unpack to 190 MB is refused before openpyxl opens it on the main page (37 s and about 0.9 GB
+    before) and in 'Check a file' (67 s), each within CLOUD_LIMIT_APP_S; and, watched while every step runs, EPANET's
+    own scratch file never appears in the working directory while an upload is processed: it appears only in the
+    run's temporary folder (and in 'Check a file''s), the Net3 upload's grid and the stopped intake included."""
+    import types as _types
+    from . import cloud as C
+    from . import fixtures as FX
+    from .importers import LogRefused, prepare_inp, read_table
+    from .simulate import LIB
+    expect = {}
+    for key, fname, data in (("many_pipes", "parallel_pipes.inp", FX.cloud_parallel_pipes_inp()),
+                             ("pattern_60s", "pattern_step_60s.inp", FX.cloud_pattern_step_inp("0:01"))):
+        with tempfile.TemporaryDirectory(prefix="rm_t20_cost_") as d0:
+            expect[key] = C.limit_refusal(prepare_inp(data, d0, name=fname, **C.intake_limits())[1])
+        assert expect[key], key
+    expect["intake_stopped"] = C.limit_refusal(_types.SimpleNamespace(
+        flags={"over_limit": {"what": "intake_seconds", "value": 5.0, "limit": 5.0}}, run_cost={}))
+    try:
+        read_table(FX.shared_strings_bomb_xlsx(), "grab_log.xlsx", **C.table_limits())
+        raise AssertionError("the shared-strings workbook was read under the cloud's limits")
+    except LogRefused as e:
+        expect["bomb"] = str(e)
+    before = _outputs_snapshot()
+    up_dir = os.path.join(REPO, "outputs", "app_uploads")
+    ups0 = sorted(os.listdir(up_dir)) if os.path.isdir(up_dir) else None
+    tmp_root = tempfile.mkdtemp(prefix="rm_t20_tmp_")
+    try:
+        with tempfile.TemporaryDirectory(prefix="rm_t20_cwd_") as d:
+            env = {**os.environ, "PYTHONPATH": REPO, "RESIDUALMAP_MODE": "cloud", "RESIDUALMAP_ALLOW_UPLOADS": "true",
+                   "TMPDIR": tmp_root}
+            r = subprocess.run([PY, "-c", CLOUD_UPLOADS_SCRIPT, os.path.join(REPO, "app.py"), GET_STARTED_PAGE,
+                                os.path.join(LIB, "Net3.inp"), os.path.join(LIB, "ky4.inp"),
+                                os.path.join(REPO, "docs", "templates", "grab_log_template.csv")],
+                               cwd=d, capture_output=True, text=True, env=env)
+            cwd_left = sorted(os.listdir(d))
+        tmp_left = sorted(os.listdir(tmp_root))
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+        after = _outputs_snapshot()
+        new = sorted(set(after) - set(before))
+        for f in new:            # a file the run should not have written (git-ignored places): removed, then failed
+            if f.startswith((os.path.join("outputs", "app_uploads"), os.path.join("outputs", "cache"))):
+                with contextlib.suppress(OSError):
+                    os.remove(os.path.join(REPO, f))
+        if ups0 is None and os.path.isdir(up_dir) and not os.listdir(up_dir):
+            os.rmdir(up_dir)
+    line = [x for x in r.stdout.splitlines() if x.startswith("UPLOADS_JSON ")]
+    if r.returncode != 0 or not line:
+        raise RuntimeError(f"AppTest failed (exit {r.returncode}): {r.stderr[-3000:]}")
+    res = json.loads(line[-1][len("UPLOADS_JSON "):])
+    changed = sorted(f for f in before if after.get(f) != before[f])
+    assert not new and not changed, (new, changed)
+    assert (sorted(os.listdir(up_dir)) if os.path.isdir(up_dir) else None) == ups0
+    assert tmp_left == [] and cwd_left == [], (tmp_left, cwd_left)
+    from . import cloud as C
+    n3 = res["net3"]
+    assert n3["model_options"] == ["Example network", "Upload my .inp"] and n3["uploaders"] == ["EPANET .inp file"]
+    assert n3["info"][:1] == [C.notice(True)] and not n3["errors"], (n3["info"][:1], n3["errors"])
+    rv = res["net3_reveal"]
+    got = {**_reveal_counts(rv["reveal"][0]), "flagged": int(rv["flagged"].split()[0])}
+    assert got == APP_DEMO, got
+    assert {"upload", "prepare", "water_age", "demo_truth"} <= set(rv["session_kinds"]), rv["session_kinds"]
+    k4, big = res["ky4"], res["big"]
+    assert k4["errors"] == [C.too_many_junctions(959)] and k4["flagged"] is None, k4["errors"]
+    assert big["errors"] == [C.too_big(5_000_009)] and big["flagged"] is None, big["errors"]
+    pg = res["page"]
+    assert pg["uploaders"] == ["Check a file"] and pg["readiness"] and pg["info"][:1] == [C.notice(True)], pg
+    from . import fixtures as FX
+    gz, pz = res["grid180_zip"], res["padded_zip"]
+    assert gz["errors"] == [C.too_many_junctions(180 * 180)] and gz["flagged"] is None, gz["errors"]
+    assert gz["seconds"] < CLOUD_LIMIT_APP_S and C.too_big(gz["bytes"]) is None, gz["seconds"]
+    unpacked = len(FX.cloud_grid_inp(180, pad_bytes=5_000_000))
+    assert pz["errors"] == [C.too_big(unpacked, unpacked=True)] and C.too_big(pz["bytes"]) is None, pz["errors"]
+    assert res["model_uploader_mb"] == res["page_uploader_mb"] == [C.UPLOAD_MB], res["model_uploader_mb"]
+    assert res["log_uploaders"] == [["Grab log (CSV or Excel)", C.UPLOAD_MB], ["Tap map (CSV)", C.UPLOAD_MB]]
+    for k in ("big_log", "big_tap_map"):
+        v = res[k]
+        assert v["errors"] == [C.too_big(v["bytes"])] and v["flagged"] is None, (k, v["errors"])
+        assert not {"grab_log", "log_header"} & set(v["session_kinds"]), (k, v["session_kinds"])
+    pgz = res["page_grid180_zip"]
+    assert pgz["errors"] == [C.too_many_junctions(180 * 180)] and not pgz["readiness"], pgz
+    assert pgz["seconds"] < CLOUD_LIMIT_APP_S, pgz["seconds"]
+    # the final verification of task 20
+    for k in ("many_pipes", "pattern_60s"):
+        v = res[k]
+        assert v["errors"] == [expect[k]] and v["flagged"] is None and C.too_big(v["bytes"]) is None, (k, v["errors"])
+        assert v["seconds"] < CLOUD_LIMIT_APP_S, (k, v["seconds"])
+    ist = res["intake_stopped"]
+    assert ist["errors"] == [expect["intake_stopped"]] and ist["flagged"] is None, ist["errors"]
+    assert ist["limit_s"] <= ist["seconds"] < CLOUD_LIMIT_APP_S, ist["seconds"]
+    pmp = res["page_many_pipes"]
+    assert pmp["errors"] == [expect["many_pipes"]] and not pmp["readiness"] and pmp["seconds"] < CLOUD_LIMIT_APP_S, pmp
+    bl = res["bomb_log"]
+    assert bl["errors"] == [f"The grab log cannot be used as it is. {expect['bomb']}"], bl["errors"]
+    assert not bl["column_pickers"] and bl["seconds"] < CLOUD_LIMIT_APP_S, (bl["column_pickers"], bl["seconds"])
+    pb = res["page_bomb"]
+    assert any(expect["bomb"] in w for w in pb["warnings"]) and not pb["readings"], pb
+    assert pb["seconds"] < CLOUD_LIMIT_APP_S, pb["seconds"]
+    seen = [tuple(x) for x in res["epanet_scratch_seen"]]
+    uploads = [(ph, where) for ph, where in seen if ph.startswith("upload:")]
+    assert not [x for x in uploads if x[1] == "cwd"], seen
+    assert all(where.startswith(("rm_cloud_", "check_")) for _, where in uploads), uploads
+    for ph, prefix in (("upload:net3", "rm_cloud_"), ("upload:intake_stopped", "rm_cloud_"),
+                       ("upload:page_net3", "check_")):
+        assert any(p == ph and where.startswith(prefix) for p, where in uploads), (ph, uploads)
+    for k in ("net3", "net3_reveal", "ky4", "big", "page", "grid180_zip", "padded_zip", "big_log", "big_tap_map",
+              "page_grid180_zip", "many_pipes", "pattern_60s", "intake_stopped", "page_many_pipes", "bomb_log",
+              "page_bomb"):
+        assert res[k]["tmp"] == res["tmp_start"], (k, res[k]["tmp"], res["tmp_start"])
+    return {"net3_upload": got, "session_kinds": rv["session_kinds"],
+            "ky4_refused": {"junctions": 959, "limit_junctions": C.MAX_JUNCTIONS},
+            "file_over_the_limit_refused": {"bytes": 5_000_009, "limit_mb": C.UPLOAD_MB}, "check_a_file_readiness_report": True,
+            "zip_of_32400_junctions_refused": {"zip_bytes": gz["bytes"], "junctions": 180 * 180,
+                                               "time_bound_s": CLOUD_LIMIT_APP_S, "on_the_main_page": True,
+                                               "in_check_a_file": True},
+            "zip_unpacking_past_the_limit_refused": {"zip_bytes": pz["bytes"], "unpacked_bytes": unpacked},
+            "grab_log_or_tap_map_over_the_limit_refused": {"bytes": res["big_log"]["bytes"]},
+            "uploaders_own_limit_mb": C.UPLOAD_MB,
+            "new_or_changed_files_under_outputs": 0, "files_left_in_temp_dir": 0, "files_left_in_cwd": 0,
+            "costly_models_refused_in_the_app": {"many_pipes_bytes": res["many_pipes"]["bytes"],
+                                                 "pattern_60s_bytes": res["pattern_60s"]["bytes"],
+                                                 "time_bound_s": CLOUD_LIMIT_APP_S, "in_check_a_file": True},
+            "intake_stopped_at_s": ist["limit_s"],
+            "shared_strings_bomb_refused_in_the_app": {"bytes": res["bomb_log"]["bytes"], "on_the_main_page": True,
+                                                       "in_check_a_file": True, "time_bound_s": CLOUD_LIMIT_APP_S},
+            "epanet_scratch_in_cwd_during_uploads": 0,
+            "epanet_scratch_upload_steps_seen": len({ph for ph, _ in uploads}),
+            "_volatile": {"grid180_zip_page_run_s": gz["seconds"], "grid180_zip_check_a_file_s": pgz["seconds"],
+                          "net3_upload_s": n3["seconds"], "many_pipes_s": res["many_pipes"]["seconds"],
+                          "pattern_60s_s": res["pattern_60s"]["seconds"], "intake_stopped_s": ist["seconds"],
+                          "page_many_pipes_s": pmp["seconds"], "bomb_log_s": bl["seconds"], "page_bomb_s": pb["seconds"],
+                          "examples_scratch_places": sorted({w for p, w in seen if p == "examples"})}}
 
 
 # ----------------------------------------------------------------------------- runner

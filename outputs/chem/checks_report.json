@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 108,
+ "n_pass": 113,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,36 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 421,
+    "registry_ok": 484,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1656,
+     "code or path": 1857,
      "date": 75,
-     "identifier": 662,
+     "identifier": 693,
      "link target": 12,
-     "run cost (logs, df)": 6,
+     "run cost (logs, df)": 7,
      "seed range": 20,
      "setting or literature value written in the code": 17,
      "time of day": 127
     },
     "traced": {
-     "iteration-4 outputs": 241,
-     "file cited in its section": 3323,
-     "file cited in its paragraph": 5050,
+     "iteration-4 outputs": 256,
+     "file cited in its section": 3482,
+     "file cited in its paragraph": 5155,
      "outputs": 9,
      "iteration-5 outputs": 10
     },
-    "n_tokens": 8657,
+    "n_tokens": 8937,
     "power_caught_of_tested": {
      "decimal": [
-      1093,
-      8961
+      1110,
+      9003
      ],
      "integer": [
-      1184,
-      7408
+      1293,
+      7891
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 37,
+    "iteration4_texts_checked": 45,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -2377,6 +2377,245 @@
      "urban_grid_nan_node.inp",
      "urban_grid_sentinel_node.inp"
     ]
+   }
+  },
+  {
+   "name": "mode_detection_fails_safe",
+   "group": "task20",
+   "pass": true,
+   "detail": {
+    "mode_cases": 10,
+    "upload_cases": 7,
+    "cloud_grid_workers": 2,
+    "upload_mb": 5,
+    "max_junctions": 300,
+    "nominal_run_files_in_cwd": {
+     "local": [
+      "temp.bin",
+      "temp.inp",
+      "temp.rpt"
+     ],
+     "cloud": []
+    },
+    "nominal_run_same_results": true,
+    "guide_swaps": 4,
+    "limits_before_parsing": {
+     "grid180.inp": {
+      "bytes": 3744579,
+      "what": "junctions",
+      "value": 32400,
+      "limit": 300
+     },
+     "grid180.zip": {
+      "bytes": 724740,
+      "what": "junctions",
+      "value": 32400,
+      "limit": 300
+     },
+     "grid180_padded.zip": {
+      "bytes": 744274,
+      "what": "model_bytes",
+      "value": 8744611,
+      "limit": 5000000,
+      "unpacked": true
+     }
+    },
+    "limit_time_bound_s": 5.0,
+    "run_cost_under_the_limits": {
+     "junctions": 100,
+     "workers": 2,
+     "speedup": 2.0,
+     "local_speedup": 4.0
+    },
+    "costly_models_refused": {
+     "parallel_pipes.inp": {
+      "bytes": 4700022,
+      "what": "links",
+      "value": 124327,
+      "limit": 600
+     },
+     "pattern_step_60s.inp": {
+      "bytes": 27556,
+      "what": "pattern_step_s",
+      "value": 60,
+      "limit": 900
+     },
+     "rules_every_second.inp": {
+      "bytes": 66239,
+      "what": "rule_step_s",
+      "value": 1,
+      "limit": 60
+     },
+     "timed_controls.inp": {
+      "bytes": 4900039,
+      "what": "model_lines",
+      "value": 150567,
+      "limit": 20000
+     }
+    },
+    "cost_grid_junctions": 289,
+    "timed_run_bounds_refuse": [
+     "run_minutes",
+     "seconds_per_run"
+    ],
+    "shared_strings_bomb_refused": {
+     "bytes": 466377,
+     "unpacked_bytes": 190020926,
+     "limit_mb": 20,
+     "packed_over_100_to_1_refused": true
+    }
+   }
+  },
+  {
+   "name": "requirements_pinned",
+   "group": "task20",
+   "pass": true,
+   "detail": {
+    "lines": 11,
+    "pinned": {
+     "wntr": "1.5.0",
+     "scikit-learn": "1.9.1",
+     "numpy": "2.5.3",
+     "pandas": "3.0.6",
+     "scipy": "1.18.1",
+     "networkx": "3.7",
+     "matplotlib": "3.11.2",
+     "streamlit": "1.64.0",
+     "pypdf": "6.19.0",
+     "openpyxl": "3.1.5",
+     "et-xmlfile": "2.0.0"
+    }
+   }
+  },
+  {
+   "name": "hosted_start_settings",
+   "group": "task20",
+   "pass": true,
+   "detail": {
+    "streamlit_reads": {
+     "hosted": {
+      "address": "0.0.0.0",
+      "stats": false,
+      "upload_mb": 5
+     },
+     "app": {
+      "address": "localhost",
+      "stats": false,
+      "upload_mb": 200
+     }
+    },
+    "hosted_folder_dependency_files": 0
+   }
+  },
+  {
+   "name": "cloud_mode_examples_only",
+   "group": "task20",
+   "pass": true,
+   "detail": {
+    "local_model_options": [
+     "Example network",
+     "Upload my .inp"
+    ],
+    "cloud_model_options": [
+     "Example network"
+    ],
+    "cloud_examples": [
+     "Net3",
+     "Net2"
+    ],
+    "sidebar_pages": [
+     "ResidualMap",
+     "Get started"
+    ],
+    "uploaders_in_cloud": 0,
+    "cloud_default_demo": {
+     "violations": 41,
+     "junctions": 92,
+     "found": 36,
+     "unsampled_violations": 36,
+     "false_alarms": 1,
+     "sample_mean_mgL": 0.53,
+     "flagged": 42
+    },
+    "cloud_net2_flagged": "28 of 35",
+    "texts_shown_in_cloud": 1128,
+    "texts_telling_to_upload": 0,
+    "allowed_mentions": 3,
+    "rewordings_caught": 7,
+    "local_guide_sentences_caught": 2,
+    "guide_sections_read": 12,
+    "cloud_chloramine": {
+     "flagged": "27 of 92",
+     "reduced_truth_warning": true,
+     "msx_calls": 0
+    },
+    "hosted_start_mode": "cloud",
+    "files_left_in_cwd_by_cloud_runs": 0
+   }
+  },
+  {
+   "name": "cloud_mode_uploads_leave_no_files",
+   "group": "task20",
+   "pass": true,
+   "detail": {
+    "net3_upload": {
+     "violations": 41,
+     "junctions": 92,
+     "found": 36,
+     "unsampled_violations": 36,
+     "false_alarms": 1,
+     "sample_mean_mgL": 0.53,
+     "flagged": 42
+    },
+    "session_kinds": [
+     "chlorine_loss",
+     "demo_truth",
+     "prepare",
+     "upload",
+     "water_age"
+    ],
+    "ky4_refused": {
+     "junctions": 959,
+     "limit_junctions": 300
+    },
+    "file_over_the_limit_refused": {
+     "bytes": 5000009,
+     "limit_mb": 5
+    },
+    "check_a_file_readiness_report": true,
+    "zip_of_32400_junctions_refused": {
+     "zip_bytes": 724740,
+     "junctions": 32400,
+     "time_bound_s": 15.0,
+     "on_the_main_page": true,
+     "in_check_a_file": true
+    },
+    "zip_unpacking_past_the_limit_refused": {
+     "zip_bytes": 744274,
+     "unpacked_bytes": 8744611
+    },
+    "grab_log_or_tap_map_over_the_limit_refused": {
+     "bytes": 6000060
+    },
+    "uploaders_own_limit_mb": 5,
+    "new_or_changed_files_under_outputs": 0,
+    "files_left_in_temp_dir": 0,
+    "files_left_in_cwd": 0,
+    "costly_models_refused_in_the_app": {
+     "many_pipes_bytes": 4700022,
+     "pattern_60s_bytes": 27556,
+     "time_bound_s": 15.0,
+     "in_check_a_file": true
+    },
+    "intake_stopped_at_s": 5.0,
+    "shared_strings_bomb_refused_in_the_app": {
+     "bytes": 466377,
+     "on_the_main_page": true,
+     "in_check_a_file": true,
+     "time_bound_s": 15.0
+    },
+    "epanet_scratch_in_cwd_during_uploads": 0,
+    "epanet_scratch_upload_steps_seen": 3
    }
   },
   {

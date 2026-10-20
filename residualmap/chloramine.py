@@ -511,13 +511,17 @@ def truth_in_subprocess(net: str, seed: int, kw_ref: float, dose: float = CA_DOS
     for the app's demo.  MSX needs a change of working directory, which is process-wide; in a separate process the
     app's own threads (one per browser session) never see it.  `net` is a bundled name or a file path.  Returns a
     namespace with truth_by_hour, truth_daily_min and chem, the same values truth_scenario gives."""
+    import multiprocessing
     import tempfile
     import types
     from concurrent.futures import ProcessPoolExecutor
     if os.path.exists(net):
         net = os.path.abspath(net)              # the worker runs in its own directory
     with tempfile.TemporaryDirectory(prefix="rm_ca_demo_") as tmp:
-        with ProcessPoolExecutor(max_workers=1, initializer=_pool_init, initargs=(tmp,)) as ex:
+        # spawn, said explicitly (iteration 5, task 20): the Mac's default already; fork inside the app's threaded
+        # server can deadlock on Linux
+        with ProcessPoolExecutor(max_workers=1, initializer=_pool_init, initargs=(tmp,),
+                                 mp_context=multiprocessing.get_context("spawn")) as ex:
             out = ex.submit(_demo_truth_job, (net, int(seed), float(kw_ref), float(dose))).result()
     return types.SimpleNamespace(**out)
 

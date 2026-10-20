@@ -1,0 +1,22 @@
+# The hosted demo's Streamlit settings (iteration 5, task 20), read only when hosted/streamlit_app.py is the main
+# script.  Streamlit 1.64.0's own loader reads the repository's .streamlit/config.toml first and this file after it, so
+# this file wins there (the hosted_start_settings check).  Community Cloud's documentation says that an app whose
+# entrypoint is in a subdirectory takes its settings from the repository's root, so whether this file applies on the
+# platform itself is not verified: the smoke test after the deploy settles it (docs/deploy_streamlit_cloud.md).
+#
+# server.address: every network interface of the container, Streamlit's own default, so the hosted app is reachable
+# whether or not Community Cloud's proxy comes in over localhost (its documentation does not say; a forum report shows
+# its health check calling localhost:8501).  The laptop's 'streamlit run app.py' still listens on localhost only, from
+# the repository's own config.toml.
+# server.maxUploadSize: 5 MB, the hosted demo's file limit (residualmap/cloud.py, UPLOAD_MB), so the server refuses a
+# larger upload before it is held in memory.  The uploaders in cloud mode also carry the limit themselves, so the
+# browser refuses a larger file even where this file does not apply.
+# browser.gatherUsageStats: Community Cloud sets it to true for every app (its status page), so this line has effect
+# only off the platform (docs/privacy.md).
+
+[server]
+address = "0.0.0.0"
+maxUploadSize = 5
+
+[browser]
+gatherUsageStats = false
