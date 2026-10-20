@@ -3801,6 +3801,1205 @@ def xlsx_bytes(rows: list[list], sheet: str = "grab log") -> bytes:
     return buf.getvalue()
 
 
+# ----------------------------------------------------------------------------- tap maps by coordinates (task 16b)
+# A tap map may give each tap's position instead of its junction: latitude and longitude from a phone or a GPS unit,
+# or x and y in the model's own coordinates.  Each position is put on the model's nearest pipe and that pipe's
+# downstream junction is suggested, for the operator to check before anything uses it (pilot protocol section 2: not
+# the nearest junction by straight line, and never a big main the tap is not on).  Nothing here runs inside
+# read_grab_log: a suggestion, once confirmed, is written as a tap map by ID (tap_id, junction_id, ...) and read
+# through read_tap_map like any other.  Task 16b stopped at its pre-registered bar before the app's table and confirm
+# step and the pilot's --accept-snapped were built, so no operator path reaches this section yet.
+MAIN_MIN_IN = 16.0          # pipes of 16 in or more (nominal) are left out of a tap's snap unless its row says on_main
+MAIN_CUT_RATIO = 0.9375     # ... judged on the model's own diameter at this share of it (15.0 in for 16 in), so a
+                            # metric 400 mm main (15.75 in) and a 16 in main given by an internal diameter of 15.0 in
+                            # or more count as mains too (the review of task 16b)
+MAIN_BAND_RATIO = 0.8       # an untagged tap put on a pipe from this share of it (12.8 in for 16 in) up to the cut is
+                            # flagged, with the nearest smaller pipe: a 16 in plastic main given by its internal
+                            # diameter (14.9 in for C905 DR14, 13.1 in for HDPE DR11, 12.9 in for PE100 SDR11) is under
+                            # the cut (the final verification of task 16b)
+SECOND_RATIO = 1.5          # a second candidate within this many times the first one's distance is shown, and flagged;
+                            # a main left out within this many times the distance is flagged as well
+SNAP_FAR_M = 30.0           # a snap farther than this is flagged
+LOO_FLAG_M = 10.0           # a control tap whose leave-one-out residual is above this is flagged
+LOO_LEVERAGE_MAX = 0.99     # a control tap whose leverage is above this cannot be checked: without it the others lie
+                            # almost on one line, so its leave-one-out residual measures nothing (found in the final
+                            # verification's fix pass: a right control tap got 644.7 m and a flag)
+MIN_CONTROLS, CHECKED_CONTROLS = 3, 4   # 3 control taps fix the affine's 6 terms exactly, with nothing to check them
+COLLINEAR_MAX_COND = 20.0   # nearly on one line: the control taps' centred east-north positions, largest over smallest
+                            # singular value, above this,
+COLLINEAR_MIN_AREA = 0.02   # or their largest triangle over the square of their largest distance below this,
+ACROSS_MIN_M = 50.0         # and their RMS distance from their own best line under this: refused (a long, narrow zone
+                            # whose control taps spread this far across it is accepted, with a warning)
+SAME_PLACE_M = 50.0         # control taps all within this many metres of each other were taken at about one place:
+                            # refused (the final verification of task 16b)
+FIT_GPS_ASSUMED_M = 5.0     # the control taps' GPS error assumed (radial RMS, a phone outdoors) when the fit's error at
+FIT_PREDICTED_FLAG_M = 10.0     # each tap is predicted from its leverage; a tap whose predicted error is above this is
+                                # flagged (far from the control taps, or across the line they lie along)
+FIT_SCALE_TOL = 0.2         # a fit whose scale is more than 20% off the model's coordinate units warns
+FLOW_ZERO_M3S = 1e-7        # a pipe whose every flow in the day window is at most this (0.1 mL/s) has no flow
+DRAWN_RATIO_BAND = (0.5, 2.0)   # a pipe drawn at under half or over twice the model's median drawn length per metre of
+                                # declared length is left out of the snap (a node drawn at a placeholder such as 0,0)
+DRAWN_SHARE_WARN = 0.9      # fewer of the model's pipes drawn (both ends with a position) than this share warns
+GEOGRAPHIC_MAX_RATIO = 1e-4     # a drawing within +-180 on both axes (latitude as x or as y) whose median drawn length
+                                # per metre is below this is drawn in degrees of longitude and latitude
+FAR_NODE_SPANS = 100.0      # a node farther from the drawing's median position than this many times the larger
+                            # interquartile range of its x and y is far outside the drawing (a no-data value such as
+                            # -3.4e38): treated as not drawn, with a warning, as is a node whose position is not a
+                            # number (the final verification of task 16b)
+NEAR_MODEL_FACTOR, NEAR_MODEL_MIN_M = 1000.0, 10_000.0   # a position farther from the drawing's centre than this many
+                                # times the drawing's extent, and this many metres, is not near the model
+SNAP_CHUNK_ELEMENTS = 2_000_000     # taps times segments per chunk of the distance matrix (a few hundred MB at most)
+WGS84_A, WGS84_F = 6378137.0, 1 / 298.257223563
+SUGGESTED_NAME = "tap_map_suggested.csv"
+SUGGESTED_COLUMNS = ("tap_id", "junction_id", "snap_m", "pipe", "second_choice", "second_m", "flags")
+_LAT_EXACT = ("lat", "latitude", "gps lat", "gps latitude", "lat dd", "latitude dd", "lat deg", "latitude deg",
+              "y lat", "lat y", "wgs84 lat", "lat wgs84", "wgs84 latitude")
+_LON_EXACT = ("lon", "long", "lng", "longitude", "gps lon", "gps long", "gps longitude", "lon dd", "long dd",
+              "longitude dd", "lon deg", "longitude deg", "x lon", "lon x", "x long", "wgs84 lon", "lon wgs84",
+              "wgs84 longitude")
+_X_EXACT = ("x", "easting", "east", "x coord", "x coordinate", "xcoord", "point x", "model x", "x model", "map x")
+_Y_EXACT = ("y", "northing", "north", "y coord", "y coordinate", "ycoord", "point y", "model y", "y model", "map y")
+_ON_MAIN_EXACT = ("on main", "onmain", "on large main", "on transmission main", "transmission main", "large main")
+_YES = {"yes", "y", "true", "1", "x"}
+_COORD_NUM = re.compile(r"^([NSEWnsew])?\s*([-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?)\s*°?\s*([NSEWnsew])?$")
+_THOUSANDS = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})+$")           # '1,197': a thousands comma, or a decimal comma
+_THOUSANDS_DOT = re.compile(r"^[-+]?\d{1,3}(?:,\d{3})+\.\d*$")  # '1,197.5': a thousands comma, for certain
+_DOT_GROUP = re.compile(r"^[-+]?[1-9]\d{0,2}\.\d{3}$")          # '1.197': a decimal point, or a dot thousands separator
+_DOT_THOUSANDS = re.compile(r"^[-+]?\d{1,3}(?:\.\d{3}){2,}$|^[-+]?\d{1,3}(?:\.\d{3})+,\d*$")   # '1.234.567', '1.197,5':
+                                                                # a dot thousands separator, for certain
+_HEMISPHERE = {"lat": "NS", "lon": "EW", "xy": ""}             # the letters each kind of column may carry
+_COLUMN_WORDS = {"tap": "tap", "junction": "junction", "lat": "latitude", "lon": "longitude", "x": "x", "y": "y",
+                 "on_main": "on_main"}
+_USE_IDS = "Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID."
+
+
+class GeorefRefused(LogRefused):
+    """Taps in latitude and longitude that cannot be placed on the model: too few control taps, or control taps that
+    lie almost on one line."""
+
+
+@dataclass
+class TapCoords:
+    """A tap map by coordinates, read: kind 'latlon' (a, b are latitude and longitude in degrees) or 'xy' (a, b are
+    x and y in the model's own coordinates).  taps: one dict per tap (tap_id, row, a, b, junction, on_main); a or b
+    None for a row that gives only a junction; junction '' when none is given (a junction given with latitude and
+    longitude makes a control tap).  dropped: every row that is not used, with its reason.  other_columns: the
+    columns not used, with their cells (suggest_from says when one of them holds the model's junction IDs)."""
+    kind: str
+    taps: list = field(default_factory=list)
+    dropped: list = field(default_factory=list)
+    columns: dict = field(default_factory=dict)
+    notes: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    n_rows: int = 0
+    other_columns: dict = field(default_factory=dict)
+
+
+def guess_coordinate_columns(header: list[str]) -> dict:
+    """A tap map's coordinate columns, by exact header names only: {'lat', 'lon', 'x', 'y', 'on_main'}."""
+    return {k: _guess(header, ex) for k, ex in (("lat", _LAT_EXACT), ("lon", _LON_EXACT), ("x", _X_EXACT),
+                                                 ("y", _Y_EXACT), ("on_main", _ON_MAIN_EXACT))}
+
+
+def _tap_columns(header: list[str], coords: dict) -> dict:
+    """The tap and junction columns of a tap map by coordinates, guessed as guess_tap_columns guesses them, with the
+    coordinate and on_main columns left out ('Point X' is no tap column)."""
+    taken = {v for v in coords.values() if v}
+    rest = [h for h in header if h not in taken]
+    tap = _guess(rest, _TAP_EXACT, _TAP_WORDS)
+    junction = _guess([h for h in rest if h != tap], _JUNCTION_EXACT, ("junction", "node"))
+    return {"tap": tap, "junction": junction}
+
+
+def _given(mapping: dict | None) -> dict:
+    return {k: v for k, v in (mapping or {}).items() if v}
+
+
+def _columns_of(t: LogTable, mapping: dict | None) -> tuple[dict, dict]:
+    """(coordinate columns, tap and junction columns) of a tap map: guessed, then any column the mapping names."""
+    m = _given(mapping)
+    c = guess_coordinate_columns(t.header)
+    c.update({k: m[k] for k in ("lat", "lon", "x", "y", "on_main") if k in m})
+    tc = _tap_columns(t.header, c)
+    tc.update({k: m[k] for k in ("tap", "junction") if k in m})
+    return c, tc
+
+
+def _pairs_in(t: LogTable, c: dict) -> list[tuple[str, str, str]]:
+    """The coordinate pairs a tap map holds: ('latlon', lat column, lon column) and ('xy', x column, y column)."""
+    return [(kind, c[a], c[b]) for kind, a, b in (("latlon", "lat", "lon"), ("xy", "x", "y"))
+            if c.get(a) in t.header and c.get(b) in t.header]
+
+
+def _filled(t: LogTable, column: str | None) -> list[bool]:
+    if column not in t.header:
+        return [False] * len(t.rows)
+    i = t.header.index(column)
+    return [bool(_cell_text(r[i])) for r in t.rows]
+
+
+def _choose_pair(t: LogTable, c: dict, junction: str | None, mapping: dict | None):
+    """The pair of columns that places the taps: (kind, column a, column b, a note or None), or None for a table with
+    no pair.  A pair the mapping names wins.  With both pairs in the file, the one filled on more rows; on a tie,
+    latitude and longitude, unless they have fewer than MIN_CONTROLS control taps (rows with a junction too), which
+    their fit needs and x and y do not."""
+    m = _given(mapping)
+    pairs = {kind: (a, b) for kind, a, b in _pairs_in(t, c)}
+    if not pairs:
+        return None
+    if len(pairs) == 1:
+        kind, (a, b) = next(iter(pairs.items()))
+        return kind, a, b, None
+    ll, xy = pairs["latlon"], pairs["xy"]
+    named_ll, named_xy = bool({"lat", "lon"} & set(m)), bool({"x", "y"} & set(m))
+    if named_xy and not named_ll:
+        return "xy", *xy, f"The columns '{ll[0]}' and '{ll[1]}' are not used: the taps are placed by the x and y chosen."
+    if named_ll and not named_xy:
+        return "latlon", *ll, (f"The columns '{xy[0]}' and '{xy[1]}' are not used: the taps are placed by the latitude "
+                               f"and longitude chosen.")
+    fl = [a and b for a, b in zip(_filled(t, ll[0]), _filled(t, ll[1]))]
+    fx = [a and b for a, b in zip(_filled(t, xy[0]), _filled(t, xy[1]))]
+    nl, nx = sum(fl), sum(fx)
+    ctrl = sum(f and j for f, j in zip(fl, _filled(t, junction)))
+    if nx > nl or (nx == nl and nx > 0 and ctrl < MIN_CONTROLS):
+        why = ("x and y are filled on more rows" if nx > nl else
+               f"latitude and longitude have {ctrl} control tap{'s' if ctrl != 1 else ''} (a row with a junction too), "
+               f"fewer than the {MIN_CONTROLS} their fit needs, and x and y need none")
+        return "xy", *xy, (f"The columns '{ll[0]}' and '{ll[1]}' are not used: {why} ({nx} rows filled against {nl}). "
+                           f"To place the taps by latitude and longitude, choose those columns.")
+    why = "latitude and longitude are filled on more rows" if nl > nx else "both pairs are filled"
+    return "latlon", *ll, (f"The columns '{xy[0]}' and '{xy[1]}' are not used: {why} ({nl} rows filled against {nx}). "
+                           f"To place the taps by x and y in the model's own coordinates, choose those columns.")
+
+
+def tap_map_kind(t: LogTable, mapping: dict | None = None) -> str:
+    """'coordinates' for a tap map that places taps by position (a latitude and longitude pair or an x and y pair of
+    columns, and no junction column, or a row with a position and no junction); 'id' for every other table, which
+    read_tap_map reads as before.  The columns are guessed, or named in mapping as read_tap_map and
+    read_tap_coordinates take it (a junction column named there is used, so a map by ID whose junction header is
+    known only through the mapping stays 'id')."""
+    c, tc = _columns_of(t, mapping)
+    pairs = _pairs_in(t, c)
+    if not pairs:
+        return "id"
+    if tc["junction"] not in t.header:
+        return "coordinates"
+    ij = t.header.index(tc["junction"])
+    pos = [(t.header.index(a), t.header.index(b)) for _, a, b in pairs]
+    return "coordinates" if any(not _cell_text(r[ij]) and any(_cell_text(r[ia]) or _cell_text(r[ib]) for ia, ib in pos)
+                                for r in t.rows) else "id"
+
+
+def tap_map_kind_of(data: bytes, name: str = "tap_map.csv", mapping: dict | None = None) -> str:
+    """tap_map_kind of a file; 'id' when it cannot be read as a table (read_tap_map then says why)."""
+    try:
+        return tap_map_kind(read_table(data, name), mapping)
+    except LogRefused:
+        return "id"
+
+
+def coordinate_value(v, axis: str | None = None) -> float | None:
+    """A coordinate cell as a number: '45.123', '45,123' (a decimal comma), '-122.4', '122.4 W', 'N 45.1', '45.1°'
+    (S and W are negative); None for a blank or anything else (degrees, minutes and seconds included).  axis 'lat'
+    takes only the letters N and S, 'lon' only E and W, 'xy' none; None takes any of the four."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        x = float(v)
+        return x if math.isfinite(x) else None
+    m = _COORD_NUM.match(str(v).strip().replace(" ", " "))
+    if not m or (m.group(1) and m.group(3)):
+        return None
+    letter = (m.group(1) or m.group(3) or "").upper()
+    if letter and axis is not None and letter not in _HEMISPHERE[axis]:
+        return None
+    x = float(m.group(2).replace(",", "."))
+    if not math.isfinite(x):
+        return None
+    return -abs(x) if letter in ("S", "W") else x
+
+
+def _wrong_letter(cell: str, axis: str) -> str | None:
+    """The letter of a cell such as '40.0 W' when it belongs to the other axis ('W' in a latitude column)."""
+    m = _COORD_NUM.match(str(cell).strip().replace(" ", " "))
+    letter = (m.group(1) or m.group(3) or "").upper() if m else ""
+    return letter if letter and letter not in _HEMISPHERE[axis] and axis in ("lat", "lon") else None
+
+
+def _comma_mode(cells: list) -> str:
+    """How a column of x or y reads a value such as '1,197' (a comma then three digits: a thousands comma, or a
+    decimal comma): 'thousands' when another value of the column settles it so ('1,197.5', '12,345,678', or a value
+    of 1,000 or more written without a comma), 'decimal' when another value has a decimal comma ('0,5', '1197,25'),
+    and 'ambiguous' when nothing does, or both do."""
+    thou = dec = False
+    for v in cells:
+        if isinstance(v, bool) or v is None:
+            continue
+        if isinstance(v, (int, float)):
+            thou |= math.isfinite(float(v)) and abs(float(v)) >= 1000
+            continue
+        s = str(v).strip()
+        if _THOUSANDS_DOT.match(s) or (_THOUSANDS.match(s) and s.count(",") > 1):
+            thou = True
+        elif _DOT_THOUSANDS.match(s):          # '1.197,5', '1.234.567': dots for thousands, so a comma is decimal
+            dec = True
+        elif _THOUSANDS.match(s):
+            continue
+        elif "," in s:
+            dec |= coordinate_value(s, "xy") is not None
+        else:
+            x = coordinate_value(s, "xy")
+            thou |= x is not None and abs(x) >= 1000
+    return "thousands" if thou and not dec else "decimal" if dec and not thou else "ambiguous"
+
+
+def _dot_mode(cells: list, active: bool) -> str:
+    """The mirror of _comma_mode, for a value such as '1.197' (a dot then three digits) in a column whose file writes
+    decimal commas (active: the column has a decimal comma, or the file is separated by semicolons): 'thousands' when
+    another value settles it so ('1.197,5', '1.234.567', or a value of 1,000 or more written without a dot),
+    'decimal' when another value has a dot that can only be a decimal point ('503.25', '0.125', '1,197.5'), and
+    'ambiguous' when nothing does, or both do.  Not active, a dot is a decimal point ('decimal'), as before.  The
+    final verification of task 16b: '1.197' for 1197 was read as 1.197, and the suggestion looked right."""
+    if not active:
+        return "decimal"
+    thou = dec = False
+    for v in cells:
+        if isinstance(v, bool) or v is None:
+            continue
+        if isinstance(v, (int, float)):
+            thou |= math.isfinite(float(v)) and abs(float(v)) >= 1000
+            continue
+        s = str(v).strip()
+        if _DOT_THOUSANDS.match(s):
+            thou = True
+        elif _THOUSANDS_DOT.match(s) or (_THOUSANDS.match(s) and s.count(",") > 1):
+            dec = True
+        elif _DOT_GROUP.match(s):
+            continue
+        elif "." in s:
+            dec |= coordinate_value(s, "xy") is not None
+        else:
+            x = coordinate_value(s, "xy")
+            thou |= x is not None and abs(x) >= 1000
+    return "thousands" if thou and not dec else "decimal" if dec and not thou else "ambiguous"
+
+
+def _xy_value(v, mode: str, dot: str = "decimal") -> tuple[float | None, str | None]:
+    """An x or y cell as a number, its commas read by the column's mode (_comma_mode) and its dots by its dot mode
+    (_dot_mode): (value, None), or (None, 'comma' or 'dot') for a value that reads two ways."""
+    if isinstance(v, str):
+        s = v.strip()
+        if _DOT_THOUSANDS.match(s):
+            return coordinate_value(s.replace(".", ""), "xy"), None
+        if _DOT_GROUP.match(s) and dot != "decimal":
+            if dot == "ambiguous":
+                return None, "dot"
+            return coordinate_value(s.replace(".", ""), "xy"), None
+        if _THOUSANDS_DOT.match(s) or (_THOUSANDS.match(s) and s.count(",") > 1):
+            return coordinate_value(s.replace(",", ""), "xy"), None
+        if _THOUSANDS.match(s):
+            if mode == "ambiguous":
+                return None, "comma"
+            return coordinate_value(s.replace(",", "") if mode == "thousands" else s, "xy"), None
+    return coordinate_value(v, "xy"), None
+
+
+def _lon_0_to_360(t: LogTable, ia: int, ib: int) -> bool:
+    """True for longitudes written from 0 to 360, as some receivers and data sets write them (259.4 for 100.6 W): every
+    longitude that reads as a number is between 0 and 360 and one is over 180 (the final verification of task 16b:
+    such a file was refused as 'not degrees')."""
+    lons = [x for x in (coordinate_value(r[ib], "lon") for r in t.rows) if x is not None]
+    return bool(lons) and any(x > 180 for x in lons) and all(0 <= x <= 360 for x in lons)
+
+
+def read_tap_coordinates(data: bytes, name: str = "tap_map.csv", mapping: dict | None = None) -> TapCoords:
+    """A tap map by coordinates read into a TapCoords (columns guessed, or given in mapping: 'tap', 'junction', 'lat',
+    'lon', 'x', 'y', 'on_main'; a column named there that the file does not have is refused).  With both pairs of
+    columns, the pair is chosen by _choose_pair, with a note.  Every row that is not used is listed with its reason:
+    no tap ID, a tap listed again (its first row is used; a warning when the rows differ), no position and no
+    junction, a position that is not a number or reads two ways ('1,197' in x or y with nothing to settle it, or
+    '1.197' in a file that writes decimal commas), a hemisphere letter of the other axis, a latitude or longitude out
+    of range.  Longitudes written from 0 to 360 are read west of Greenwich, with a note.  Raises LogRefused when the
+    file has no coordinate pair, no tap column, a tap given two different junctions, or latitudes and longitudes that
+    are no degrees (and says so when the two columns look swapped)."""
+    t = read_table(data, name)
+    m = _given(mapping)
+    missing = [(k, v) for k, v in m.items() if k in _COLUMN_WORDS and v not in t.header]
+    if missing:
+        raise LogRefused(f"The tap map has no column {' or '.join(repr(v) for _, v in missing)}, chosen for the "
+                         f"{' and '.join(_COLUMN_WORDS[k] for k, _ in missing)}; its header is "
+                         f"{', '.join(t.header[:8])}. Choose one of its columns.")
+    c, tc = _columns_of(t, m)
+    pair = _choose_pair(t, c, tc["junction"], m)
+    if pair is None:
+        raise LogRefused(f"The tap map has no columns of positions (lat and lon, or the model's x and y); its header is "
+                         f"{', '.join(t.header[:8])}. Name them lat and lon (or x and y), or give each tap's junction "
+                         f"ID.")
+    kind, ca, cb, pair_note = pair
+    if tc["tap"] not in t.header:
+        raise LogRefused(f"The tap map needs a tap column; its header is {', '.join(t.header[:8])}. Name it tap_id.")
+    out = TapCoords(kind=kind, columns={"tap": tc["tap"], "junction": tc["junction"], "a": ca, "b": cb,
+                                        "on_main": c["on_main"]}, n_rows=len(t.rows))
+    ix = {k: (t.header.index(v) if v in t.header else None) for k, v in out.columns.items()}
+    words = ("latitude", "longitude") if kind == "latlon" else ("x", "y")
+    axes = ("lat", "lon") if kind == "latlon" else ("xy", "xy")
+    modes = [_comma_mode([r[ix[k]] for r in t.rows]) if kind == "xy" else "decimal" for k in ("a", "b")]
+    semicolons = t.how.startswith(f"text separated by {_DELIMS[';']}")
+    dots = [_dot_mode([r[ix[k]] for r in t.rows], semicolons or m == "decimal") if kind == "xy" else "decimal"
+            for k, m in zip(("a", "b"), modes)]
+    lon360 = kind == "latlon" and _lon_0_to_360(t, ix["a"], ix["b"])
+    lon360_example = None
+    seen: dict[str, dict] = {}
+    clash, differ, out_of_range = [], [], []
+    in_range = 0
+    for r, row_no in zip(t.rows, t.row_numbers):
+        tap = _cell_text(r[ix["tap"]])
+        cells = [_cell_text(r[ix[k]]) for k in ("a", "b")]
+        j = _cell_text(r[ix["junction"]]) if ix["junction"] is not None else ""
+        if not tap:
+            if any(cells) or j:
+                out.dropped.append({"row": row_no, "tap_id": "", "reason": "no tap ID"})
+            continue
+        if tap in seen:
+            first = seen[tap]
+            if j and first["junction"] and j != first["junction"]:
+                clash.append(tap)
+            elif (cells, j) != (first["cells"], first["junction"]):
+                differ.append((tap, first["row"], row_no))
+            out.dropped.append({"row": row_no, "tap_id": tap,
+                                "reason": f"tap {tap} is listed again: its first row (row {first['row']}) is used"})
+            continue
+        if not any(cells):
+            if not j:
+                out.dropped.append({"row": row_no, "tap_id": tap,
+                                    "reason": f"no position ('{ca}' and '{cb}' blank) and no junction"})
+                continue
+            a = b = None
+        else:
+            if kind == "latlon":
+                a, b = coordinate_value(r[ix["a"]], "lat"), coordinate_value(r[ix["b"]], "lon")
+                amb_a = amb_b = None
+                if lon360 and b is not None and b > 180:
+                    lon360_example = lon360_example or (cells[1], b - 360.0)
+                    b -= 360.0
+            else:
+                (a, amb_a), (b, amb_b) = (_xy_value(r[ix["a"]], modes[0], dots[0]),
+                                          _xy_value(r[ix["b"]], modes[1], dots[1]))
+            if amb_a or amb_b:
+                ex, how = (cells[0], amb_a) if amb_a else (cells[1], amb_b)
+                sep, other = ("comma", "decimal point") if how == "comma" else ("dot", "decimal comma")
+                out.dropped.append({"row": row_no, "tap_id": tap, "example": ex,
+                                    "reason": f"the {words[0]} or {words[1]} reads two ways ('{ex}' is a number of "
+                                              f"thousands, or one with a decimal {'comma' if how == 'comma' else 'point'}"
+                                              f"): write it without the {sep}, or with a {other}"})
+                continue
+            if a is None or b is None:
+                k = 0 if a is None else 1
+                letter = _wrong_letter(cells[k], axes[k])
+                other = {"lat": "longitude", "lon": "latitude"}.get(axes[k])
+                out.dropped.append({"row": row_no, "tap_id": tap, "example": cells[k],
+                                    "reason": (f"the {words[k]} '{cells[k]}' has the letter {letter}, which belongs to "
+                                               f"a {other}: are the two columns swapped?") if letter else
+                                              f"the {words[0]} or {words[1]} is not a number"})
+                continue
+            if kind == "latlon" and not (abs(a) <= 90 and abs(b) <= 180):
+                out_of_range.append((a, b, f"{cells[0]}, {cells[1]}"))
+                out.dropped.append({"row": row_no, "tap_id": tap, "reason": "the latitude or longitude is out of range",
+                                    "example": f"{cells[0]}, {cells[1]}"})
+                continue
+        in_range += a is not None
+        on_main = ix["on_main"] is not None and _cell_text(r[ix["on_main"]]).lower() in _YES
+        seen[tap] = {"row": row_no, "cells": cells, "junction": j}
+        out.taps.append({"tap_id": tap, "row": row_no, "a": a, "b": b, "junction": j, "on_main": on_main})
+    if clash:
+        raise LogRefused(f"The tap map lists {len(set(clash))} tap{'s' if len(set(clash)) > 1 else ''} with two "
+                         f"different junctions: {', '.join(sorted(set(clash))[:6])}. Keep one junction per tap.")
+    if kind == "latlon" and out_of_range and not in_range:
+        if all(90 < abs(a) <= 180 and abs(b) <= 90 for a, b, _ in out_of_range):
+            raise LogRefused(f"The columns '{ca}' and '{cb}' look swapped: '{ca}' holds numbers between 90 and 180 (for "
+                             f"example {out_of_range[0][2]}), which only a longitude can be, and '{cb}' numbers of at "
+                             f"most 90. Swap the two column names.")
+        raise LogRefused(f"The columns '{ca}' and '{cb}' hold numbers that are not degrees of latitude and longitude "
+                         f"(for example {out_of_range[-1][2]}): if they are the model's own x and y, name the columns "
+                         f"x and y.")
+    if differ:
+        out.warnings.append(f"{len(differ)} tap{'s are' if len(differ) != 1 else ' is'} listed again with another "
+                            f"position or junction ("
+                            + "; ".join(f"{tp}, rows {a} and {b}" for tp, a, b in differ[:6])
+                            + ("; and more" if len(differ) > 6 else "")
+                            + "): the first row is used. Check which row is right.")
+    placed = sum(1 for x in out.taps if x["a"] is not None)
+    given = sum(1 for x in out.taps if x["junction"])
+    how = "latitude and longitude" if kind == "latlon" else "x and y in the model's own coordinates"
+    out.notes.append(f"Tap map by coordinates: {len(out.taps)} tap{'s' if len(out.taps) != 1 else ''}, placed by {how} "
+                     f"(columns '{ca}' and '{cb}'); {given} with a junction given"
+                     + (" (control taps, when they have a position too)" if kind == "latlon" and given else "") + ".")
+    if pair_note:
+        out.notes.append(pair_note)
+    if lon360_example:
+        out.notes.append(f"The longitudes are written from 0 to 360, as some receivers write them: each one over 180 is "
+                         f"read as that minus 360, west of Greenwich ('{lon360_example[0]}' as "
+                         f"{lon360_example[1]:.6f}).")
+    if kind == "xy" and placed and all(abs(x["a"]) <= 180 and abs(x["b"]) <= 90 for x in out.taps if x["a"] is not None):
+        out.warnings.append(f"The columns '{ca}' and '{cb}' hold numbers that look like degrees: if they are longitude "
+                            f"and latitude, name the columns lon and lat.")
+    used = {tc["tap"], tc["junction"], *(v for v in c.values() if v)}
+    out.other_columns = {h: [_cell_text(r[i]) for r in t.rows] for i, h in enumerate(t.header) if h not in used}
+    return out
+
+
+# ---- the model's geometry and its day-window flows
+@dataclass
+class TapGeometry:
+    """The pipes a tap can be placed on: every pipe with both ends drawn (except those drawn out of proportion,
+    left_out), its segments (vertices included) in metres around the drawing's centre (origin: the median position
+    of these pipes' end nodes), its diameter in inches and its end nodes.  extent_m: the farthest segment end from the
+    centre.  node_xy holds the drawn nodes, without those whose position is not a number or is far outside the
+    drawing."""
+    path: str
+    scale: dict
+    metres_per_unit: float
+    origin: tuple
+    pipes: list
+    diam_in: object
+    start: list
+    end: list
+    seg_a: object
+    seg_b: object
+    seg_start: object                 # each pipe's first segment (the segments are in pipe order)
+    junctions: set
+    node_xy: dict                     # every drawn node: (x, y) in the model's own units
+    node_kind: dict                   # 'junction', 'tank' or 'reservoir'
+    warnings: list = field(default_factory=list)
+    left_out: list = field(default_factory=list)
+    extent_m: float = 0.0
+
+
+def _drawn_length(pts) -> float:
+    return sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+
+
+def _far_nodes(xy: dict) -> list:
+    """The nodes drawn far outside the rest of the drawing: farther from the nodes' median position, in x or in y,
+    than FAR_NODE_SPANS times the larger of the interquartile ranges of their x and y (the width of the drawing's
+    middle half).  None with fewer than 4 nodes, or when that width is 0."""
+    import numpy as np
+    if len(xy) < 4:
+        return []
+    names = list(xy)
+    A = np.array([xy[n] for n in names], float)
+    med = np.median(A, axis=0)
+    q25, q75 = np.percentile(A, [25, 75], axis=0)
+    span = float(np.max(q75 - q25))
+    if not span > 0:
+        return []
+    d = np.abs(A - med).max(axis=1)
+    return sorted(n for n, v in zip(names, d) if v > FAR_NODE_SPANS * span)
+
+
+def tap_geometry(path: str) -> TapGeometry:
+    """The model's pipes for placing taps by coordinates (path: a file, or the name of a network bundled with WNTR).
+    A schematic drawing, a model with no coordinates or too few pipes drawn (coordinate_scale, as the readiness report
+    types them), and a drawing in degrees of longitude and latitude, are refused, with 'use junction IDs'.  To scale
+    in feet or metres, distances are in metres; to scale in other units, the units' size is the median drawn length
+    per metre of declared length (unrounded), with a warning.  A pipe drawn out of proportion to the rest (its drawn
+    length over its declared length outside DRAWN_RATIO_BAND times the median) is left out, with a warning, and so is
+    a model of which fewer than DRAWN_SHARE_WARN of the pipes are drawn warned about.  Before anything is measured, a
+    node whose position is not a number or is far outside the rest (_far_nodes) is treated as not drawn, with a
+    warning that names it and its pipes."""
+    import numpy as np
+    import wntr
+    from .simulate import net_path
+    p = net_path(path)
+    with open(p, "rb") as fh:
+        text = decode_text(fh.read())[0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wn = wntr.network.WaterNetworkModel(p)
+    have_xy = scan_inp_ids(text).coordinate_ids & set(wn.node_name_list)
+    # the final verification of task 16b: a node whose position is not a number, or one drawn far outside the rest
+    # (a no-data value such as -3.4e38), is treated as not drawn before anything is measured, so it cannot move the
+    # drawing's centre, its units or the refusals below
+    raw = {n: tuple(map(float, wn.get_node(n).coordinates)) for n in have_xy}
+    not_number = sorted(n for n, v in raw.items() if not all(math.isfinite(c) for c in v))
+    finite = {n: v for n, v in raw.items() if n not in set(not_number)}
+    far = _far_nodes(finite)
+    xy = {n: v for n, v in finite.items() if n not in set(far)}
+    have_xy = set(xy)
+    cs = coordinate_scale(wn, have_xy)
+    if cs["status"] == "no coordinates":
+        raise LogRefused("This model has no coordinates, so a tap cannot be placed on it by its position. " + _USE_IDS)
+    if cs["status"] == "too few pipes drawn":
+        raise LogRefused("Too few of this model's pipes are drawn to tell whether its drawing is to scale, so a tap "
+                         "cannot be placed on it by its position. " + _USE_IDS)
+    if cs["status"] == "schematic":
+        raise LogRefused("This model's drawing is a schematic, not to scale: its drawn pipe lengths are not in "
+                         "proportion to the lengths in the file, so a tap cannot be placed on it by its position. "
+                         + _USE_IDS)
+    drawn = [pn for pn in wn.pipe_name_list
+             if wn.get_link(pn).start_node_name in have_xy and wn.get_link(pn).end_node_name in have_xy]
+    ratio, odd_vertex = {}, []
+    for pn in drawn:
+        pl = wn.get_link(pn)
+        pts = [xy[pl.start_node_name], *pl.vertices, xy[pl.end_node_name]]
+        if not all(math.isfinite(float(c)) for pt in pts for c in pt):
+            odd_vertex.append(pn)
+        elif pl.length > 0:
+            ratio[pn] = _drawn_length(pts) / pl.length
+    med = float(np.median([v for v in ratio.values() if v > 0]))       # coordinate_scale's median, not rounded
+    # degrees on both axes, latitude as x or as y (the final verification of task 16b: a drawing with latitude as x
+    # passed a test that wanted x within 180 and y within 90)
+    if (med < GEOGRAPHIC_MAX_RATIO and max(abs(v[0]) for v in xy.values()) <= 180
+            and max(abs(v[1]) for v in xy.values()) <= 180):
+        raise LogRefused(f"This model is drawn in degrees of longitude and latitude, not in feet or metres (about "
+                         f"{med:.2g} of its units per metre of pipe), so a tap cannot be placed on it by its position. "
+                         + _USE_IDS)
+    warns = []
+    at = lambda names: sorted({pn for pn in wn.pipe_name_list for n in (wn.get_link(pn).start_node_name,
+                                                                         wn.get_link(pn).end_node_name) if n in names})
+    for names, what in ((not_number, "a position that is not a number"),
+                        (far, f"a position far outside the rest of the drawing (more than {FAR_NODE_SPANS:g} times "
+                              f"the width of its middle half from its middle), as an export writes a position it does "
+                              f"not have (a no-data value)")):
+        if names:
+            k, pp = len(names), at(set(names))
+            them = "them" if k != 1 else "it"
+            gone = (f", so the pipe at {them} ({pp[0]}) is left out of the placement" if len(pp) == 1 else
+                    f", so the {len(pp)} pipes at {them} ({', '.join(pp[:6])}{', and more' if len(pp) > 6 else ''}) "
+                    f"are left out of the placement" if pp else "")
+            warns.append(f"{k} node{'s have' if k != 1 else ' has'} {what}: "
+                         + ", ".join(f"{n} at {raw[n][0]:.6g}, {raw[n][1]:.6g}" for n in names[:4])
+                         + (", and more" if k > 4 else "")
+                         + f". {'They are' if k != 1 else 'It is'} treated as not drawn{gone}.")
+    if cs["units"] == "feet":
+        mpu = 0.3048
+    elif cs["units"] == "metres":
+        mpu = 1.0
+    else:
+        mpu = 1.0 / med
+        warns.append(f"The model's drawing is to scale, in units that are neither feet nor metres (about "
+                     f"{med:.3g} per metre of pipe): distances use that scale.")
+    lo, hi = DRAWN_RATIO_BAND
+    left_out = [pn for pn in drawn if pn in odd_vertex or (pn in ratio and not lo * med <= ratio[pn] <= hi * med)]
+    if left_out:
+        n = len(left_out)
+        warns.append(f"{n} pipe{'s are' if n != 1 else ' is'} left out of the placement ("
+                     f"{', '.join(left_out[:6])}{', and more' if n > 6 else ''}): drawn at under half or over twice "
+                     f"the model's usual drawn length per metre of pipe, as when a node is drawn at a placeholder "
+                     f"position such as 0,0. A tap beside {'one of them' if n != 1 else 'it'} is put on the nearest "
+                     f"other pipe.")
+    if len(drawn) < DRAWN_SHARE_WARN * len(wn.pipe_name_list):
+        warns.append(f"Only {len(drawn)} of the model's {len(wn.pipe_name_list)} pipes are drawn (both ends with a "
+                     f"position): a tap beside a pipe that is not drawn is put on the nearest drawn pipe, which may be "
+                     f"the wrong one.")
+    out_set = set(left_out)
+    pipes, diam, starts, ends, a, b, seg_start = [], [], [], [], [], [], []
+    for pn in drawn:
+        if pn in out_set:
+            continue
+        pl = wn.get_link(pn)
+        pts = [xy[pl.start_node_name], *[tuple(map(float, v)) for v in pl.vertices], xy[pl.end_node_name]]
+        seg_start.append(len(a))
+        for k in range(len(pts) - 1):
+            a.append(pts[k])
+            b.append(pts[k + 1])
+        pipes.append(pn)
+        diam.append(pl.diameter / 0.0254)
+        starts.append(pl.start_node_name)
+        ends.append(pl.end_node_name)
+    # the drawing's centre: the median position of the kept pipes' end nodes, not the mean of every node (the final
+    # verification of task 16b: one node at -3.4e38 moved the mean so far that every position lost its precision)
+    kept = sorted(set(starts) | set(ends))
+    origin = ((float(np.median([xy[n][0] for n in kept])), float(np.median([xy[n][1] for n in kept]))) if kept else
+              (0.0, 0.0))
+    o = np.array(origin)
+    kind = {n: "junction" for n in wn.junction_name_list}
+    kind.update({n: "tank" for n in wn.tank_name_list})
+    kind.update({n: "reservoir" for n in wn.reservoir_name_list})
+    sa = (np.array(a, float).reshape(-1, 2) - o) * mpu
+    sb = (np.array(b, float).reshape(-1, 2) - o) * mpu
+    extent = float(max(np.hypot(*sa.T).max(), np.hypot(*sb.T).max())) if len(sa) else 0.0
+    return TapGeometry(path=p, scale=cs, metres_per_unit=mpu, origin=origin, pipes=pipes,
+                       diam_in=np.round(np.array(diam, float), 3), start=starts, end=ends,
+                       seg_a=sa, seg_b=sb, seg_start=np.array(seg_start, int), junctions=set(wn.junction_name_list),
+                       node_xy=xy, node_kind=kind, warnings=warns, left_out=left_out, extent_m=extent)
+
+
+def tap_hydraulics(path: str, start_clock_h: float = 0.0) -> dict:
+    """One 7-day run of the model, set up as simulate.load sets up every run (with water age), in a temporary folder:
+    each pipe's flow (m3/s, positive from its start node to its end node) at each hour of the clock day window, 07:00
+    to 17:00 (daytime_model_hours), on the scored day (the last), and each node's mean water age (h) over that
+    window."""
+    import wntr
+    from .simulate import DAY, DURATION_DAYS, load, net_path
+    wn = load(net_path(path))
+    wn.options.quality.parameter = "AGE"
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        res = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "run"))
+    hours = daytime_model_hours(start_clock_h)
+    times = [(DURATION_DAYS - 1) * DAY + h * 3600 for h in hours]
+    fl = res.link["flowrate"].loc[times, wn.pipe_name_list]
+    age = res.node["quality"].loc[times, wn.node_name_list].mean() / 3600.0
+    return {"flow": {p: [float(x) for x in fl[p].values] for p in wn.pipe_name_list},
+            "age_h": {n: float(v) for n, v in age.items()},
+            "window": (clock_label(hours[0], start_clock_h), clock_label(hours[-1], start_clock_h))}
+
+
+def pipe_junctions(geom: TapGeometry, hyd: dict) -> list[tuple]:
+    """For each pipe of geom: (junction, other end, codes).  The junction is the pipe's downstream end by the sign of
+    its mean flow over the day window, never by drawing direction.  codes: 'reverses' (some hour of the window flows
+    against the mean, or the mean is no flow while the hours are not: the other end is given too), 'no_flow' (every
+    hour at most FLOW_ZERO_M3S: the end with the older water, by mean water age over the window; equal ages take the
+    first end by name), 'end_not_junction' (the downstream end is a tank or reservoir: the other end).  A pipe with
+    no junction at either end gives (None, None, codes): no tap is put on it."""
+    import numpy as np
+    out = []
+    for p, s, e in zip(geom.pipes, geom.start, geom.end):
+        q = np.array(hyd["flow"][p], float)
+        codes = []
+        m = float(q.mean())
+        older = lambda: (s if hyd["age_h"].get(s, 0.0) > hyd["age_h"].get(e, 0.0) else
+                         e if hyd["age_h"].get(e, 0.0) > hyd["age_h"].get(s, 0.0) else min(s, e))
+        if float(np.abs(q).max()) <= FLOW_ZERO_M3S:
+            codes.append("no_flow")
+            down = older()
+        elif abs(m) <= FLOW_ZERO_M3S:
+            codes.append("reverses")
+            down = older()
+        else:
+            down = e if m > 0 else s
+            if bool(np.any((np.sign(q) == -np.sign(m)) & (np.abs(q) > FLOW_ZERO_M3S))):
+                codes.append("reverses")
+        up = s if down == e else e
+        if down not in geom.junctions:
+            if up not in geom.junctions:
+                out.append((None, None, tuple(codes)))
+                continue
+            codes.append("end_not_junction")
+            down, up = up, down
+        out.append((down, up if ("reverses" in codes and up in geom.junctions) else None, tuple(codes)))
+    return out
+
+
+def _segment_distances(P, A, B):
+    """Distances (k, n) from k points to n segments AB, every coordinate in metres."""
+    import numpy as np
+    AB = B - A
+    L2 = (AB ** 2).sum(1)
+    L2 = np.where(L2 > 0, L2, 1.0)
+    PA = P[:, None, :] - A[None, :, :]
+    u = np.clip((PA * AB[None]).sum(2) / L2[None], 0.0, 1.0)
+    C = A[None] + u[..., None] * AB[None]
+    return np.sqrt(((P[:, None, :] - C) ** 2).sum(2))
+
+
+def snap_points(P, allow_main, geom: TapGeometry, rules: list[tuple], main_min_in: float = MAIN_MIN_IN,
+                chunk: int | None = None, cut_in: float | None = None):
+    """The nearest pipe to each point (k, 2), in metres around geom.origin, among the pipes with a junction and, unless
+    allow_main is True for that point, under main_min_in inches (judged at MAIN_CUT_RATIO of it on the model's
+    diameter, or under cut_in inches on it when given); and the nearest pipe whose junction differs from the first
+    one's (the second candidate).  Returns
+    (first, d1, second, d2, main_d): pipe indices into geom.pipes (-1 for none), distances in metres (inf for none),
+    and the distance to the nearest pipe left out as a main (inf where mains are allowed, or there is none).  The
+    points go in chunks of at most SNAP_CHUNK_ELEMENTS points times segments, so memory does not grow with the
+    model's size beyond that."""
+    import numpy as np
+    P = np.asarray(P, float).reshape(-1, 2)
+    allow = np.broadcast_to(np.asarray(allow_main, bool), (len(P),))
+    names = sorted({j for j, _, _ in rules if j is not None})
+    code = {j: i for i, j in enumerate(names)}
+    pj = np.array([code[j] if j is not None else -1 for j, _, _ in rules], int)
+    has_j = pj >= 0
+    small = geom.diam_in < (main_min_in * MAIN_CUT_RATIO if cut_in is None else cut_in)
+    main = has_j & ~small
+    chunk = chunk or max(1, min(256, SNAP_CHUNK_ELEMENTS // max(1, len(geom.seg_a))))
+    first, d1, second, d2, dmain = (np.full(len(P), -1, int), np.full(len(P), np.inf), np.full(len(P), -1, int),
+                                    np.full(len(P), np.inf), np.full(len(P), np.inf))
+    for k0 in range(0, len(P), chunk):
+        Pc = P[k0:k0 + chunk]
+        Dall = np.minimum.reduceat(_segment_distances(Pc, geom.seg_a, geom.seg_b), geom.seg_start, axis=1)
+        ok = has_j[None, :] & (small[None, :] | allow[k0:k0 + chunk, None])
+        D = np.where(ok, Dall, np.inf)
+        f = np.argmin(D, axis=1)
+        fd = D[np.arange(len(Pc)), f]
+        D2 = np.where(pj[None, :] != pj[f][:, None], D, np.inf)
+        s = np.argmin(D2, axis=1)
+        sd = D2[np.arange(len(Pc)), s]
+        first[k0:k0 + chunk] = np.where(np.isfinite(fd), f, -1)
+        d1[k0:k0 + chunk] = fd
+        second[k0:k0 + chunk] = np.where(np.isfinite(sd), s, -1)
+        d2[k0:k0 + chunk] = sd
+        if main.any():
+            dm = np.where(main[None, :], Dall, np.inf).min(axis=1)
+            dmain[k0:k0 + chunk] = np.where(allow[k0:k0 + chunk], np.inf, dm)
+    return first, d1, second, d2, dmain
+
+
+# ---- georeferencing: WGS84 latitude and longitude to the model's x and y
+def _ecef(lat, lon):
+    import numpy as np
+    e2 = WGS84_F * (2 - WGS84_F)
+    p, lam = np.radians(lat), np.radians(lon)
+    n = WGS84_A / np.sqrt(1 - e2 * np.sin(p) ** 2)
+    return np.column_stack([n * np.cos(p) * np.cos(lam), n * np.cos(p) * np.sin(lam), n * (1 - e2) * np.sin(p)])
+
+
+def enu_from_latlon(lat, lon, lat0: float, lon0: float):
+    """East and north in metres of each point on the local tangent plane at (lat0, lon0): WGS84 to earth-centred
+    coordinates (ECEF), then the plane's east and north axes (the height above the ellipsoid is taken as 0)."""
+    import numpy as np
+    x = _ecef(np.atleast_1d(lat), np.atleast_1d(lon)) - _ecef(np.array([lat0]), np.array([lon0]))
+    p, lam = np.radians(lat0), np.radians(lon0)
+    east = np.array([-np.sin(lam), np.cos(lam), 0.0])
+    north = np.array([-np.sin(p) * np.cos(lam), -np.sin(p) * np.sin(lam), np.cos(p)])
+    return np.column_stack([x @ east, x @ north])
+
+
+def centre_longitude(lon, how: str = "median") -> float:
+    """The taps' middle longitude, their median (how 'median'; 'mean' as first built), taken across the antimeridian
+    when they straddle it (longitudes written from -180 to 180 that span more than 180 degrees: -179.9 and 179.9 give
+    180, not 0)."""
+    import numpy as np
+    lon = np.asarray(lon, float)
+    f = np.median if how == "median" else np.mean
+    if lon.size and float(lon.max() - lon.min()) > 180:
+        m = float(f(np.where(lon < 0, lon + 360.0, lon)))
+        return m - 360.0 if m > 180 else m
+    return float(f(lon))
+
+
+def plane_centre(lat, lon, how: str = "median") -> tuple[float, float]:
+    """The east-north plane's tangent point: the taps' median latitude and longitude (centre_longitude), so one tap
+    with a dropped digit cannot move it (the final verification of task 16b: with the mean of every tap, one typo in a
+    small tap map moved it by degrees and put correct taps 13 m off); how 'mean' gives the plane as first built."""
+    import numpy as np
+    lat = np.asarray(lat, float)
+    return float(np.median(lat) if how == "median" else lat.mean()), centre_longitude(lon, how)
+
+
+def fit_affine(src, dst):
+    """The least-squares 2D affine from src (n, 2) to dst (n, 2): a (3, 2) matrix M with dst ~ [src, 1] M."""
+    import numpy as np
+    A = np.column_stack([np.asarray(src, float), np.ones(len(src))])
+    M, *_ = np.linalg.lstsq(A, np.asarray(dst, float), rcond=None)
+    return M
+
+
+def apply_affine(M, src):
+    import numpy as np
+    return np.column_stack([np.asarray(src, float), np.ones(len(src))]) @ M
+
+
+def _hull_indices(E) -> list[int]:
+    """The corners of the convex hull of points E (n, 2), as indices in ascending order (Andrew's monotone chain)."""
+    order = sorted(range(len(E)), key=lambda i: (float(E[i][0]), float(E[i][1])))
+    if len(order) < 3:
+        return sorted(order)
+    cross = lambda o, a, b: ((E[a][0] - E[o][0]) * (E[b][1] - E[o][1]) - (E[a][1] - E[o][1]) * (E[b][0] - E[o][0]))
+    lower, upper = [], []
+    for i in order:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], i) <= 0:
+            lower.pop()
+        lower.append(i)
+    for i in reversed(order):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], i) <= 0:
+            upper.pop()
+        upper.append(i)
+    return sorted(set(lower[:-1] + upper[:-1]))
+
+
+def control_spread(enu_ctrl) -> dict:
+    """How far the control taps are from lying on one line: the largest over the smallest singular value of their
+    centred east-north positions (cond), their RMS distance in metres from their own best line (across_m), and their
+    largest triangle's area over the square of their largest distance (area).  The largest distance and the largest
+    triangle are both measured on the corners of the taps' convex hull, where they lie, so both use the same set
+    (at most 150 corners for the triangle, evenly spaced, and 2,000 for the distance)."""
+    import itertools
+    import numpy as np
+    E = np.asarray(enu_ctrl, float).reshape(-1, 2)
+    s = np.linalg.svd(E - E.mean(0), compute_uv=False) if len(E) else np.zeros(0)
+    cond = float(s[0] / s[1]) if len(s) > 1 and s[1] > 0 else math.inf
+    across = float(s[1] / math.sqrt(len(E))) if len(s) > 1 else 0.0
+    H = E[_hull_indices(E)] if len(E) else E
+    Hd = H[np.linspace(0, len(H) - 1, 2000).astype(int)] if len(H) > 2000 else H
+    dmax = float(np.hypot(*(Hd[:, None, :] - Hd[None, :, :]).transpose(2, 0, 1)).max()) if len(Hd) > 1 else 0.0
+    area = 0.0
+    Ht = H[np.linspace(0, len(H) - 1, 150).astype(int)] if len(H) > 150 else H
+    if dmax > 0 and len(Ht) >= 3:
+        idx = np.array(list(itertools.combinations(range(len(Ht)), 3)))
+        a, b, c = Ht[idx[:, 0]], Ht[idx[:, 1]], Ht[idx[:, 2]]
+        area = float(np.max(np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])))
+                     / 2 / dmax ** 2)
+    return {"cond": cond, "area": area, "largest_distance_m": dmax, "across_m": across}
+
+
+def _places(E, radius: float, most: int = 3) -> int:
+    """How many places the points E (n, 2) were taken at, counting a point within radius of an earlier place as that
+    place (at most `most`)."""
+    centres = []
+    for p in E:
+        if not any(math.dist(p, c) <= radius for c in centres):
+            centres.append(p)
+            if len(centres) >= most:
+                break
+    return len(centres)
+
+
+def georeference(lat, lon, controls: list[int], control_xy, metres_per_unit: float = 1.0,
+                 names: list[str] | None = None, centre: str = "median") -> tuple:
+    """Taps in WGS84 latitude and longitude put in the model's x and y: each goes to east and north in metres on the
+    local tangent plane at the taps' median position (plane_centre; centre 'mean' gives the plane as first built),
+    then through the 2D affine fitted from the control taps (indices controls, their model positions control_xy, in
+    model units).  Returns (xy, info): xy (n, 2) in model units, info with the control count, whether the fit is
+    checked (4 or more control taps), each control tap's leave-one-out residual in metres (the fit made without it,
+    which needs 4 or more: in closed form, its residual over one minus its leverage; None, and listed as uncheckable,
+    when its leverage is over LOO_LEVERAGE_MAX), the flagged ones (above LOO_FLAG_M), each tap's predicted error in metres (predicted_m: FIT_GPS_ASSUMED_M of GPS error on the control taps
+    carried through the fit to that tap by its leverage, which grows with its distance from them and across the line
+    they lie along), the fit's scale against the model's units, whether it mirrors, and whether the control taps lie
+    along a narrow strip.  Raises GeorefRefused with fewer than MIN_CONTROLS control taps, with control taps all within
+    SAME_PLACE_M of each other, or with control taps that lie almost on one line (control_spread: the relative tests,
+    and fewer than ACROSS_MIN_M metres across)."""
+    import numpy as np
+    lat, lon = np.asarray(lat, float), np.asarray(lon, float)
+    names = list(names) if names is not None else [str(i) for i in range(len(lat))]
+    k = len(controls)
+    if k < MIN_CONTROLS:
+        raise GeorefRefused(f"Taps given by latitude and longitude need at least {MIN_CONTROLS} control taps, taps whose "
+                            f"junction you know, with the position taken at that junction ({CHECKED_CONTROLS} or more, "
+                            f"so the fit can be checked); this tap map has {k}. Give a junction ID on {MIN_CONTROLS - k} "
+                            f"more tap{'s' if MIN_CONTROLS - k != 1 else ''} spread over the area, or give the taps' "
+                            f"junction IDs.")
+    enu = enu_from_latlon(lat, lon, *plane_centre(lat, lon, centre))
+    ce, cxy = enu[controls], np.asarray(control_xy, float)
+    sp = control_spread(ce)
+    if sp["largest_distance_m"] < SAME_PLACE_M:
+        where = ("at the same place" if sp["largest_distance_m"] < 0.5 else
+                 f"at about the same place (within {sp['largest_distance_m']:.1f} m of each other)")
+        raise GeorefRefused(f"The {k} control taps were all taken {where}, so the fit has nothing to measure the map's "
+                            f"turn and stretch with. Take the control taps at junctions spread over the area: at least "
+                            f"{MIN_CONTROLS} of them not on one line, and {CHECKED_CONTROLS} or more so the fit can be "
+                            f"checked.")
+    long_thin, small_area = sp["cond"] > COLLINEAR_MAX_COND, sp["area"] < COLLINEAR_MIN_AREA
+    if (long_thin or small_area) and sp["across_m"] < ACROSS_MIN_M:
+        if _places(ce, SAME_PLACE_M / 2) == 2:
+            raise GeorefRefused(f"The {k} control taps were taken at only two places, about "
+                                f"{sp['largest_distance_m']:.0f} m apart, so they lie on one line and the fit cannot tell "
+                                f"the map's turn and stretch across it. Add a control tap at a junction well away from "
+                                f"that line.")
+        why = ([f"their positions are {sp['cond']:.0f} times longer than wide, above {COLLINEAR_MAX_COND:g}"
+                if math.isfinite(sp["cond"]) else "their positions lie exactly on one line"] if long_thin else []) + \
+              ([f"their largest triangle is {sp['area']:.3f} of the square of their largest distance, below "
+                f"{COLLINEAR_MIN_AREA:g}"] if small_area else []) + \
+              [f"they lie within about {sp['across_m']:.1f} m of that line, under {ACROSS_MIN_M:g} m"]
+        raise GeorefRefused(f"The {k} control taps lie almost on one line, so the fit cannot tell the map's turn and "
+                            f"stretch across that line ({'; '.join(why)}). Add a control tap well away from that "
+                            f"line.")
+    c0 = cxy.mean(0)
+    M = fit_affine(ce, cxy - c0)
+    xy = apply_affine(M, enu) + c0
+    # leverage from the control taps' design matrix [east, north, 1], centred: A = QR, h_ii the rows' squared norms of
+    # Q; any position's leverage solves R^T z = [e, n, 1]
+    cm = ce.mean(0)
+    Q, R = np.linalg.qr(np.column_stack([ce - cm, np.ones(k)]))
+    h = (Q ** 2).sum(1)
+    lev = (np.linalg.solve(R.T, np.column_stack([enu - cm, np.ones(len(enu))]).T) ** 2).sum(0)
+    loo = []
+    if k >= CHECKED_CONTROLS:
+        # the final verification of task 16b: in closed form (O(n)), not one refit per control tap (2,000 control
+        # taps took 0.4 s and 16,000 took 23 s); a control tap of leverage over LOO_LEVERAGE_MAX gets None
+        resid = (cxy - c0) - apply_affine(M, ce)
+        for i in range(k):
+            r = (float(np.hypot(*(resid[i] / (1.0 - h[i])))) * metres_per_unit if h[i] <= LOO_LEVERAGE_MAX else None)
+            loo.append({"tap_id": names[controls[i]], "residual_m": r})
+    sv = np.linalg.svd(M[:2], compute_uv=False) * metres_per_unit      # model units per metre, in metres per metre
+    measured = [x for x in loo if x["residual_m"] is not None]
+    info = {"controls": k, "checked": k >= CHECKED_CONTROLS, "loo": loo,
+            "loo_max_m": max((x["residual_m"] for x in measured), default=None),
+            "flagged": [x["tap_id"] for x in measured if x["residual_m"] > LOO_FLAG_M],
+            "uncheckable": [x["tap_id"] for x in loo if x["residual_m"] is None],
+            "scale": [float(sv[0]), float(sv[1])], "mirrored": bool(np.linalg.det(M[:2]) < 0),
+            "cond": sp["cond"], "area": sp["area"], "across_m": sp["across_m"],
+            "narrow_strip": bool(long_thin or small_area),
+            "predicted_m": [float(x) for x in FIT_GPS_ASSUMED_M * np.sqrt(lev)]}
+    return xy, info
+
+
+# ---- the suggestion
+@dataclass
+class TapSuggestion:
+    """The suggested tap map: one row per tap (SUGGESTED_COLUMNS, flags a list of plain words), the rows of the tap
+    map that are not used with their reasons, notes, warnings, and the georeference's info (latitude and longitude
+    only).  A suggestion for the operator to check, never a tap map by itself: the app's table and confirm step and
+    the pilot's --accept-snapped, which would take a checked one, are not built yet (task 16b stopped)."""
+    kind: str
+    rows: list = field(default_factory=list)
+    dropped: list = field(default_factory=list)
+    notes: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    georef: dict = field(default_factory=dict)
+    n_rows: int = 0
+
+    def mapping(self) -> dict:
+        return {r["tap_id"]: r["junction_id"] for r in self.rows if r["junction_id"]}
+
+    def table(self) -> list[dict]:
+        """The rows as the CSV holds them: snap_m and second_m with one decimal, flags joined by '; '."""
+        f = lambda v: "" if v is None else f"{v:.1f}"
+        return [{"tap_id": r["tap_id"], "junction_id": r["junction_id"] or "", "snap_m": f(r["snap_m"]),
+                 "pipe": r["pipe"] or "", "second_choice": r["second_choice"] or "", "second_m": f(r["second_m"]),
+                 "flags": "; ".join(r["flags"])} for r in self.rows]
+
+    def to_csv(self) -> bytes:
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=SUGGESTED_COLUMNS, lineterminator="\n")
+        w.writeheader()
+        w.writerows(self.table())
+        return buf.getvalue().encode("utf-8")
+
+
+def _flag_words(codes: tuple, other: str | None, window: tuple, kind_of: dict, up_name: str | None) -> list:
+    """The plain words of pipe_junctions' codes for one tap."""
+    out = []
+    w = f"between {window[0]} and {window[1]}"
+    if "no_flow" in codes:
+        out.append(f"no flow {w}: the end with the older water")
+    if "reverses" in codes:
+        out.append(f"the flow reverses {w}: it may be the other end, junction {other}" if other else
+                   f"the flow reverses {w}")
+    if "end_not_junction" in codes and up_name:
+        out.append(f"the downstream end is a {kind_of.get(up_name, 'node')} ({up_name}): the other end")
+    return out
+
+
+def suggest_from(coords: TapCoords, geom: TapGeometry, hyd: dict, main_min_in: float = MAIN_MIN_IN) -> TapSuggestion:
+    """The suggested junction of each tap in coords on the model of geom (its flows in hyd).  A tap with a junction
+    given keeps it (in latitude and longitude it is a control tap, with its leave-one-out residual; in x and y its
+    distance from the junction's drawn position is checked); every other tap is put on the nearest pipe under
+    main_min_in inches (any pipe when its row says on_main), its segments and vertices in metres, and gets that
+    pipe's downstream junction (pipe_junctions); the nearest pipe with another junction is the second choice, shown
+    and flagged when within SECOND_RATIO times the distance; a main left out within SECOND_RATIO times the distance is
+    flagged; a snap over SNAP_FAR_M is flagged; an untagged tap put on a pipe from MAIN_BAND_RATIO of main_min_in up
+    to the cut (a main given by its internal diameter may be there) is flagged with the nearest smaller pipe; a tap
+    placed by latitude and longitude where the fit's predicted error is above FIT_PREDICTED_FLAG_M is flagged.  A
+    given junction that is not in the model, a control tap's junction with no drawn position, and a position that is
+    not near the model's drawing are listed as not used; a column left unused that holds the model's junction IDs is
+    warned about."""
+    import numpy as np
+    rules = pipe_junctions(geom, hyd)
+    cut = main_min_in * MAIN_CUT_RATIO
+    band_lo = main_min_in * MAIN_BAND_RATIO
+    has_j = np.array([j is not None for j, _, _ in rules], bool)
+    sug = TapSuggestion(kind=coords.kind, dropped=list(coords.dropped), notes=list(coords.notes),
+                        warnings=list(coords.warnings) + list(geom.warnings), n_rows=coords.n_rows)
+    for h, vals in coords.other_columns.items():
+        filled = [v for v in vals if v]
+        hits = sum(v in geom.junctions for v in filled)
+        if filled and hits >= max(1.0, len(filled) / 2):
+            sug.warnings.append(f"The column '{h}' holds junction IDs of this model ({hits} of its {len(filled)} filled "
+                                f"rows) and is not used: if it gives each tap's junction, choose it as the junction "
+                                f"column, and those taps keep their junctions.")
+    taps = []
+    for t in coords.taps:
+        if t["junction"] and t["junction"] not in geom.junctions:
+            sug.dropped.append({"row": t["row"], "tap_id": t["tap_id"],
+                                "reason": f"junction {t['junction']} (tap {t['tap_id']}) is not in the model"})
+        elif coords.kind == "latlon" and t["junction"] and t["a"] is not None and t["junction"] not in geom.node_xy:
+            sug.dropped.append({"row": t["row"], "tap_id": t["tap_id"],
+                                "reason": f"junction {t['junction']} (tap {t['tap_id']}) has no position in the model's "
+                                          f"drawing, so it cannot be a control tap"})
+        else:
+            taps.append(t)
+    pos = [t for t in taps if t["a"] is not None]
+    xy, predicted = {}, {}
+    if coords.kind == "latlon" and pos:
+        ctrl = [i for i, t in enumerate(pos) if t["junction"]]
+        need = any(not t["junction"] for t in pos)
+        if need or len(ctrl) >= MIN_CONTROLS:
+            pts, info = georeference([t["a"] for t in pos], [t["b"] for t in pos], ctrl,
+                                     [geom.node_xy[pos[i]["junction"]] for i in ctrl], geom.metres_per_unit,
+                                     [t["tap_id"] for t in pos])
+            xy = {t["tap_id"]: (float(p[0]), float(p[1])) for t, p in zip(pos, pts)}
+            predicted = {t["tap_id"]: v for t, v in zip(pos, info["predicted_m"]) if not t["junction"]}
+            sug.georef = info
+            loo = info["loo"]
+            measured = [x for x in loo if x["residual_m"] is not None]
+            if info["checked"]:
+                if measured:
+                    worst = max(measured, key=lambda x: x["residual_m"])
+                    sug.notes.append(f"Placed by latitude and longitude through a local east-north plane and an affine "
+                                     f"fit to {info['controls']} control taps; each control tap's leave-one-out residual "
+                                     f"(the fit made without it) is at most {worst['residual_m']:.1f} m (tap "
+                                     f"{worst['tap_id']}).")
+            else:
+                sug.warnings.append(f"Unchecked: the fit uses {info['controls']} control taps, which fix it exactly and "
+                                    f"leave nothing to check it with. Add a fourth control tap (a junction ID on a tap "
+                                    f"whose position was taken at that junction).")
+            if info["uncheckable"]:
+                n = len(info["uncheckable"])
+                sug.warnings.append(f"Control tap{'s' if n != 1 else ''} {', '.join(info['uncheckable'][:6])} cannot be "
+                                    f"checked: without {'each' if n != 1 else 'it'}, the other control taps lie almost "
+                                    f"on one line, so the fit made without {'each' if n != 1 else 'it'} measures "
+                                    f"nothing. A control tap away from that line would let "
+                                    f"{'them' if n != 1 else 'it'} be checked.")
+            if info["narrow_strip"]:
+                sug.warnings.append(f"The control taps lie along a narrow strip ({info['cond']:.0f} times longer than "
+                                    f"wide, about {info['across_m']:.0f} m across): a tap far from that strip may be "
+                                    f"placed less well. A control tap away from it would help.")
+            if info["flagged"]:
+                bad = sorted((x for x in measured if x["residual_m"] > LOO_FLAG_M), key=lambda x: -x["residual_m"])
+                sug.warnings.append(f"Control tap{'s' if len(bad) != 1 else ''} "
+                                    f"{', '.join(x['tap_id'] for x in bad)}: the fit made without "
+                                    f"{'each' if len(bad) != 1 else 'it'} misses its junction by more than "
+                                    f"{LOO_FLAG_M:g} m ({', '.join(f'{x['residual_m']:.1f} m' for x in bad)}). "
+                                    + ("One wrong control tap pulls the others' residuals up too: check the "
+                                       f"largest first, {bad[0]['tap_id']}, its junction ID and where its position was "
+                                       f"taken." if len(bad) > 1 else
+                                       "Check that tap's junction ID and where its position was taken."))
+            if max(abs(s - 1) for s in info["scale"]) > FIT_SCALE_TOL:
+                sug.warnings.append(f"The fit stretches the positions by {info['scale'][0]:.2f} and "
+                                    f"{info['scale'][1]:.2f} against the model's coordinate units (1 when they agree): "
+                                    f"check the control taps' junctions and the model's coordinate units.")
+            if info["mirrored"]:
+                sug.warnings.append("The fit mirrors the map: a control tap's junction ID is probably wrong, or the "
+                                    "latitude and longitude columns are swapped.")
+    elif coords.kind == "xy":
+        xy = {t["tap_id"]: (t["a"], t["b"]) for t in pos}
+    o = np.array(geom.origin)
+    snap = [t for t in taps if not t["junction"] and t["tap_id"] in xy]
+    far_off = set()
+    res, alt = {}, {}
+    if snap:
+        P = (np.array([xy[t["tap_id"]] for t in snap], float) - o) * geom.metres_per_unit
+        limit = max(NEAR_MODEL_FACTOR * geom.extent_m, NEAR_MODEL_MIN_M)
+        with np.errstate(over="ignore", invalid="ignore"):
+            near = np.hypot(P[:, 0], P[:, 1]) <= limit
+        for t, ok in zip(snap, near):
+            if not ok:
+                far_off.add(t["tap_id"])
+                sug.dropped.append({"row": t["row"], "tap_id": t["tap_id"],
+                                    "reason": f"the position is not near the model's drawing (more than "
+                                              f"{limit / 1000:,.0f} km from its centre): check its "
+                                              + ("latitude and longitude" if coords.kind == "latlon" else "x and y")})
+        snap = [t for t, ok in zip(snap, near) if ok]
+        if snap:
+            first, d1, second, d2, dmain = snap_points(P[near], [t["on_main"] for t in snap], geom, rules, main_min_in)
+            res = {t["tap_id"]: (int(f), float(a), int(s), float(b), float(m))
+                   for t, f, a, s, b, m in zip(snap, first, d1, second, d2, dmain)}
+            # the final verification of task 16b: a 16 in plastic main given by its internal diameter is under the
+            # cut, so an untagged tap put on a pipe in the band below it is flagged with the nearest smaller pipe
+            band = [i for i, (t, f) in enumerate(zip(snap, first))
+                    if f >= 0 and not t["on_main"] and band_lo <= geom.diam_in[f] < cut]
+            if band:
+                af, ad, *_ = snap_points(P[near][band], False, geom, rules, main_min_in, cut_in=band_lo)
+                alt = {snap[i]["tap_id"]: (int(f), float(d)) for i, f, d in zip(band, af, ad)}
+    taps = [t for t in taps if t["tap_id"] not in far_off]
+    loo = {x["tap_id"]: x["residual_m"] for x in sug.georef.get("loo", [])}
+    unchecked = coords.kind == "latlon" and sug.georef and not sug.georef.get("checked")
+    for t in taps:
+        row = {"tap_id": t["tap_id"], "junction_id": "", "snap_m": None, "pipe": None, "second_choice": None,
+               "second_m": None, "flags": []}
+        if t["junction"]:
+            row["junction_id"] = t["junction"]
+            if coords.kind == "latlon" and t["tap_id"] in xy:
+                r = loo.get(t["tap_id"])
+                row["flags"].append("control tap: junction given" + (
+                    f"; leave-one-out residual {r:.1f} m" if r is not None else
+                    "; its leave-one-out residual cannot be measured: without it the others lie almost on one line"
+                    if t["tap_id"] in sug.georef.get("uncheckable", []) else ""))
+                if r is not None and r > LOO_FLAG_M:
+                    row["flags"].append(f"over {LOO_FLAG_M:g} m: check this control tap's junction and position")
+            else:
+                row["flags"].append("junction given in the tap map")
+                if coords.kind == "xy" and t["a"] is not None and t["junction"] in geom.node_xy:
+                    d = math.dist(geom.node_xy[t["junction"]], (t["a"], t["b"])) * geom.metres_per_unit
+                    if d > SNAP_FAR_M:
+                        row["flags"].append(f"the junction given is {d:.0f} m from the tap's position")
+        elif t["tap_id"] in res:
+            f, a, s, b, dm = res[t["tap_id"]]
+            if f < 0:                    # worded by what happened (the final verification of task 16b)
+                if not has_j.any():
+                    row["flags"].append("no pipe to place it on: no drawn pipe has a junction at either end")
+                elif not t["on_main"] and not (has_j & (geom.diam_in < cut)).any():
+                    row["flags"].append(f"no pipe to place it on: every drawn pipe with a junction at one end is "
+                                        f"{main_min_in:g} in or more (say on_main yes if the tap is on one)")
+                else:
+                    row["flags"].append("no pipe to place it on: its distance to the drawn pipes could not be "
+                                        "measured; check its position")
+            else:
+                j, other, codes = rules[f]
+                row.update(junction_id=j, snap_m=a, pipe=geom.pipes[f])
+                if s >= 0 and b <= SECOND_RATIO * a:
+                    row.update(second_choice=rules[s][0], second_m=b)
+                    row["flags"].append(f"two pipes close: the second choice, junction {rules[s][0]} on pipe "
+                                        f"{geom.pipes[s]}, is {b:.1f} m away")
+                if dm <= SECOND_RATIO * a:
+                    row["flags"].append(f"a main of {main_min_in:g} in or more is {dm:.1f} m away: if the tap is on it, "
+                                        f"say on_main yes")
+                if t["tap_id"] in alt:
+                    af, ad = alt[t["tap_id"]]
+                    row["flags"].append(
+                        f"a pipe of {geom.diam_in[f]:.1f} in, under the {cut:.1f} in cut for mains: if it is a main of "
+                        f"{main_min_in:g} in or more given by its internal diameter, "
+                        + (f"and the tap is not on it, the nearest smaller pipe is {geom.pipes[af]} (junction "
+                           f"{rules[af][0]}), {ad:.1f} m away; if the tap is on it, say on_main yes" if af >= 0 else
+                           "check that the tap is on it, and say on_main yes if it is"))
+                if a > SNAP_FAR_M:
+                    row["flags"].append(f"far: {a:.0f} m from the nearest pipe, over {SNAP_FAR_M:g} m")
+                up_name = (geom.end[f] if j == geom.start[f] else geom.start[f]) if "end_not_junction" in codes else None
+                row["flags"] += _flag_words(codes, other, hyd["window"], geom.node_kind, up_name)
+                if geom.diam_in[f] >= cut:
+                    row["flags"].append(f"on a main of {main_min_in:g} in or more (on_main yes)")
+                if unchecked:
+                    row["flags"].append("the fit is unchecked: add a fourth control tap")
+                if predicted.get(t["tap_id"], 0.0) > FIT_PREDICTED_FLAG_M:
+                    row["flags"].append(f"the fit is uncertain here, about {predicted[t['tap_id']]:.0f} m (the control "
+                                        f"taps' GPS error, taken as {FIT_GPS_ASSUMED_M:g} m, carried this far from "
+                                        f"them): a control tap near it would help")
+        else:
+            row["flags"].append("no position and no junction")
+        sug.rows.append(row)
+    placed = [r for r in sug.rows if r["snap_m"] is not None]
+    if placed:
+        n_flag = sum(1 for r in placed if r["flags"])
+        sug.notes.append(f"{len(placed)} tap{'s' if len(placed) != 1 else ''} put on the nearest pipe under "
+                         f"{main_min_in:g} in (any pipe for a tap whose row says on_main yes), each given that pipe's "
+                         f"downstream junction by the simulated flow between {hyd['window'][0]} and "
+                         f"{hyd['window'][1]}; {n_flag} flagged for a look. A flag marks some of the wrong suggestions, "
+                         f"not all of them: check every row.")
+        unsure = [r["tap_id"] for r in placed if predicted.get(r["tap_id"], 0.0) > FIT_PREDICTED_FLAG_M]
+        if unsure:
+            n = len(unsure)
+            sug.warnings.append(f"{n} tap{'s lie' if n != 1 else ' lies'} where the fit is uncertain ("
+                                f"{', '.join(unsure[:6])}{', and more' if n > 6 else ''}): far from the control taps, "
+                                f"or across the line they lie along, so {FIT_GPS_ASSUMED_M:g} m of GPS error on each "
+                                f"control tap could move {'them' if n != 1 else 'it'} by more than "
+                                f"{FIT_PREDICTED_FLAG_M:g} m. {'Each is' if n != 1 else 'It is'} flagged; a control tap "
+                                f"near {'them' if n != 1 else 'it'} would help.")
+        far = [r for r in placed if r["snap_m"] > 1000]
+        if len(far) == len(placed) and coords.kind == "xy":
+            sug.warnings.append("Every tap is more than 1 km from the model's pipes: check that x and y are in the "
+                                "model's own coordinates (the same system and units as the model's drawing).")
+    return sug
+
+
+def suggest_tap_map(taps_data: bytes, taps_name: str, model_path: str, start_clock_h: float = 0.0,
+                    mapping: dict | None = None, main_min_in: float = MAIN_MIN_IN) -> TapSuggestion:
+    """A tap map by coordinates read (read_tap_coordinates), checked against the model's drawing (tap_geometry: a
+    schematic drawing is refused), the model run once (tap_hydraulics) and every tap given its suggested junction
+    (suggest_from).  Raises LogRefused (GeorefRefused) with the reason in plain words; any other error on the way is
+    raised as a LogRefused that names it, so a page or the pilot shows a message, never a traceback."""
+    try:
+        coords = read_tap_coordinates(taps_data, taps_name, mapping)
+        geom = tap_geometry(model_path)
+        hyd = tap_hydraulics(model_path, start_clock_h)
+        return suggest_from(coords, geom, hyd, main_min_in)
+    except LogRefused:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise LogRefused(f"The taps could not be placed on this model ({type(e).__name__}: {e}). " + _USE_IDS) from e
+
+
 # ----------------------------------------------------------------------------- command line
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)

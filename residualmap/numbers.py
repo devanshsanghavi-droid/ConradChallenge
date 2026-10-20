@@ -123,6 +123,16 @@ _T16RV = ("runs", "post_task16_review")         # the same, after task 16's revi
 _T16F = ("runs", "post_task16_final")           # the rerun on the final tree, after task 16's final verification
 _FRB = ("final_review_probes", "before")         # the final verification's probes, before and after its fixes
 _FRA = ("final_review_probes", "after")
+T16B = "Task 16b"                                # task 16b's journal section
+_SN = "outputs/intake/tap_snapping.json"
+_K5, _K10, _K20 = (("ky4", "by_noise", k) for k in ("5", "10", "20"))
+_A5 = ("ky4_after_the_stop", "by_noise", "5")
+_U5 = ("urban_grid", "by_noise", "5", "small_mains")
+_DN = ("urban_grid", "transmission_main_variants", "urban_grid_tm_dn400.inp", "by_noise")
+_GR = ("georef", "review")
+_T16BS = ("runs", "post_task16b_final_verification")   # the rerun on the stopped tree, after the final verification
+_TM = ("urban_grid", "transmission_main_variants")
+_GF = ("georef", "review", "final")              # the final verification's georeference cases
 
 
 def _age(net: str, *keys) -> tuple:
@@ -536,6 +546,80 @@ REGISTRY: list[tuple] = [
     ("journal", T16, "`post_task16_final`) | 50 of {} files", (_BR, _T16F + ("vs_committed", "n_files")), "d"),
     ("journal", T16, "files byte-identical; default demo {} of 92 flagged", (_BR, _T16F + ("app_default_demo", "flagged")), "d"),
     ("journal", T16, "default demo 42 of 92 flagged, {} of 36 found, 1 false alarm | all; unchanged |", (_BR, _T16F + ("app_default_demo", "found")), "d"),
+    # task 16b (journal 'Task 16b', stopped at its bar; README limitations bullet), outputs/intake/tap_snapping.json
+    ("journal", T16B, "with 5 m of radial RMS GPS noise, {} got the right junction, against", (_SN, _K5 + ("right_junction",)), ".3f"),
+    ("journal", T16B, "got the right junction, against the bar of {}, counted strictly", (_SN, ("ky4", "bar", "share_at_least")), ".2f"),
+    ("journal", T16B, "(open decision 11) gives {}, which misses as well", (_SN, _K5 + ("right_junction_or_flagged_second",)), ".4f"),
+    ("journal", T16B, "On ky4 ({} pipes in feet", (_SN, ("ky4", "pipes")), "d"),
+    ("journal", T16B, "right pipe {}, median snap", (_SN, _K5 + ("right_pipe",)), ".3f"),
+    ("journal", T16B, "at 10 m, {} and 0.951", (_SN, _K10 + ("right_junction",)), ".4f"),
+    ("journal", T16B, "at 10 m, 0.9305 and {}", (_SN, _K10 + ("right_junction_or_flagged_second",)), ".3f"),
+    ("journal", T16B, "at 20 m, {} and 0.9135", (_SN, _K20 + ("right_junction",)), ".4f"),
+    ("journal", T16B, "at 20 m, 0.8915 and {}", (_SN, _K20 + ("right_junction_or_flagged_second",)), ".4f"),
+    ("journal", T16B, "At 5 m, all {} misses are on the wrong pipe", (_SN, _A5 + ("misses_on_the_wrong_pipe",)), "d"),
+    ("journal", T16B, "{} of them have a true position within 5 m", (_SN, _A5 + ("misses_within_5m_of_an_end_node_of_the_true_pipe",)), "d"),
+    ("journal", T16B, "({} of the 2,000 taps lie that close)", (_SN, _A5 + ("taps_within_5m_of_an_end_node",)), "d"),
+    ("journal", T16B, "{} are flagged 'two pipes close'", (_SN, _A5 + ("misses_flagged_two_pipes_close",)), "d"),
+    ("journal", T16B, "and {} of those show the right junction as the second choice", (_SN, _A5 + ("misses_with_the_right_junction_as_flagged_second_choice",)), "d"),
+    ("journal", T16B, "A wrong junction with no flag at all: {} of 2,000 taps", (_SN, _A5 + ("wrong_junction_unflagged",)), "d"),
+    ("journal", T16B, "of 2,000 taps ({}) at 5 m", (_SN, _A5 + ("wrong_junction_unflagged_share",)), ".4f"),
+    ("journal", T16B, "at 5 m, {} (0.0455) at 10 m", (_SN, ("ky4_after_the_stop", "by_noise", "10", "wrong_junction_unflagged")), "d"),
+    ("journal", T16B, "at 10 m and {} (0.075) at 20 m", (_SN, ("ky4_after_the_stop", "by_noise", "20", "wrong_junction_unflagged")), "d"),
+    ("journal", T16B, "2,000 taps on the pipes under 16 in: {} right junction at 5 m", (_SN, _U5 + ("right_junction",)), ".3f"),
+    ("journal", T16B, "the {} taps on the dual mains' avenues", (_SN, ("urban_grid", "dual_main_taps")), "d"),
+    ("journal", T16B, "the dual mains' avenues {} at 5 m", (_SN, ("urban_grid", "by_noise", "5", "dual_mains", "right_junction")), ".4f"),
+    ("journal", T16B, "the sign flips on {} of 575 pipes with flow", (_SN, ("direction", "flow_sign_flipped_on")), "d"),
+    ("journal", T16B, "the flow's sign flips on {} of the 575 flipped pipes", (_SN, ("direction", "flow_sign_flipped_on")), "d"),
+    ("journal", T16B, "the maximum error over 400 test taps is {} m over 20 km", (_SN, ("georef", "20km", "3_controls", "max_error_m")), ".4f"),
+    ("journal", T16B, "m over 20 km and {} m over 50 km", (_SN, ("georef", "50km", "3_controls", "max_error_m")), ".4f"),
+    ("journal", T16B, "has maximum errors of {} m and 158.2 m", (_SN, ("georef", "20km", "3_controls", "direct_latlon_affine_max_error_m")), ".1f"),
+    ("journal", T16B, "has maximum errors of 25.3 m and {} m", (_SN, ("georef", "50km", "3_controls", "direct_latlon_affine_max_error_m")), ".1f"),
+    ("journal", T16B, "Snyder's worked example (Clarke 1866) to {} m", (_SN, _GR + ("lcc_against_snyder", "max_abs_diff_m")), ".3f"),
+    ("journal", T16B, "the moved one highest, at {} m", (_SN, ("georef", "moved_control", "loo_m", "C4")), ".1f"),
+    ("journal", T16B, "the cut as first built put {}, 13 and 25 of the 2,000", (_SN, _DN + ("5", "cut_16in_as_first_built", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "the cut as first built put 3, {} and 25 of the 2,000", (_SN, _DN + ("10", "cut_16in_as_first_built", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "the cut as first built put 3, 13 and {} of the 2,000", (_SN, _DN + ("20", "cut_16in_as_first_built", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "a drawing in miles got {} m per unit", (_SN, ("review", "models", "urban_grid_miles.inp", "metres_per_unit_as_first_built")), ".1f"),
+    ("journal", T16B, "the unrounded median ({} m per unit", (_SN, ("review", "models", "urban_grid_miles.inp", "metres_per_unit")), ".3f"),
+    ("journal", T16B, "had a maximum error of {} m with 3 control taps when", (_SN, _GR + ("antimeridian", "3_controls", "arithmetic_mean_longitude_max_error_m")), ".1f"),
+    ("journal", T16B, "with a maximum error of {} m over 300 taps", (_SN, _GR + ("narrow_zone", "max_error_m")), ".2f"),
+    ("journal", T16B, "A model drawn in part ({} of its 271 pipes)", (_SN, ("review", "models", "urban_grid_part_drawn.inp", "pipes")), "d"),
+    ("journal", T16B, "after the final verification's fixes) | {} of 50 files byte-identical", (_BR, _T16BS + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16B, "after the final verification's fixes) | 50 of {} files byte-identical", (_BR, _T16BS + ("vs_committed", "n_files")), "d"),
+    ("journal", T16B, "files byte-identical; default demo {} of 92 flagged", (_BR, _T16BS + ("app_default_demo", "flagged")), "d"),
+    ("journal", T16B, "default demo 42 of 92 flagged, {} of 36 found, 1 false alarm | unchanged |", (_BR, _T16BS + ("app_default_demo", "found")), "d"),
+    ("README", L15, "On ky4 with 5 m of radial RMS GPS noise, {} of 2,000 taps", (_SN, _K5 + ("right_junction",)), ".3f"),
+    ("README", L15, "got the right junction against a bar of {}, and", (_SN, ("ky4", "bar", "share_at_least")), ".2f"),
+    ("README", L15, "and {} counting a right junction shown as the flagged second choice", (_SN, _K5 + ("right_junction_or_flagged_second",)), ".4f"),
+    ("README", L15, "{} of the 2,000 taps got a wrong junction with no flag", (_SN, _A5 + ("wrong_junction_unflagged",)), "d"),
+    ("README", L15, "a maximum error of {} m over 50 km with 3 control taps", (_SN, ("georef", "50km", "3_controls", "max_error_m")), ".4f"),
+    # task 16b's final verification (journal finding 10 and its table rows; README limitations bullet)
+    ("README", L15, "with 3 control taps ({} m as scored", (_SN, ("georef", "bar", "result_m_as_scored")), ".4f"),
+    ("README", L15, "a tap put on a pipe from {} in up to the", (_SN, ("urban_grid", "main_band_from_in")), ".1f"),
+    ("README", L15, "up to the {} in cut is flagged", (_SN, ("urban_grid", "main_cut_in")), ".1f"),
+    ("journal", T16B, "with the plane's tangent point at the taps' mean (finding 10 moved it to their median), it was {} m and", (_SN, ("georef", "20km", "3_controls", "max_error_m_plane_at_the_mean_as_first_built")), ".4f"),
+    ("journal", T16B, "it was 0.0071 m and {} m. It passes", (_SN, ("georef", "50km", "3_controls", "max_error_m_plane_at_the_mean_as_first_built")), ".4f"),
+    ("journal", T16B, "C905 DR14 ({} mm, 14.913 in in the model)", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "main_mm")), ".1f"),
+    ("journal", T16B, "mm, {} in in the model) or PE100", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "main_in_model")), ".3f"),
+    ("journal", T16B, "PE100 DN400 SDR11 ({} mm, 12.89 in)", (_SN, _TM + ("urban_grid_tm_pe100_sdr11.inp", "main_mm")), ".1f"),
+    ("journal", T16B, "SDR11 (327.4 mm, {} in), 3, 13", (_SN, _TM + ("urban_grid_tm_pe100_sdr11.inp", "main_in_model")), ".2f"),
+    ("journal", T16B, "in), {}, 13 and 25 of the 2,000 untagged taps were put on the main", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "5", "cut_15in", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "in), 3, {} and 25 of the 2,000 untagged taps were put on the main", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "10", "cut_15in", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "in), 3, 13 and {} of the 2,000 untagged taps were put on the main", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "20", "cut_15in", "untagged_taps_put_on_the_transmission_main")), "d"),
+    ("journal", T16B, "a pipe from {} in (0.8 of 16 in)", (_SN, ("urban_grid", "main_band_from_in")), ".1f"),
+    ("journal", T16B, "true pipe for {} of 3, 11 of 13 and 17 of 25", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "5", "cut_15in", "flag_names_the_true_pipe_as_the_nearest_smaller_one")), "d"),
+    ("journal", T16B, "true pipe for 3 of 3, {} of 13 and 17 of 25", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "10", "cut_15in", "flag_names_the_true_pipe_as_the_nearest_smaller_one")), "d"),
+    ("journal", T16B, "true pipe for 3 of 3, 11 of 13 and {} of 25", (_SN, _TM + ("urban_grid_tm_c905_dr14.inp", "by_noise", "20", "cut_15in", "flag_names_the_true_pipe_as_the_nearest_smaller_one")), "d"),
+    ("journal", T16B, "than {} times the width of its middle half", (_SN, ("review", "final", "far_node_spans")), ".0f"),
+    ("journal", T16B, "was {} m with the plane at the mean, as first built", (_SN, ("georef", "review", "final", "typo_in_a_small_map", "50km_4_controls", "latitude -40.01 for 40.01", "plane_at_the_mean_as_first_built", "max_error_m")), ".3f"),
+    ("journal", T16B, "and is {} m now", (_SN, ("georef", "review", "final", "typo_in_a_small_map", "50km_4_controls", "longitude -10.06 for -100.6", "plane_at_the_median", "max_error_m")), ".3f"),
+    ("journal", T16B, "4 km long, {} m across in RMS", (_SN, _GF + ("strip_controls", "across_m")), ".1f"),
+    ("journal", T16B, "on the record's draw, {} of the 400 test taps are placed more than 10 m off", (_SN, _GF + ("strip_controls", "over_10m")), "d"),
+    ("journal", T16B, "more than 10 m off and {} more than 30 m off", (_SN, _GF + ("strip_controls", "over_30m")), "d"),
+    ("journal", T16B, "the largest {} m. Each tap", (_SN, _GF + ("strip_controls", "max_error_m")), ".2f"),
+    ("journal", T16B, "{} of the 400 are flagged, and every tap", (_SN, _GF + ("strip_controls", "flagged_uncertain")), "d"),
+    ("journal", T16B, "within {} m of each other are refused now", (_SN, _GF + ("settings", "same_place_m")), ".0f"),
+    ("journal", T16B, "whose leverage is over {} (without it", (_SN, _GF + ("settings", "loo_leverage_max")), ".2f"),
 ]
 
 

@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 102,
+ "n_pass": 108,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,36 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 349,
+    "registry_ok": 421,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1551,
-     "date": 74,
-     "identifier": 646,
+     "code or path": 1656,
+     "date": 75,
+     "identifier": 662,
      "link target": 12,
      "run cost (logs, df)": 6,
      "seed range": 20,
-     "setting or literature value written in the code": 16,
-     "time of day": 123
+     "setting or literature value written in the code": 17,
+     "time of day": 127
     },
     "traced": {
-     "iteration-4 outputs": 240,
-     "file cited in its section": 3077,
-     "file cited in its paragraph": 4914,
-     "outputs": 6,
-     "iteration-5 outputs": 6
+     "iteration-4 outputs": 241,
+     "file cited in its section": 3323,
+     "file cited in its paragraph": 5050,
+     "outputs": 9,
+     "iteration-5 outputs": 10
     },
-    "n_tokens": 8266,
+    "n_tokens": 8657,
     "power_caught_of_tested": {
      "decimal": [
-      949,
-      8743
+      1093,
+      8961
      ],
      "integer": [
-      1066,
-      6869
+      1184,
+      7408
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 36,
+    "iteration4_texts_checked": 37,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -2190,6 +2190,193 @@
      "validation.json"
     ],
     "clock6_says_its_outputs_are_model_hours": true
+   }
+  },
+  {
+   "name": "georef_enu_affine",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "bar_max_error_3_controls_m": 0.1058,
+    "bar_at_most_m": 1.0,
+    "bar_passed": true,
+    "max_error_m": {
+     "20km": {
+      "3_controls": 0.0072,
+      "6_controls": 0.0065
+     },
+     "50km": {
+      "3_controls": 0.1058,
+      "6_controls": 0.103
+     }
+    },
+    "direct_latlon_affine_max_error_m": {
+     "20km": 25.3173,
+     "50km": 158.2232
+    },
+    "moved_control_flagged": [
+     "C1",
+     "C2",
+     "C3",
+     "C4"
+    ],
+    "collinear_refused": true,
+    "snyder_max_abs_diff_m": 0.022,
+    "antimeridian_max_error_m": 0.0072,
+    "narrow_zone_max_error_m": 2.75,
+    "triangle_only_refused_naming_that_test": true,
+    "bar_result_m_as_scored": 0.1011,
+    "typo_small_map_max_error_m": 0.133,
+    "strip_over_10m_not_flagged": 0
+   }
+  },
+  {
+   "name": "tap_snapping_ky4",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "bar": "pre-registered: at least 0.98 of 2,000 taps get the right junction at 5 m; missed in its scored run, so task 16b stopped; not asserted here",
+    "bar_passed": false,
+    "right_junction": {
+     "5": 0.967,
+     "10": 0.9305,
+     "20": 0.8915
+    },
+    "right_junction_or_flagged_second": {
+     "5": 0.9775,
+     "10": 0.951,
+     "20": 0.9135
+    },
+    "wrong_junction_unflagged": {
+     "5": 41,
+     "10": 91,
+     "20": 150
+    }
+   }
+  },
+  {
+   "name": "tap_snapping_urban_grid",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "right_junction_small_mains": {
+     "5": 0.964,
+     "10": 0.9115,
+     "20": 0.851
+    },
+    "right_junction_dual_mains": {
+     "5": 0.9571,
+     "10": 0.816,
+     "20": 0.6166
+    },
+    "untagged_taps_on_the_transmission_main": 0,
+    "variants_untagged_taps_on_the_main": {
+     "urban_grid_tm_dn400.inp": {
+      "5": [
+       0,
+       3
+      ],
+      "10": [
+       0,
+       13
+      ],
+      "20": [
+       0,
+       25
+      ]
+     },
+     "urban_grid_tm_id388.inp": {
+      "5": [
+       0,
+       3
+      ],
+      "10": [
+       0,
+       13
+      ],
+      "20": [
+       0,
+       25
+      ]
+     },
+     "urban_grid_tm_c905_dr14.inp": {
+      "5": [
+       3,
+       3
+      ],
+      "10": [
+       13,
+       13
+      ],
+      "20": [
+       25,
+       25
+      ]
+     },
+     "urban_grid_tm_pe100_sdr11.inp": {
+      "5": [
+       3,
+       3
+      ],
+      "10": [
+       13,
+       13
+      ],
+      "20": [
+       25,
+       25
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "tap_snapping_direction_invariant",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "taps": 2000,
+    "pipes_flipped": 578,
+    "flipped_with_flow": 575,
+    "flow_sign_flipped_on": 575,
+    "assignments_differ": 0
+   }
+  },
+  {
+   "name": "tap_snapping_refuses_schematic",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "refused_with_use_junction_ids": [
+     "Net3 with net3_taps_latlon.csv",
+     "Net3 with net3_taps_xy.csv",
+     "net3_no_coords.inp with net3_taps_xy.csv"
+    ]
+   }
+  },
+  {
+   "name": "tap_coordinates_review_cases",
+   "group": "task16b",
+   "pass": true,
+   "detail": {
+    "cases": 14,
+    "models": [
+     "urban_grid_degrees.inp",
+     "urban_grid_miles.inp",
+     "urban_grid_part_drawn.inp",
+     "urban_grid_placeholders.inp"
+    ],
+    "template_rows_through_load_log": 32,
+    "miles_metres_per_unit": 1609.344,
+    "placeholder_pipes_left_out": 8,
+    "final_cases": 4,
+    "final_models": [
+     "clean drawing",
+     "urban_grid_degrees_lat_as_x.inp",
+     "urban_grid_degrees_placeholder.inp",
+     "urban_grid_nan_node.inp",
+     "urban_grid_sentinel_node.inp"
+    ]
    }
   },
   {

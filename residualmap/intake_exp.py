@@ -8,6 +8,9 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
     python -m residualmap.intake_exp timing       # outputs/intake/run_cost_timing.json (not part of 'all'; add
                                                   # --ky10 for ky10's grid, about 4 minutes)
     python -m residualmap.intake_exp samples      # task 16: outputs/intake/task16_samples.json (not part of 'all')
+    python -m residualmap.intake_exp snapping     # task 16b: outputs/intake/tap_snapping.json (not part of 'all';
+                                                  # run it from a folder outside the repository, as EPANET writes
+                                                  # scratch files into the working directory while it runs)
 
 - elevation_prv_ky10.json: ky10 (five PRVs) with its own junction elevations and with every junction at one elevation
   (the mean of its junctions'), 7-day water-age runs set up as every run is: how many junctions have an hour of the
@@ -26,6 +29,11 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
   separators and decimal commas, ambiguous dates, encodings, Excel against CSV, analyzer thinning, the UTC warning),
   the clock-conversion helpers, the window the app uses and every template, part by part; the task16 checks rerun each
   part and compare.  The readings are invented, at Net3's junctions.
+- tap_snapping.json (task 16b, stopped at its pre-registered bar): tap mapping by coordinates on ky4 (the scored run
+  of the bar, which missed: 0.967 of 2,000 taps got the right junction at 5 m against 0.98), the synthetic urban grid
+  and its variants, ky4 drawn half the other way, Net3's refusals, the georeference against a Lambert conformal conic
+  truth, the review's cases, and a measurement of the ky4 misses made after the stop (not a rescoring); the task16b
+  checks rerun each part and compare.
 
 Every file is built from public models (WNTR's bundled networks, edited by fixtures.py), so the results are converter
 self-consistency on public models, never a test on a utility's own files.
@@ -36,7 +44,9 @@ import argparse
 import atexit
 import functools
 import json
+import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -1156,9 +1166,649 @@ def samples_record() -> dict:
                 "browser_check": BROWSER_CHECK}
 
 
+# ----------------------------------------------------------------------------- task 16b: taps by coordinates
+RECORD_16B = os.path.join(OUT, "tap_snapping.json")
+SNAP_TAPS = 2000                       # taps per network, uniform by length on the pipes they may be on
+SNAP_NOISE_M = (5.0, 10.0, 20.0)       # radial RMS GPS noise; per axis r / sqrt(2): 3.54, 7.07 and 14.14 m
+SNAP_POS_SEED = 0                      # tap positions (numpy default_rng)
+SNAP_NOISE_SEEDS = (1, 2, 3)           # the noise at 5, 10 and 20 m
+URBAN_MAIN_TAPS, URBAN_MAIN_SEED = 100, 10   # taps on the transmission main, tagged on_main yes (noise seeds 11 to 13)
+# Pre-registered before the scored run (plan task 16b; the scratch note prereg.txt of the build holds the same words
+# and its time).  The bar is as written (lead decision 7).  Open decision 11, how a right junction shown only as the
+# flagged second choice counts, was still open for Devansh: the run counted strictly, with the lenient share reported
+# beside it, and both miss 0.98, so the choice between decision 11 and a lower bar is still his.
+SNAP_BAR = {"network": "ky4", "noise_m": 5.0, "share_at_least": 0.98,
+            "counting": "strict: the suggested junction_id is the right junction (the rule applied to the tap's true "
+                        "pipe); a right junction shown only as the flagged second choice does not count (open decision "
+                        "11; that share is reported beside it, not scored)",
+            "taps": "2,000 uniform by length on ky4's pipes under 16 in that have a junction at one end, "
+                    "default_rng(0); noise Gaussian, r / sqrt(2) per axis, default_rng(1), (2), (3) for 5, 10, 20 m",
+            "rule": "nearest pipe under 16 in, segments and vertices in metres; its downstream end by the sign of the "
+                    "mean simulated flow between 07:00 and 17:00 of the scored day; no flow (every hour at most 1e-7 "
+                    "m3/s) takes the end with the older water; a downstream tank or reservoir takes the other end; "
+                    "second choice the nearest pipe with another junction, shown within 1.5 times the distance"}
+DUAL_PIPES_PREFIX = ("DM", "EM")       # the urban grid's second mains, and the avenue pipes they run beside
+FOUR_IN_PREFIX = "H"                   # the 4 in line: H<i>05
+
+
+def _r(x, k: int = 4):
+    return None if x is None else round(float(x), k)
+
+
+def _seg_pipe(geom):
+    n = len(geom.seg_a)
+    starts = list(geom.seg_start) + [n]
+    return np.repeat(np.arange(len(geom.pipes)), np.diff(starts))
+
+
+def taps_on_pipes(geom, eligible, n: int, seed: int):
+    """n points uniform by length on the pipes where eligible (a mask over geom.pipes) is True: (points in metres
+    around geom.origin, each point's pipe index)."""
+    sp = _seg_pipe(geom)
+    seg_len = np.hypot(*(geom.seg_b - geom.seg_a).T)
+    w = np.where(eligible[sp], seg_len, 0.0)
+    rng = np.random.default_rng(seed)
+    k = rng.choice(len(w), size=n, p=w / w.sum())
+    t = rng.uniform(size=n)[:, None]
+    return geom.seg_a[k] + t * (geom.seg_b[k] - geom.seg_a[k]), sp[k]
+
+
+def _coords_of(geom, P, on_main=None, prefix: str = "T"):
+    """A TapCoords (x and y in the model's own units) for points P in metres around geom.origin."""
+    from .importers import TapCoords
+    xy = np.asarray(P) / geom.metres_per_unit + np.array(geom.origin)
+    om = [False] * len(xy) if on_main is None else list(on_main)
+    return TapCoords(kind="xy", taps=[{"tap_id": f"{prefix}{i + 1:04d}", "row": i + 2, "a": float(x), "b": float(y),
+                                       "junction": "", "on_main": bool(m)} for i, ((x, y), m) in enumerate(zip(xy, om))],
+                     n_rows=len(xy))
+
+
+def _noisy(P, r: float, seed: int):
+    return P + np.random.default_rng(seed).normal(0.0, r / math.sqrt(2.0), size=np.shape(P))
+
+
+def _score(sug, geom, rules, true_pipe, mask=None) -> dict:
+    """Shares over the taps (mask: a subset): the right junction (strict), the right junction or a right flagged
+    second choice, the right pipe; flagged two pipes close, far, flow reversing, no flow; snap distances."""
+    rows = sug.rows
+    m = np.ones(len(rows), bool) if mask is None else np.asarray(mask, bool)
+    tj = np.array([rules[p][0] for p in true_pipe], object)
+    gj = np.array([r["junction_id"] for r in rows], object)
+    sj = np.array([r["second_choice"] or "" for r in rows], object)
+    gp = np.array([r["pipe"] or "" for r in rows], object)
+    two = np.array([any(f.startswith("two pipes close") for f in r["flags"]) for r in rows])
+    ok = gj == tj
+    sel = lambda a: float(np.mean(a[m])) if m.any() else None
+    snap = np.array([r["snap_m"] if r["snap_m"] is not None else np.nan for r in rows])
+    return {"taps": int(m.sum()), "right_junction": _r(sel(ok)), "right_junction_or_flagged_second": _r(sel(ok | (two & (sj == tj)))),
+            "right_pipe": _r(sel(gp == np.array([geom.pipes[p] for p in true_pipe], object))),
+            "flagged_two_pipes_close": _r(sel(two)),
+            "flagged_far": _r(sel(np.array([any(f.startswith("far:") for f in r["flags"]) for r in rows]))),
+            "flagged_flow_reverses": _r(sel(np.array([any("reverses" in f for f in r["flags"]) for r in rows]))),
+            "flagged_no_flow": _r(sel(np.array([any(f.startswith("no flow") for f in r["flags"]) for r in rows]))),
+            "snap_m_median": _r(np.nanmedian(snap[m]), 2), "snap_m_p95": _r(np.nanpercentile(snap[m], 95), 2),
+            "ambiguous_rows_list_two_candidates": bool(all(r["second_choice"] and r["second_m"] is not None
+                                                           for r, t, k in zip(rows, two, m) if t and k))}
+
+
+def _assignments(sug) -> list:
+    return [[r["junction_id"], r["pipe"], r["second_choice"] or "", _r(r["snap_m"], 2)] for r in sug.rows]
+
+
+@functools.lru_cache(maxsize=12)
+def _geom_hyd(path: str):
+    from .importers import pipe_junctions, tap_geometry, tap_hydraulics
+    g = tap_geometry(path)
+    h = tap_hydraulics(path)
+    return g, h, pipe_junctions(g, h)
+
+
+def part_snap_ky4() -> dict:
+    """tap_snapping_ky4: 2,000 taps on ky4's pipes under 16 in, at 5, 10 and 20 m of radial RMS noise, given in the
+    model's x and y (feet); the scored run of SNAP_BAR."""
+    from .importers import suggest_from
+    g, h, rules = _geom_hyd("ky4")
+    eligible = (g.diam_in < 16.0) & np.array([j is not None for j, _, _ in rules])
+    P, tp = taps_on_pipes(g, eligible, SNAP_TAPS, SNAP_POS_SEED)
+    out = {"network": "ky4", "units": g.scale["units"], "pipes": len(g.pipes), "segments": len(g.seg_a),
+           "pipes_16in_or_more": int((g.diam_in >= 16.0).sum()), "taps": SNAP_TAPS,
+           "rule_codes": {c: sum(c in cs for _, _, cs in rules) for c in ("reverses", "no_flow", "end_not_junction")},
+           "by_noise": {}}
+    for r, seed in zip(SNAP_NOISE_M, SNAP_NOISE_SEEDS):
+        sug = suggest_from(_coords_of(g, _noisy(P, r, seed)), g, h)
+        out["by_noise"][f"{r:g}"] = _score(sug, g, rules, tp)
+    got = out["by_noise"]["5"]["right_junction"]
+    out["bar"] = dict(SNAP_BAR, result=got, passed=bool(got >= SNAP_BAR["share_at_least"]))
+    return out
+
+
+def part_snap_urban(paths: dict) -> dict:
+    """tap_snapping_urban_grid: 2,000 taps on the synthetic urban grid's pipes under 16 in, and 100 taps on its 24 in
+    transmission main tagged on_main yes, at 5, 10 and 20 m; the dual mains and the 4 in line beside the transmission
+    main scored apart; no untagged tap may be put on the transmission main."""
+    from . import fixtures as FX
+    from .importers import suggest_from
+    g, h, rules = _geom_hyd(paths["synthetic_urban_grid.inp"])
+    tm = set(FX._urban_parts()[2]["transmission"])
+    has_j = np.array([j is not None for j, _, _ in rules])
+    P, tp = taps_on_pipes(g, (g.diam_in < 16.0) & has_j, SNAP_TAPS, SNAP_POS_SEED)
+    inside = np.array([p in tm and p != "TM0" for p in g.pipes]) & has_j       # the main inside the grid, TM1 to TM4
+    Pm, tpm = taps_on_pipes(g, inside, URBAN_MAIN_TAPS, URBAN_MAIN_SEED)
+    names = [g.pipes[p] for p in tp]
+    n, nm = len(P), len(Pm)
+    small = np.r_[np.ones(n, bool), np.zeros(nm, bool)]
+    dual = np.r_[[x.startswith(DUAL_PIPES_PREFIX) or (x.startswith("H") and x.endswith("03")) or x.startswith("V07")
+                  for x in names], np.zeros(nm, bool)]
+    four = np.r_[[x.startswith(FOUR_IN_PREFIX) and x.endswith("05") for x in names], np.zeros(nm, bool)]
+    out = {"network": "synthetic urban grid", "units": g.scale["units"], "pipes": len(g.pipes),
+           "segments": len(g.seg_a), "taps": n, "dual_main_taps": int(dual.sum()), "four_inch_taps": int(four.sum()),
+           "on_main_taps": nm, "by_noise": {}}
+    for k, (r, seed) in enumerate(zip(SNAP_NOISE_M, SNAP_NOISE_SEEDS)):
+        Q = np.vstack([_noisy(P, r, seed), _noisy(Pm, r, URBAN_MAIN_SEED + 1 + k)])
+        sug = suggest_from(_coords_of(g, Q, [False] * n + [True] * nm), g, h)
+        tp_all = np.r_[tp, tpm]
+        on_tm = np.array([(row["pipe"] or "") in tm for row in sug.rows])
+        right = np.array([row["pipe"] == g.pipes[p] for row, p in zip(sug.rows, tp_all)])
+        out["by_noise"][f"{r:g}"] = {
+            "small_mains": _score(sug, g, rules, tp_all, small), "dual_mains": _score(sug, g, rules, tp_all, dual),
+            "four_inch_line": _score(sug, g, rules, tp_all, four),
+            "untagged_taps_put_on_the_transmission_main": int(on_tm[small].sum()),
+            "four_inch_taps_put_on_the_transmission_main": int(on_tm[four].sum()),
+            "on_main_tagged": {"taps": nm, "put_on_the_transmission_main": _r(on_tm[~small].mean()),
+                               "right_pipe": _r(right[~small].mean())}}
+    out["transmission_main_variants"] = _urban_tm_variants(paths, P, Pm, tp, tpm, small, four, tm)
+    from .importers import MAIN_BAND_RATIO, MAIN_CUT_RATIO, MAIN_MIN_IN
+    out["main_cut_in"], out["main_band_from_in"] = _r(MAIN_MIN_IN * MAIN_CUT_RATIO, 3), _r(MAIN_MIN_IN * MAIN_BAND_RATIO, 3)
+    return out
+
+
+def _urban_tm_variants(paths: dict, P, Pm, tp, tpm, small, four, tm) -> dict:
+    """The review of task 16b: the same taps on the urban grid with its transmission main a metric DN400 (400 mm,
+    15.75 in) and a 16 in main by its internal diameter (388.6 mm, 15.3 in), with today's cut (MAIN_CUT_RATIO of 16 in,
+    15.0 in on the model's diameter) and with the cut at 16.0 in as first built: untagged taps put on the
+    transmission main, and the 4 in line's taps among them.  The final verification added two 16 in plastic mains by
+    internal diameter, under the cut (C905 DR14, 378.8 mm; PE100 SDR11, 327.4 mm): with today's cut, the untagged
+    taps put on the main with no flag naming a main (the band below the cut, MAIN_BAND_RATIO, flags them), and those
+    whose flag names their true pipe as the nearest smaller one."""
+    from . import fixtures as FX
+    from .importers import MAIN_CUT_RATIO, MAIN_MIN_IN, suggest_from
+    n, nm = len(P), len(Pm)
+    out = {}
+    for name, mm in FX.URBAN_TM_VARIANTS_MM.items():
+        g, h, rules = _geom_hyd(paths[name])
+        z = {"main_mm": mm, "main_in_model": _r(g.diam_in[g.pipes.index("TM1")], 3), "by_noise": {}}
+        for k, (r, seed) in enumerate(zip(SNAP_NOISE_M, SNAP_NOISE_SEEDS)):
+            Q = np.vstack([_noisy(P, r, seed), _noisy(Pm, r, URBAN_MAIN_SEED + 1 + k)])
+            c = _coords_of(g, Q, [False] * n + [True] * nm)
+            row = {}
+            for label, mmin in (("cut_15in", MAIN_MIN_IN), ("cut_16in_as_first_built", MAIN_MIN_IN / MAIN_CUT_RATIO)):
+                sug = suggest_from(c, g, h, mmin)
+                on_tm = np.array([(x["pipe"] or "") in tm for x in sug.rows])
+                row[label] = {"untagged_taps_put_on_the_transmission_main": int(on_tm[small].sum()),
+                              "four_inch_taps_put_on_the_transmission_main": int(on_tm[four].sum()),
+                              "small_mains_right_junction": _score(sug, g, rules, np.r_[tp, tpm], small)["right_junction"]}
+                if label == "cut_15in" and z["main_in_model"] < MAIN_MIN_IN * MAIN_CUT_RATIO:
+                    tp_all = np.r_[tp, tpm]
+                    on = [i for i in np.flatnonzero(on_tm & small)]
+                    named = [re.search(r"the nearest smaller pipe is (\S+) ", " ".join(sug.rows[i]["flags"])) for i in on]
+                    row[label].update({
+                        "untagged_taps_on_the_main_with_no_flag_naming_a_main":
+                            sum(not any("main" in f for f in sug.rows[i]["flags"]) for i in on),
+                        "untagged_taps_on_the_main_flagged_under_the_cut":
+                            sum(any(f.startswith("a pipe of ") and "under the" in f for f in sug.rows[i]["flags"]) for i in on),
+                        "flag_names_the_true_pipe_as_the_nearest_smaller_one":
+                            sum(bool(m) and m.group(1) == g.pipes[tp_all[i]] for i, m in zip(on, named))})
+            z["by_noise"][f"{r:g}"] = row
+        out[name] = z
+    return out
+
+
+def part_snap_direction(paths: dict) -> dict:
+    """tap_snapping_direction_invariant: the 2,000 ky4 taps at 5 m on ky4 and on ky4_half_reversed.inp (half the pipes
+    drawn the other way, vertices reversed): the same assignments, and the flow sign flipped on every flipped pipe
+    that has flow."""
+    from . import fixtures as FX
+    from .importers import suggest_from
+    g1, h1, r1 = _geom_hyd("ky4")
+    g2, h2, r2 = _geom_hyd(paths["ky4_half_reversed.inp"])
+    eligible = (g1.diam_in < 16.0) & np.array([j is not None for j, _, _ in r1])
+    P, _ = taps_on_pipes(g1, eligible, SNAP_TAPS, SNAP_POS_SEED)
+    Q = _noisy(P, SNAP_NOISE_M[0], SNAP_NOISE_SEEDS[0])
+    a1 = _assignments(suggest_from(_coords_of(g1, Q), g1, h1))
+    a2 = _assignments(suggest_from(_coords_of(g2, Q), g2, h2))
+    flipped = FX.ky4_flipped_pipes()
+    with_flow = [p for p in flipped if max(abs(x) for x in h1["flow"][p]) > 1e-7]
+    sign_flipped = sum(all((x > 0) != (y > 0) for x, y in zip(h1["flow"][p], h2["flow"][p]) if abs(x) > 1e-7)
+                       for p in with_flow)
+    return {"taps": len(a1), "pipes_flipped": len(flipped), "flipped_with_flow": len(with_flow),
+            "flow_sign_flipped_on": sign_flipped, "same_origin": list(g1.origin) == list(g2.origin),
+            "assignments_differ": sum(x != y for x, y in zip(a1, a2)),
+            "junction_rules_differ": sum(x != y for x, y in zip(r1, r2))}
+
+
+def part_snap_schematic(paths: dict) -> dict:
+    """tap_snapping_refuses_schematic: Net3 (a schematic drawing) with taps in x and y and in latitude and longitude,
+    and Net3 without coordinates, are refused with 'use junction IDs'.  No accuracy is computed on Net3."""
+    from .importers import LogRefused, suggest_tap_map
+    out = {}
+    for model, f in (("Net3", "net3_taps_xy.csv"), ("Net3", "net3_taps_latlon.csv"),
+                     (paths["net3_no_coords.inp"], "net3_taps_xy.csv")):
+        key = f"{os.path.basename(model)} with {f}"
+        try:
+            suggest_tap_map(_read_bytes(paths[f]), f, model)
+            out[key] = {"refused": False}
+        except LogRefused as e:
+            out[key] = {"refused": True, "message": str(e), "says_use_junction_ids": "Use junction IDs" in str(e)}
+    return out
+
+
+def _lcc_table(path: str) -> dict:
+    import csv as _csv
+    with open(path, newline="") as fh:
+        rows = list(_csv.DictReader(fh))
+    return {"tap": [r["tap_id"] for r in rows], "role": [r["role"] for r in rows],
+            "lat": np.array([float(r["lat"]) for r in rows]), "lon": np.array([float(r["lon"]) for r in rows]),
+            "xy": np.array([[float(r["x_m"]), float(r["y_m"])] for r in rows])}
+
+
+def part_georef(paths: dict) -> dict:
+    """georef_enu_affine: the ENU-then-affine georeference against the ellipsoidal Lambert conformal conic truth of
+    fixtures.py, over 20 and 50 km zones, with 3 control taps (exact, unchecked) and 6 (checked, leave-one-out
+    residuals); the direct affine from latitude and longitude, kept only here, for the error the ENU step removes; a
+    control tap moved by 25 m is flagged by its leave-one-out residual; nearly collinear control taps are refused.
+    Since the final verification the plane's tangent point is the taps' median position, not their mean: each zone
+    also gives the maximum error with the plane at the mean, as first built and as the bar was scored, and the
+    moved control tap's leave-one-out residuals (now in closed form) are compared with one refit per control tap."""
+    from .importers import GeorefRefused, LOO_FLAG_M, control_spread, enu_from_latlon, fit_affine, apply_affine, georeference
+    out = {}
+    for km in (20, 50):
+        t = _lcc_table(paths[f"lcc_taps_{km}km.csv"])
+        ctrl_all = [i for i, r in enumerate(t["role"]) if r == "control"]
+        test = np.array([i for i, r in enumerate(t["role"]) if r == "test"])
+        z = {"test_taps": len(test)}
+        for k in (3, 6):
+            ctrl = ctrl_all[:k]
+            xy, info = georeference(t["lat"], t["lon"], ctrl, t["xy"][ctrl], 1.0, t["tap"])
+            err = np.hypot(*(xy[test] - t["xy"][test]).T)
+            xm, _ = georeference(t["lat"], t["lon"], ctrl, t["xy"][ctrl], 1.0, t["tap"], centre="mean")
+            M = fit_affine(np.column_stack([t["lat"][ctrl], t["lon"][ctrl]]), t["xy"][ctrl])
+            derr = np.hypot(*(apply_affine(M, np.column_stack([t["lat"][test], t["lon"][test]])) - t["xy"][test]).T)
+            z[f"{k}_controls"] = {"max_error_m": _r(err.max()), "median_error_m": _r(np.median(err)),
+                                  "max_error_m_plane_at_the_mean_as_first_built": _r(np.hypot(*(xm[test] - t["xy"][test]).T).max()),
+                                  "checked": info["checked"], "loo_m": {x["tap_id"]: _r(x["residual_m"]) for x in info["loo"]},
+                                  "direct_latlon_affine_max_error_m": _r(derr.max()),
+                                  "direct_latlon_affine_median_error_m": _r(np.median(derr))}
+        out[f"{km}km"] = z
+        if km == 20:            # a control tap whose junction is 25 m from where its position was taken
+            moved = t["xy"][ctrl_all].copy()
+            moved[3] += np.array([25.0, 0.0])
+            _, info = georeference(t["lat"], t["lon"], ctrl_all, moved, 1.0, t["tap"])
+            refit = _loo_by_refit(t["lat"], t["lon"], ctrl_all, moved)
+            out["moved_control"] = {"moved": t["tap"][ctrl_all[3]], "by_m": 25.0, "flagged": info["flagged"],
+                                    "loo_m": {x["tap_id"]: _r(x["residual_m"]) for x in info["loo"]},
+                                    "flag_above_m": LOO_FLAG_M,
+                                    "closed_form_against_a_refit_per_control_tap_max_abs_diff_m":
+                                        _r(max(abs(x["residual_m"] - y) for x, y in zip(info["loo"], refit)
+                                               if x["residual_m"] is not None), 9)}
+    out["bar"] = {"what": "maximum error over the test taps with 3 control taps, both zones", "at_most_m": 1.0,
+                  "result_m": max(out["20km"]["3_controls"]["max_error_m"], out["50km"]["3_controls"]["max_error_m"]),
+                  "result_m_as_scored": max(out["20km"]["3_controls"]["max_error_m_plane_at_the_mean_as_first_built"],
+                                            out["50km"]["3_controls"]["max_error_m_plane_at_the_mean_as_first_built"]),
+                  "plane": "tangent at the taps' median position since the final verification (the bar was scored with "
+                           "it at their mean: result_m_as_scored)"}
+    out["bar"]["passed"] = out["bar"]["result_m"] <= out["bar"]["at_most_m"] and \
+        out["bar"]["result_m_as_scored"] <= out["bar"]["at_most_m"]
+    c = _lcc_table(paths["collinear_controls.csv"])
+    ctrl = [i for i, r in enumerate(c["role"]) if r == "control"]
+    enu = enu_from_latlon(c["lat"], c["lon"], float(c["lat"].mean()), float(c["lon"].mean()))
+    sp = control_spread(enu[ctrl])
+    try:
+        georeference(c["lat"], c["lon"], ctrl, c["xy"][ctrl], 1.0, c["tap"])
+        out["collinear"] = {"refused": False}
+    except GeorefRefused as e:
+        out["collinear"] = {"refused": True, "message": str(e), "cond": _r(sp["cond"], 1), "area": _r(sp["area"], 6)}
+    out["review"] = _georef_review(paths)
+    return out
+
+
+def _loo_by_refit(lat, lon, controls, control_xy) -> list:
+    """Each control tap's leave-one-out residual in metres by one refit of the affine on the other control taps, as
+    first built (the check of georeference's closed form), on the same plane."""
+    from .importers import apply_affine, enu_from_latlon, fit_affine, plane_centre
+    enu = enu_from_latlon(lat, lon, *plane_centre(lat, lon))
+    ce, cxy = enu[controls], np.asarray(control_xy, float)
+    c0 = cxy.mean(0)
+    out = []
+    for i in range(len(controls)):
+        rest = [j for j in range(len(controls)) if j != i]
+        Mi = fit_affine(ce[rest], cxy[rest] - c0)
+        out.append(float(np.hypot(*(apply_affine(Mi, ce[[i]])[0] + c0 - cxy[i]))))
+    return out
+
+
+TYPO_TAPS = {"latitude 4.001 for 40.01": (4.001, -100.6), "longitude -10.06 for -100.6": (40.01, -10.06),
+             "latitude -40.01 for 40.01": (-40.01, -100.6)}    # the final verification's typo taps
+
+
+def _georef_final(paths: dict) -> dict:
+    """The final verification of task 16b, georeference cases: one typo tap in a small tap map (the control taps, one
+    test tap and the typo tap, for each of the 400 test taps) with the plane at the taps' median position and at their
+    mean as first built; control taps along one avenue for a 4 km square zone (lcc_strip_controls.csv), the taps
+    whose predicted error is above FIT_PREDICTED_FLAG_M flagged; and control taps taken at one place and at two."""
+    from .importers import (FIT_GPS_ASSUMED_M, FIT_PREDICTED_FLAG_M, LOO_LEVERAGE_MAX, SAME_PLACE_M, GeorefRefused,
+                            georeference)
+    from . import fixtures as FX
+    out = {"settings": {"same_place_m": SAME_PLACE_M, "loo_leverage_max": LOO_LEVERAGE_MAX,
+                        "gps_assumed_m": FIT_GPS_ASSUMED_M, "predicted_flag_above_m": FIT_PREDICTED_FLAG_M},
+           "typo_in_a_small_map": {}}
+    for km in (20, 50):
+        t = _lcc_table(paths[f"lcc_taps_{km}km.csv"])
+        ctrl_all = [i for i, r in enumerate(t["role"]) if r == "control"]
+        test = [i for i, r in enumerate(t["role"]) if r == "test"]
+        for k in (4, 6):
+            ctrl = ctrl_all[:k]
+            z = {}
+            for label, (la, lo) in TYPO_TAPS.items():
+                row = {}
+                for how in ("median", "mean"):
+                    errs, loo = [], []
+                    for i in test:
+                        lat, lon = np.r_[t["lat"][ctrl + [i]], la], np.r_[t["lon"][ctrl + [i]], lo]
+                        xy, info = georeference(lat, lon, list(range(k)), t["xy"][ctrl], 1.0, centre=how)
+                        errs.append(float(np.hypot(*(xy[k] - t["xy"][i]))))
+                        loo.append(info["loo_max_m"])
+                    row[how] = {"max_error_m": _r(max(errs), 3),
+                                "loo_max_m": _r(max((x for x in loo if x is not None), default=None), 3)}
+                z[label] = {"plane_at_the_median": row["median"], "plane_at_the_mean_as_first_built": row["mean"]}
+            out["typo_in_a_small_map"][f"{km}km_{k}_controls"] = z
+    st = _lcc_table(paths["lcc_strip_controls.csv"])
+    ctrl = [i for i, r in enumerate(st["role"]) if r == "control"]
+    test = np.array([i for i, r in enumerate(st["role"]) if r == "test"])
+    xy, info = georeference(st["lat"], st["lon"], ctrl, st["xy"][ctrl], 1.0, st["tap"])
+    err = np.hypot(*(xy[test] - st["xy"][test]).T)
+    flagged = np.array(info["predicted_m"])[test] > FIT_PREDICTED_FLAG_M
+    out["strip_controls"] = {"controls": len(ctrl), "control_gps_error_m": FX.STRIP_GPS_M, "zone_m": FX.STRIP_SIDE_M,
+                             "accepted": True, "narrow_strip": info["narrow_strip"], "across_m": _r(info["across_m"], 1),
+                             "cond": _r(info["cond"], 1), "test_taps": len(test), "max_error_m": _r(err.max(), 2),
+                             "over_10m": int((err > 10).sum()), "over_30m": int((err > 30).sum()),
+                             "flagged_uncertain": int(flagged.sum()),
+                             "over_10m_not_flagged": int(((err > 10) & ~flagged).sum()),
+                             "over_30m_not_flagged": int(((err > 30) & ~flagged).sum()),
+                             "loo_max_m": _r(info["loo_max_m"], 2), "control_flagged_by_loo": info["flagged"],
+                             "flag_above_m": FIT_PREDICTED_FLAG_M}
+    x0, y0 = FX.lcc_forward(*FX.LCC_CENTRE)
+    for label, pts in (("one_place", [(0.0, 0.0)] * 4), ("two_places", [(0.0, 0.0), (0.0, 0.0), (500.0, 0.0), (500.0, 0.0)]),
+                       ("within_4m", [(0.0, 0.0), (2.0, 1.0), (1.0, 3.0), (3.0, 2.0)])):
+        ll = [FX.lcc_inverse(x0 + e, y0 + n) for e, n in pts + [(100.0, 100.0)]]
+        try:
+            georeference(np.array([p[0] for p in ll]), np.array([p[1] for p in ll]), list(range(len(pts))),
+                         np.array(pts), 1.0)
+            out[label] = {"refused": False}
+        except GeorefRefused as e:
+            out[label] = {"refused": True, "message": str(e)}
+    return out
+
+
+def _georef_review(paths: dict) -> dict:
+    """The review of task 16b, georeference cases: the projection against Snyder's worked example; the 20 km zone
+    moved to the antimeridian, its longitudes written from -180 to 180; a narrow valley zone whose
+    control taps carry 3 m of GPS error, accepted with a warning (8 km by 300 m: the relative tests alone, as first
+    built, refused it); four control taps that fail only the triangle test,
+    refused with that test alone named; and the spread measures of 4,000 control taps (default_rng(1), a 10 km
+    square), which the pair loop took seconds for."""
+    from . import fixtures as FX
+    from .importers import GeorefRefused, apply_affine, control_spread, enu_from_latlon, fit_affine, georeference
+    out = {}
+    sx, sy = FX.lcc_forward(*FX.SNYDER_LCC["point"], FX.SNYDER_LCC["zone"])
+    out["lcc_against_snyder"] = {"x_m": _r(sx, 2), "y_m": _r(sy, 2), "snyder_x_m": FX.SNYDER_LCC["xy_m"][0],
+                                 "snyder_y_m": FX.SNYDER_LCC["xy_m"][1],
+                                 "max_abs_diff_m": _r(max(abs(sx - FX.SNYDER_LCC["xy_m"][0]),
+                                                          abs(sy - FX.SNYDER_LCC["xy_m"][1])), 3)}
+    a, b = _lcc_table(paths["lcc_taps_20km.csv"]), _lcc_table(paths["lcc_antimeridian.csv"])
+    test = np.array([i for i, r in enumerate(a["role"]) if r == "test"])
+    am = {"lon_min": _r(b["lon"].min(), 3), "lon_max": _r(b["lon"].max(), 3)}
+    for k in (3, 6):
+        ctrl = [i for i, r in enumerate(a["role"]) if r == "control"][:k]
+        xa, _ = georeference(a["lat"], a["lon"], ctrl, a["xy"][ctrl], 1.0, a["tap"])
+        xb, ib = georeference(b["lat"], b["lon"], ctrl, b["xy"][ctrl], 1.0, b["tap"])
+        # as first built: the plane's centre at the arithmetic mean of the longitudes as written
+        e0 = enu_from_latlon(b["lat"], b["lon"], float(b["lat"].mean()), float(b["lon"].mean()))
+        c0 = b["xy"][ctrl].mean(0)
+        x0 = apply_affine(fit_affine(e0[ctrl], b["xy"][ctrl] - c0), e0) + c0
+        am[f"{k}_controls"] = {"max_error_m": _r(np.hypot(*(xb[test] - b["xy"][test]).T).max()),
+                               "zone_at_100w_max_error_m": _r(np.hypot(*(xa[test] - a["xy"][test]).T).max()),
+                               "flagged": ib["flagged"],
+                               "arithmetic_mean_longitude_max_error_m": _r(np.hypot(*(x0[test] - b["xy"][test]).T).max())}
+    out["antimeridian"] = am
+    nz = _lcc_table(paths["lcc_narrow_zone.csv"])
+    ctrl = [i for i, r in enumerate(nz["role"]) if r == "control"]
+    test = np.array([i for i, r in enumerate(nz["role"]) if r == "test"])
+    xy, info = georeference(nz["lat"], nz["lon"], ctrl, nz["xy"][ctrl], 1.0, nz["tap"])
+    err = np.hypot(*(xy[test] - nz["xy"][test]).T)
+    out["narrow_zone"] = {"zone_m": list(FX.NARROW_ZONE_M), "control_gps_error_m": FX.NARROW_CONTROL_NOISE_M,
+                          "accepted": True, "relative_tests_alone_refuse": info["narrow_strip"],
+                          "warned": info["narrow_strip"], "cond": _r(info["cond"], 1),
+                          "area": _r(info["area"], 4), "across_m": _r(info["across_m"], 1),
+                          "test_taps": len(test), "max_error_m": _r(err.max(), 2), "median_error_m": _r(np.median(err), 2)}
+    tr = _lcc_table(paths["triangle_only_controls.csv"])
+    ctrl = [i for i, r in enumerate(tr["role"]) if r == "control"]
+    try:
+        georeference(tr["lat"], tr["lon"], ctrl, tr["xy"][ctrl], 1.0, tr["tap"])
+        out["triangle_only"] = {"refused": False}
+    except GeorefRefused as e:
+        out["triangle_only"] = {"refused": True, "message": str(e),
+                                "names_the_triangle_test_only": "largest triangle" in str(e) and "longer than wide" not in str(e)}
+    E = np.random.default_rng(1).uniform(-5000, 5000, size=(4000, 2))
+    sp = control_spread(E)
+    out["many_controls"] = {"controls": len(E), "cond": _r(sp["cond"], 4), "area": _r(sp["area"], 4),
+                            "largest_distance_m": _r(sp["largest_distance_m"], 2), "across_m": _r(sp["across_m"], 2)}
+    out["final"] = _georef_final(paths)
+    return out
+
+
+def _case(data: bytes, name: str, g, h, mapping: dict | None = None) -> dict:
+    """One tap map of the review read and suggested on the model of g (its flows h): the rows, what is not used, the
+    notes and warnings, or the refusal."""
+    from .importers import LogRefused, read_tap_coordinates, suggest_from
+    try:
+        s = suggest_from(read_tap_coordinates(data, name, mapping), g, h)
+    except LogRefused as e:
+        return {"refused": True, "message": str(e)}
+    return {"refused": False, "kind": s.kind, "rows": s.table(), "not_used": s.dropped, "notes": s.notes,
+            "warnings": s.warnings}
+
+
+def part_review_16b(paths: dict) -> dict:
+    """The review of task 16b, tap-map and model cases on the synthetic urban grid and its rewrites (fixtures.py,
+    REVIEW_16B_FIXTURES): which pair of columns places the taps, thousands commas, hemisphere letters, swapped columns,
+    a junction column known only through a mapping, a mapping that names a missing column, duplicate taps, a position
+    far beyond the drawing, a tap beside a main, and the models drawn in degrees, in miles, with two nodes at 0,0 and
+    drawn in part."""
+    import warnings as _w
+    from .importers import LogRefused, read_tap_map, suggest_tap_map, tap_geometry, tap_map_kind_of
+    g, h, rules = _geom_hyd(paths["synthetic_urban_grid.inp"])
+    b = lambda n: _read_bytes(paths[n])
+    out = {}
+    for n in ("taps_both_pairs_latlon_blank.csv", "taps_both_pairs_no_controls.csv", "taps_thousands_ambiguous.csv",
+              "taps_thousands_settled.csv", "taps_decimal_comma.csv", "taps_letters_swapped.csv",
+              "taps_latlon_swapped.csv", "taps_duplicate_positions.csv", "taps_duplicate_junctions.csv",
+              "taps_beside_main.csv"):
+        out[n] = _case(b(n), n, g, h)
+    n = "taps_both_pairs_controls.csv"
+    out[n] = {"guessed": _case(b(n), n, g, h), "x_and_y_chosen": _case(b(n), n, g, h, {"x": "x", "y": "y"})}
+    out[n]["same_junctions"] = ([r["junction_id"] for r in out[n]["guessed"]["rows"]] ==
+                                [r["junction_id"] for r in out[n]["x_and_y_chosen"]["rows"]])
+    n = "taps_mapping_missing.csv"
+    out[n] = _case(b(n), n, g, h, {"junction": "node ref"})
+    n = "taps_junction_header_unknown.csv"
+    out[n] = {"kind_guessed": tap_map_kind_of(b(n), n), "kind_with_mapping": tap_map_kind_of(b(n), n, {"junction": "EPANET_Name"}),
+              "read_by_id_with_mapping": read_tap_map(b(n), n, {"junction": "EPANET_Name"})[0],
+              "by_coordinates": _case(b(n), n, g, h)}
+    n = "taps_absurd.csv"
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        out[n] = _case(b(n), n, g, h)
+    out[n]["runtime_warnings"] = sum(issubclass(w.category, RuntimeWarning) for w in caught)
+    models = {}
+    for m in ("urban_grid_degrees.inp", "urban_grid_miles.inp", "urban_grid_placeholders.inp", "urban_grid_part_drawn.inp"):
+        try:
+            gm = tap_geometry(paths[m])
+            models[m] = {"refused": False, "units": gm.scale["units"], "metres_per_unit": _r(gm.metres_per_unit, 3),
+                         "pipes": len(gm.pipes), "left_out": gm.left_out, "warnings": gm.warnings}
+        except LogRefused as e:
+            models[m] = {"refused": True, "message": str(e)}
+    try:
+        suggest_tap_map(b("taps_both_pairs_latlon_blank.csv"), "t.csv", paths["urban_grid_degrees.inp"])
+        models["urban_grid_degrees.inp"]["suggest_tap_map"] = {"refused": False}
+    except LogRefused as e:
+        models["urban_grid_degrees.inp"]["suggest_tap_map"] = {"refused": True, "message": str(e)}
+    models["urban_grid_miles.inp"]["metres_per_unit_true"] = 1609.344
+    models["urban_grid_miles.inp"]["metres_per_unit_as_first_built"] = _r(        # from the median rounded to 4 places
+        1.0 / tap_geometry(paths["urban_grid_miles.inp"]).scale["ratio_median"], 3)
+    # the urban part's 2,000 taps at 5 m on the miles drawing and on the drawing with two nodes at 0,0
+    from .importers import suggest_from
+    eligible = (g.diam_in < 16.0) & np.array([j is not None for j, _, _ in rules])
+    P, tp = taps_on_pipes(g, eligible, SNAP_TAPS, SNAP_POS_SEED)
+    Q = _noisy(P, SNAP_NOISE_M[0], SNAP_NOISE_SEEDS[0])
+    base = suggest_from(_coords_of(g, Q), g, h)
+    for m in ("urban_grid_miles.inp", "urban_grid_placeholders.inp"):
+        gm, hm, rm = _geom_hyd(paths[m])
+        xy = Q + np.array(g.origin)                                   # the true positions in metres, as model x, y
+        if m == "urban_grid_miles.inp":
+            xy = xy / 1609.344
+        P2 = (xy - np.array(gm.origin)) * gm.metres_per_unit
+        s = suggest_from(_coords_of(gm, P2), gm, hm)
+        same = np.array([x["junction_id"] == y["junction_id"] for x, y in zip(s.rows, base.rows)])
+        on_left_out = sum((x["pipe"] or "") in set(gm.left_out) for x in s.rows)
+        models[m]["taps_5m"] = {"taps": len(s.rows), "same_junction_as_the_metres_drawing": _r(same.mean()),
+                                "put_on_a_pipe_left_out": int(on_left_out)}
+    out["models"] = models
+    out["final"] = _review_final_16b(paths, g, h)
+    return out
+
+
+FINAL_TAPS = b"tap_id,x,y\nT1,503,403\nT2,1197,1110\nT3,700,1004\nT4,1503,1797\n"   # the sentinel models' taps
+
+
+def _review_final_16b(paths: dict, g, h) -> dict:
+    """The final verification of task 16b, tap-map and model cases (fixtures.FINAL_16B_FIXTURES): a dot thousands
+    separator in a file that writes decimal commas, unsettled and settled; longitudes written from 0 to 360 (the
+    same junctions as the template); control taps along one street of the urban grid with taps far across it; one
+    node at a no-data value (-3.4e38, and nan) through suggest_tap_map, against the clean drawing; and the drawings in
+    degrees with latitude as x and with one node at 9999,9999, refused."""
+    from . import fixtures as FX
+    from .importers import FAR_NODE_SPANS, LogRefused, suggest_tap_map, tap_geometry
+    b = lambda n: _read_bytes(paths[n])
+    out = {"far_node_spans": FAR_NODE_SPANS}
+    for n in ("taps_dot_thousands.csv", "taps_dot_thousands_settled.csv", "taps_controls_along_one_street.csv"):
+        out[n] = _case(b(n), n, g, h)
+    n = "taps_lon_0_to_360.csv"
+    out[n] = _case(b(n), n, g, h)
+    tpl = _case(b("tap_map_by_coordinates.csv"), "tap_map_by_coordinates.csv", g, h)
+    out[n]["same_junctions_as_the_template"] = ([r["junction_id"] for r in out[n]["rows"]] ==
+                                                [r["junction_id"] for r in tpl["rows"]])
+    clean = _case(FINAL_TAPS, "t.csv", g, h)
+    models = {"clean drawing": {"rows": [[r["tap_id"], r["junction_id"], r["snap_m"]] for r in clean["rows"]]}}
+    for m, v in FX.URBAN_SENTINELS.items():
+        gm = tap_geometry(paths[m])
+        s = suggest_tap_map(FINAL_TAPS, "t.csv", paths[m])
+        rows = s.table()
+        models[m] = {"node_value": v, "origin": [_r(x, 3) for x in gm.origin], "extent_m": _r(gm.extent_m, 1),
+                     "pipes": len(gm.pipes), "warnings": gm.warnings,
+                     "rows": [[r["tap_id"], r["junction_id"], r["snap_m"]] for r in rows],
+                     "flags": [r["flags"] for r in rows], "not_used": s.dropped,
+                     "same_rows_as_the_clean_drawing": [[r["tap_id"], r["junction_id"], r["snap_m"]] for r in rows] ==
+                                                       models["clean drawing"]["rows"]}
+    for m in ("urban_grid_degrees_lat_as_x.inp", "urban_grid_degrees_placeholder.inp"):
+        try:
+            tap_geometry(paths[m])
+            models[m] = {"refused": False}
+        except LogRefused as e:
+            models[m] = {"refused": True, "message": str(e)}
+    out["models"] = models
+    return out
+
+
+def part_ky4_after_the_stop() -> dict:
+    """Measured after the stop, with nothing changed in the scored rule (not a rescoring): where the 66 misses of the
+    scored ky4 run at 5 m are, and the share of taps given a wrong junction with no flag at all, at 5, 10 and 20 m,
+    with the flags of the code after the review (a main close by is flagged since; ky4's five 16 in pipes)."""
+    from .importers import suggest_from
+    g, h, rules = _geom_hyd("ky4")
+    eligible = (g.diam_in < 16.0) & np.array([j is not None for j, _, _ in rules])
+    P, tp = taps_on_pipes(g, eligible, SNAP_TAPS, SNAP_POS_SEED)
+    o = np.array(g.origin)
+    end_xy = lambda n: (np.array(g.node_xy[n]) - o) * g.metres_per_unit
+    d_end = np.array([min(np.hypot(*(P[i] - end_xy(g.start[p]))), np.hypot(*(P[i] - end_xy(g.end[p]))))
+                      for i, p in enumerate(tp)])
+    tj = [rules[p][0] for p in tp]
+    out = {"by_noise": {}}
+    for r, seed in zip(SNAP_NOISE_M, SNAP_NOISE_SEEDS):
+        sug = suggest_from(_coords_of(g, _noisy(P, r, seed)), g, h)
+        miss = np.array([x["junction_id"] != t for x, t in zip(sug.rows, tj)])
+        z = {"taps": len(miss), "wrong_junction": int(miss.sum()),
+             "wrong_junction_unflagged": int((miss & np.array([not x["flags"] for x in sug.rows])).sum())}
+        z["wrong_junction_unflagged_share"] = _r(z["wrong_junction_unflagged"] / len(miss))
+        if r == SNAP_NOISE_M[0]:
+            wrong_pipe = np.array([x["pipe"] != g.pipes[p] for x, p in zip(sug.rows, tp)])
+            two = np.array([any(f.startswith("two pipes close") for f in x["flags"]) for x in sug.rows])
+            second_right = np.array([x["second_choice"] == t for x, t in zip(sug.rows, tj)])
+            z.update({"misses_on_the_wrong_pipe": int((miss & wrong_pipe).sum()),
+                      "misses_within_5m_of_an_end_node_of_the_true_pipe": int((miss & (d_end <= 5.0)).sum()),
+                      "taps_within_5m_of_an_end_node": int((d_end <= 5.0).sum()),
+                      "misses_flagged_two_pipes_close": int((miss & two).sum()),
+                      "misses_with_the_right_junction_as_flagged_second_choice": int((miss & two & second_right).sum())})
+        out["by_noise"][f"{r:g}"] = z
+    return out
+
+
+def part_template(paths: dict) -> dict:
+    """The coordinates template, a fixture only (fixtures.coordinates_template; not shipped in docs/templates, since
+    no app or pilot step reads a tap map by coordinates yet), on the synthetic urban grid: each tap's suggested
+    junction, the fit's control taps and residuals, and the suggestion, written as a tap map by ID, read back through
+    load_log with urban_coord_log.csv.  The pilot's own step (pilot_suggested_tap_map) is not built."""
+    from .importers import suggest_tap_map
+    from .pilot import load_log
+    data = _read_bytes(paths["tap_map_by_coordinates.csv"])
+    sug = suggest_tap_map(data, "tap_map_by_coordinates.csv", paths["synthetic_urban_grid.inp"])
+    with tempfile.TemporaryDirectory(prefix="rm_t16b_") as d:
+        p = os.path.join(d, "tap_map_suggested.csv")
+        with open(p, "wb") as fh:
+            fh.write(sug.to_csv())
+        log = load_log(paths["urban_coord_log.csv"], p, quiet=True)
+    return {"rows": [{k: v for k, v in r.items()} for r in sug.table()],
+            "controls": sug.georef.get("controls"), "checked": sug.georef.get("checked"),
+            "loo_max_m": _r(sug.georef.get("loo_max_m")), "notes": sug.notes, "warnings": sug.warnings,
+            "not_used": sug.dropped, "accepted_rows_through_load_log": len(log),
+            "accepted_junctions": sorted(set(log.junction))}
+
+
+def snapping_record() -> dict:
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t16b_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.TAP_FIXTURES)
+        return {"about": "Task 16b's tap mapping by coordinates, stopped at its pre-registered bar, on files built by "
+                         "residualmap/fixtures.py: ky4 (a public network, feet, with vertices) and a synthetic urban "
+                         "grid (invented, metres) for snapping, an invented Lambert conformal conic zone for the "
+                         "georeference. Simulated GPS noise only, never a utility's own taps (R6). Part 'ky4' is the "
+                         "pre-registered scored run, which missed its bar (ky4.bar.passed is false); part "
+                         "'ky4_after_the_stop' measures its misses afterwards and is not a rescoring; part 'review' and "
+                         "the 'review' and 'transmission_main_variants' entries hold the review's cases, and the "
+                         "'final' entries (of part 'review', and of part 'georef' in its 'review' entry) the final "
+                         "verification's, its plastic mains among the 'transmission_main_variants'. Written by "
+                         "python -m residualmap.intake_exp snapping; six task16b checks in residualmap/checks.py (five of the "
+                         "plan's six, the pilot's step and its check not being built, and tap_coordinates_review_cases) "
+                         "rerun every part and compare.",
+                "ky4": part_snap_ky4(), "ky4_after_the_stop": part_ky4_after_the_stop(),
+                "urban_grid": part_snap_urban(paths), "direction": part_snap_direction(paths),
+                "schematic": part_snap_schematic(paths), "georef": part_georef(paths), "template": part_template(paths),
+                "review": part_review_16b(paths)}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples"),
+    ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples",
+                                                "snapping"),
                     default="all")
     ap.add_argument("--ky10", action="store_true", help="timing: also time ky10's grid (about 4 minutes)")
     ap.add_argument("--fixed-only", action="store_true", help="timing: rewrite only the records copied from logs "
@@ -1173,6 +1823,9 @@ def main(argv=None) -> int:
         return 0
     if a.what == "samples":              # task 16 (not part of 'all', which is task 15b's three files)
         _write(RECORD_16, samples_record())
+        return 0
+    if a.what == "snapping":             # task 16b (not part of 'all')
+        _write(RECORD_16B, snapping_record())
         return 0
     if a.what in ("all", "elevation"):      # first: the readiness text quotes it
         _write(ELEVATION_PRV, elevation_prv())

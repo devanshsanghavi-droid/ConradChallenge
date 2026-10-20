@@ -127,7 +127,8 @@ UPLOAD_HELP = "any file: it is identified by its content"
 GET_STARTED = "pages/1_Get_started.py"      # task 16: what to export from each package, templates, 'Check a file'
 LOG_HELP = ("Your grab-sample log as your lab or field system exports it: CSV (any separator, decimal commas, Windows "
             "encodings) or Excel (.xlsx). The columns are guessed from its header; check them below.")
-TAP_HELP = "Which junction of the model each tap is at: two columns, tap ID and junction ID (docs/templates)."
+TAP_HELP = ("Which junction of the model each tap is at: two columns, tap ID and junction ID. The Get started page has "
+            "a template.")
 CHOOSE = "(choose a column)"
 IN_DATE = "(the time is in the date column)"
 NO_ANALYTE = "(none: one column per reading)"

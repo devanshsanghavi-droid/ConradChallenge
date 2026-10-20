@@ -1935,6 +1935,639 @@ FIXTURES = {
     **{f"units_column_{k}.csv": (lambda u=u: units_column_log(u)) for k, u in enumerate(UNIT_SPELLINGS)},
 }
 
+
+# ----------------------------------------------------------------------------- task 16b: taps by coordinates
+# The georeference test's truth is an ellipsoidal Lambert conformal conic projection (two standard parallels; Snyder,
+# Map Projections: A Working Manual, 1987, equations 15-1 to 15-10), written here and sharing no code with the ENU
+# step it tests (importers.enu_from_latlon).  Its zone is invented (standard parallels 38.5 and 41.5, origin 37.0 N,
+# central meridian 100.0 W, on the WGS84 ellipsoid), and so is every position below; no fixture is a real place's map.
+LCC_ZONE = {"lat1": 38.5, "lat2": 41.5, "lat0": 37.0, "lon0": -100.0}
+LCC_CENTRE = (40.0, -100.6)           # every fixture's taps sit around this point, 51 km west of the central meridian
+GEOREF_ZONES_KM = (20, 50)            # lcc_taps_20km.csv and lcc_taps_50km.csv: square zones of this side
+GEOREF_TEST_TAPS = 400                # test taps per zone, uniform over the square (default_rng(0))
+# control taps, as fractions of the zone's half side (east, north): the first three make the 3-tap fit, all six the
+# checked fit; the test taps reach the corners, outside the first three's triangle
+GEOREF_CONTROLS = ((-0.8, -0.8), (0.8, -0.7), (-0.1, 0.9), (0.85, 0.8), (-0.85, 0.75), (0.05, -0.1))
+COLLINEAR_OFFSETS_M = ((-900.0, -2.0), (-300.0, 3.0), (250.0, -1.5), (850.0, 2.5))   # along a street, 2 m off it
+_M_PER_DEG = 111_320.0                # only to lay positions out in degrees; the truth is the projection
+
+
+def _lcc_constants(z: dict = LCC_ZONE) -> tuple:
+    a, f = z.get("a", 6378137.0), z.get("f", 1 / 298.257223563)        # WGS84 unless the zone names its ellipsoid
+    e = math.sqrt(f * (2 - f))
+    m = lambda p: math.cos(p) / math.sqrt(1 - (e * math.sin(p)) ** 2)
+    t = lambda p: math.tan(math.pi / 4 - p / 2) / ((1 - e * math.sin(p)) / (1 + e * math.sin(p))) ** (e / 2)
+    p1, p2, p0 = (math.radians(z[k]) for k in ("lat1", "lat2", "lat0"))
+    n = (math.log(m(p1)) - math.log(m(p2))) / (math.log(t(p1)) - math.log(t(p2)))
+    F = m(p1) / (n * t(p1) ** n)
+    return a, e, n, F, t, a * F * t(p0) ** n
+
+
+def lcc_forward(lat: float, lon: float, z: dict = LCC_ZONE) -> tuple[float, float]:
+    """(x, y) in metres of a WGS84 latitude and longitude in the invented Lambert conformal conic zone (or in zone z,
+    on its own ellipsoid when it names one: SNYDER_LCC's worked example checks the formulas)."""
+    a, e, n, F, t, rho0 = _lcc_constants(z)
+    rho = a * F * t(math.radians(lat)) ** n
+    th = n * math.radians(lon - z["lon0"])
+    return rho * math.sin(th), rho0 - rho * math.cos(th)
+
+
+def lcc_inverse(x: float, y: float, z: dict = LCC_ZONE) -> tuple[float, float]:
+    """The latitude and longitude of (x, y) in the zone, by Newton's method on lcc_forward (to 1e-7 m)."""
+    lat, lon = LCC_CENTRE
+    for _ in range(50):
+        fx, fy = lcc_forward(lat, lon, z)
+        rx, ry = x - fx, y - fy
+        if math.hypot(rx, ry) < 1e-7:
+            break
+        h = 1e-6
+        ax, ay = lcc_forward(lat + h, lon, z)
+        bx, by = lcc_forward(lat, lon + h, z)
+        j11, j21, j12, j22 = (ax - fx) / h, (ay - fy) / h, (bx - fx) / h, (by - fy) / h
+        det = j11 * j22 - j12 * j21
+        lat += (j22 * rx - j12 * ry) / det
+        lon += (-j21 * rx + j11 * ry) / det
+    return lat, lon
+
+
+def _lcc_taps(side_km: int) -> bytes:
+    """tap_id, role (control or test), lat, lon, and the truth x_m, y_m: the projection's x and y minus the centre's.
+    Controls at GEOREF_CONTROLS, test taps uniform over the square zone, laid out in degrees around LCC_CENTRE."""
+    import numpy as np
+    half = side_km * 500.0
+    lat_c, lon_c = LCC_CENTRE
+    dlat, dlon = half / _M_PER_DEG, half / (_M_PER_DEG * math.cos(math.radians(lat_c)))
+    x0, y0 = lcc_forward(lat_c, lon_c)
+    rng = np.random.default_rng(0)
+    pts = [(f"C{k + 1}", "control", lat_c + fy * dlat, lon_c + fx * dlon) for k, (fx, fy) in enumerate(GEOREF_CONTROLS)]
+    u = rng.uniform(-1, 1, size=(GEOREF_TEST_TAPS, 2))
+    pts += [(f"T{k + 1:03d}", "test", lat_c + v * dlat, lon_c + w * dlon) for k, (w, v) in enumerate(u)]
+    rows = []
+    for tap, role, la, lo in pts:
+        x, y = lcc_forward(la, lo)
+        rows.append((tap, role, f"{la:.9f}", f"{lo:.9f}", f"{x - x0:.4f}", f"{y - y0:.4f}"))
+    return _csv_text("tap_id,role,lat,lon,x_m,y_m", rows).encode()
+
+
+def lcc_taps_20km() -> bytes:
+    return _lcc_taps(20)
+
+
+def lcc_taps_50km() -> bytes:
+    return _lcc_taps(50)
+
+
+def collinear_controls() -> bytes:
+    """Four control taps along one street (1.8 km long, at most 3 m off its line), and two taps to place."""
+    lat_c, lon_c = LCC_CENTRE
+    x0, y0 = lcc_forward(lat_c, lon_c)
+    rows = []
+    for k, (e, n) in enumerate(COLLINEAR_OFFSETS_M):
+        la, lo = lcc_inverse(x0 + e, y0 + n)
+        rows.append((f"C{k + 1}", "control", f"{la:.9f}", f"{lo:.9f}", f"{e:.4f}", f"{n:.4f}"))
+    for k, (e, n) in enumerate(((0.0, 400.0), (-500.0, -350.0))):
+        la, lo = lcc_inverse(x0 + e, y0 + n)
+        rows.append((f"T{k + 1}", "test", f"{la:.9f}", f"{lo:.9f}", f"{e:.4f}", f"{n:.4f}"))
+    return _csv_text("tap_id,role,lat,lon,x_m,y_m", rows).encode()
+
+
+# The synthetic urban grid: invented, in metres, to scale (every declared length is its drawn length), 2 km by 2 km.
+# Streets every 200 m (junctions J<i><j> at 200 i, 200 j); 8 in mains on every second street, 6 in on the others, and
+# the street at y = 1000 m a 4 in line.  Dual mains on two avenues: a second 6 in main 12 m north of y = 600 m
+# (junctions D<i>03) and 14 m east of x = 1400 m (junctions E07<j>), tied to the grid at every crossing.  A 24 in
+# transmission main 20 m north of the 4 in line, at y = 1020 m, from the reservoir west of the grid (junctions M0 to
+# M4 every 500 m), fed into the grid by 12 in pipes at x = 0, 1000 and 2000 m.  One curved 6 in street with vertices.
+URBAN_N = 10                         # blocks per side (11 junctions)
+URBAN_BLOCK_M = 200.0
+URBAN_DUAL = {"D": ("y", 3, 12.0), "E": ("x", 7, 14.0)}   # name: (axis of the avenue, its index, offset in m)
+URBAN_FOUR_IN_ROW = 5                # the street at y = 1000 m
+URBAN_TM_Y = 1020.0
+URBAN_TM_X = (0.0, 500.0, 1000.0, 1500.0, 2000.0)
+URBAN_TM_FEEDS = ((0, 0), (2, 5), (4, 10))   # (main junction index, grid column i) at the 4 in row
+URBAN_RESERVOIR = ("R1", (-400.0, URBAN_TM_Y), 70.0)
+URBAN_CURVE = ("C1", (2, 8), (4, 8), ((480.0, 1650.0), (600.0, 1680.0), (720.0, 1650.0)))
+URBAN_PATTERN = (0.6, 0.5, 0.5, 0.5, 0.6, 0.8, 1.1, 1.4, 1.3, 1.2, 1.1, 1.0, 1.0, 1.0, 1.0, 1.1, 1.2, 1.4, 1.5, 1.3,
+                 1.1, 0.9, 0.8, 0.7)
+IN_MM = 25.4
+
+
+def _urban_parts() -> tuple[dict, list, dict]:
+    """(nodes: id -> (x, y, elevation, demand L/s), pipes: (id, start, end, diameter in, roughness, vertices),
+    the transmission main's pipe IDs and the dual mains' pipe IDs)."""
+    nodes, pipes = {}, []
+    elev = lambda x: round(10.0 + 0.002 * x, 3)
+    J = lambda i, j: f"J{i:02d}{j:02d}"
+    for i in range(URBAN_N + 1):
+        for j in range(URBAN_N + 1):
+            x, y = i * URBAN_BLOCK_M, j * URBAN_BLOCK_M
+            nodes[J(i, j)] = (x, y, elev(x), 0.4)
+    for i in range(URBAN_N + 1):
+        for j in range(URBAN_N + 1):
+            if i < URBAN_N:
+                d = 4 if j == URBAN_FOUR_IN_ROW else (8 if j % 2 == 0 else 6)
+                pipes.append((f"H{i:02d}{j:02d}", J(i, j), J(i + 1, j), d, 100.0, ()))
+            if j < URBAN_N:
+                pipes.append((f"V{i:02d}{j:02d}", J(i, j), J(i, j + 1), 8 if i % 2 == 0 else 6, 100.0, ()))
+    dual = []
+    for name, (axis, k, off) in URBAN_DUAL.items():
+        for m in range(URBAN_N + 1):
+            if axis == "y":
+                nid, x, y, base = f"{name}{m:02d}{k:02d}", m * URBAN_BLOCK_M, k * URBAN_BLOCK_M + off, J(m, k)
+            else:
+                nid, x, y, base = f"{name}{k:02d}{m:02d}", k * URBAN_BLOCK_M + off, m * URBAN_BLOCK_M, J(k, m)
+            nodes[nid] = (x, y, elev(x), 0.2)
+            pipes.append((f"{name}C{m:02d}", base, nid, 6, 100.0, ()))
+            if m:
+                prev = f"{name}{m - 1:02d}{k:02d}" if axis == "y" else f"{name}{k:02d}{m - 1:02d}"
+                pipes.append((f"{name}M{m:02d}", prev, nid, 6, 100.0, ()))
+                dual.append(f"{name}M{m:02d}")
+    rid, (rx, ry), _ = URBAN_RESERVOIR
+    tm = []
+    for k, x in enumerate(URBAN_TM_X):
+        nodes[f"M{k}"] = (x, URBAN_TM_Y, elev(x), 0.0)
+        pipes.append((f"TM{k}", rid if k == 0 else f"M{k - 1}", f"M{k}", 24, 120.0, ()))
+        tm.append(f"TM{k}")
+    for k, i in URBAN_TM_FEEDS:
+        pipes.append((f"F{k}", f"M{k}", J(i, URBAN_FOUR_IN_ROW), 12, 110.0, ()))
+    cid, a, b, verts = URBAN_CURVE
+    pipes.append((cid, J(*a), J(*b), 6, 100.0, verts))
+    return nodes, pipes, {"transmission": tm, "dual": dual}
+
+
+def _polyline_length(pts) -> float:
+    return sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+
+
+def synthetic_urban_grid() -> bytes:
+    """The synthetic urban grid as an EPANET .inp (LPS, Hazen-Williams, metres), written by hand here."""
+    nodes, pipes, _ = _urban_parts()
+    rid, (rx, ry), head = URBAN_RESERVOIR
+    xy = {n: (v[0], v[1]) for n, v in nodes.items()}
+    xy[rid] = (rx, ry)
+    out = ["[TITLE]", "Synthetic urban grid: invented, in metres, to scale (ResidualMap fixture)", "", "[JUNCTIONS]",
+           ";ID\tElev\tDemand\tPattern"]
+    out += [f" {n}\t{v[2]:.3f}\t{v[3]:.2f}\tP1\t;" for n, v in nodes.items()]
+    out += ["", "[RESERVOIRS]", ";ID\tHead\tPattern", f" {rid}\t{head:.1f}\t\t;", "", "[PIPES]",
+            ";ID\tNode1\tNode2\tLength\tDiameter\tRoughness\tMinorLoss\tStatus"]
+    for pid, a, b, d, c, verts in pipes:
+        length = _polyline_length([xy[a], *verts, xy[b]])
+        out.append(f" {pid}\t{a}\t{b}\t{length:.3f}\t{d * IN_MM:.1f}\t{c:g}\t0\tOpen\t;")
+    out += ["", "[PATTERNS]", ";ID\tMultipliers"]
+    for k in range(0, len(URBAN_PATTERN), 6):
+        out.append(" P1\t" + "\t".join(f"{v:g}" for v in URBAN_PATTERN[k:k + 6]))
+    out += ["", "[TIMES]", " Duration\t24:00", " Hydraulic Timestep\t1:00", " Quality Timestep\t0:05",
+            " Pattern Timestep\t1:00", " Report Timestep\t1:00", " Start ClockTime\t12 am", "", "[OPTIONS]",
+            " Units\tLPS", " Headloss\tH-W", " Quality\tNone", "", "[COORDINATES]", ";Node\tX-Coord\tY-Coord"]
+    out += [f" {n}\t{x:.3f}\t{y:.3f}" for n, (x, y) in xy.items()]
+    out += ["", "[VERTICES]", ";Link\tX-Coord\tY-Coord"]
+    out += [f" {pid}\t{x:.3f}\t{y:.3f}" for pid, _, _, _, _, verts in pipes for x, y in verts]
+    out += ["", "[END]", ""]
+    return "\n".join(out).encode()
+
+
+def ky4_half_reversed() -> bytes:
+    """ky4 with every second pipe of [PIPES] drawn the other way: its start and end nodes swapped and its vertices in
+    [VERTICES] in reverse order (check-valve pipes, none in ky4, are left as they are), so the drawn direction and
+    the sign of the simulated flow both flip on half the pipes.  Nothing else changes."""
+    text = _lib("ky4").decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    sec, k, flipped, out = None, 0, set(), []
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("["):
+            sec = s.upper()
+            out.append(ln)
+            continue
+        if sec == "[PIPES]" and s and not s.startswith(";"):
+            tok = ln.split(";")[0].split()
+            if k % 2 == 1 and not (len(tok) > 7 and tok[7].upper() == "CV"):
+                body, sep, comment = ln.partition(";")
+                end = ln[len(ln.rstrip("\r\n")):]
+                tok[1], tok[2] = tok[2], tok[1]
+                ln = " " + "\t".join(tok) + ("\t;" + comment.rstrip("\r\n") if sep else "") + end
+                flipped.add(tok[0])
+            k += 1
+        out.append(ln)
+    # the vertices of each flipped pipe, in reverse order, in the places its lines held
+    sec, idx = None, {}
+    for i, ln in enumerate(out):
+        s = ln.strip()
+        if s.startswith("["):
+            sec = s.upper()
+            continue
+        if sec == "[VERTICES]" and s and not s.startswith(";"):
+            pid = s.split()[0]
+            if pid in flipped:
+                idx.setdefault(pid, []).append(i)
+    for pid, rows in idx.items():
+        vals = [out[i] for i in rows]
+        for i, v in zip(rows, reversed(vals)):
+            out[i] = v
+    return "".join(out).encode("utf-8")
+
+
+def ky4_flipped_pipes() -> list[str]:
+    """The pipes ky4_half_reversed draws the other way: every second pipe of ky4's [PIPES], in order."""
+    wn = _wn("ky4")
+    return [p for k, p in enumerate(wn.pipe_name_list) if k % 2 == 1
+            and not wn.get_link(p).check_valve]
+
+
+def _net3_some_junctions(k: int = 6) -> list[tuple[str, float, float]]:
+    wn = _wn("Net3")
+    out = []
+    for j in ("10", "15", "20", "35", "40", "50")[:k]:
+        x, y = wn.get_node(j).coordinates
+        out.append((j, float(x), float(y)))
+    return out
+
+
+def net3_taps_xy() -> bytes:
+    """Taps in Net3's own x and y (a schematic drawing): refused, with 'use junction IDs'."""
+    return _csv_text("tap_id,x,y", [(f"T{k + 1}", f"{x + 0.5:.2f}", f"{y - 0.5:.2f}")
+                                    for k, (_, x, y) in enumerate(_net3_some_junctions())]).encode()
+
+
+def net3_taps_latlon() -> bytes:
+    """Taps in latitude and longitude, four of them control taps at Net3 junctions: refused all the same."""
+    lat_c, lon_c = LCC_CENTRE
+    rows = []
+    for k, (j, x, y) in enumerate(_net3_some_junctions()):
+        rows.append((f"T{k + 1}", f"{lat_c + 0.001 * k:.6f}", f"{lon_c + 0.0013 * (k % 3):.6f}", j if k < 4 else ""))
+    return _csv_text("tap_id,lat,lon,junction_id", rows).encode()
+
+
+# The tap map by coordinates template, a fixture only: four control taps at junctions of the synthetic urban grid and
+# four taps to place, in latitude and longitude, the grid laid at URBAN_ORIGIN in the invented zone (model x = the
+# projection's x minus URBAN_ORIGIN).  It is not shipped in docs/templates: nothing in the app or the pilot reads a
+# tap map by coordinates yet (task 16b stopped at its pre-registered bar before those steps were built).
+URBAN_ORIGIN = lcc_forward(*LCC_CENTRE)
+TEMPLATE_CONTROLS = (("C1", "J0101"), ("C2", "J0901"), ("C3", "J0909"), ("C4", "J0109"))
+TEMPLATE_TAPS = (("T1", (503.0, 403.0), ""), ("T2", (1197.0, 1110.0), ""), ("T3", (700.0, 1004.0), ""),
+                 ("T4", (1250.0, 1021.0), "yes"))
+TEMPLATE_NOTES = {"C1": "control tap: its junction is known and its position was taken at that junction; the "
+                        "positions and junction IDs here are from the synthetic test grid: replace them with your own",
+                  "C2": "control tap", "C3": "control tap", "C4": "control tap: four or more let the fit be checked",
+                  "T1": "a tap to place: ResidualMap suggests its junction for you to check",
+                  "T2": "a tap to place", "T3": "a tap to place, beside a large main it is not on",
+                  "T4": "on_main yes: this tap is on the large main"}
+
+
+def _urban_latlon(x: float, y: float) -> tuple[str, str]:
+    la, lo = lcc_inverse(URBAN_ORIGIN[0] + x, URBAN_ORIGIN[1] + y)
+    return f"{la:.6f}", f"{lo:.6f}"
+
+
+def coordinates_template() -> bytes:
+    nodes, _, _ = _urban_parts()
+    rows = []
+    for tap, j in TEMPLATE_CONTROLS:
+        la, lo = _urban_latlon(nodes[j][0], nodes[j][1])
+        rows.append((tap, la, lo, j, "", TEMPLATE_NOTES[tap]))
+    for tap, (x, y), main in TEMPLATE_TAPS:
+        la, lo = _urban_latlon(x, y)
+        rows.append((tap, la, lo, "", main, TEMPLATE_NOTES[tap]))
+    return _csv_text("tap_id,lat,lon,junction_id,on_main,notes", rows).encode()
+
+
+URBAN_LOG_MONTHS = ("2026-01", "2026-02", "2026-03", "2026-04")   # enough for the pilot's hold-out (3 months, then 1)
+
+
+def urban_coord_log() -> bytes:
+    """A grab log at the template's eight taps, one reading a month each for four months (invented readings)."""
+    taps = [t for t, _ in TEMPLATE_CONTROLS] + [t for t, _, _ in TEMPLATE_TAPS]
+    rows = []
+    for m, month in enumerate(URBAN_LOG_MONTHS):
+        for k, tap in enumerate(taps):
+            rows.append((f"{month}-{5 + k:02d}", f"{9 + k % 6:02d}:{10 + 5 * k:02d}", tap,
+                         f"{0.35 + 0.05 * ((k + m) % 9):.2f}"))
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+FIXTURES.update({"synthetic_urban_grid.inp": synthetic_urban_grid, "ky4_half_reversed.inp": ky4_half_reversed,
+                 "lcc_taps_20km.csv": lcc_taps_20km, "lcc_taps_50km.csv": lcc_taps_50km,
+                 "collinear_controls.csv": collinear_controls, "net3_taps_xy.csv": net3_taps_xy,
+                 "net3_taps_latlon.csv": net3_taps_latlon, "tap_map_by_coordinates.csv": coordinates_template,
+                 "urban_coord_log.csv": urban_coord_log})
+TAP_FIXTURES = ("synthetic_urban_grid.inp", "ky4_half_reversed.inp", "lcc_taps_20km.csv", "lcc_taps_50km.csv",
+                "collinear_controls.csv", "net3_taps_xy.csv", "net3_taps_latlon.csv", "tap_map_by_coordinates.csv",
+                "urban_coord_log.csv", "net3_no_coords.inp")
+
+# The review of task 16b: its cases as fixtures (the tap maps written as text here, the models rewritten from the
+# synthetic urban grid's own text, the zones from the Lambert conformal conic truth), for part 'review' of
+# outputs/intake/tap_snapping.json.
+# Snyder's worked example of the ellipsoidal Lambert conformal conic (Map Projections: A Working Manual, 1987, p. 296):
+# Clarke 1866, standard parallels 33 and 45 N, origin 23 N, 96 W; the point 35 N, 75 W is at these x and y.
+SNYDER_LCC = {"zone": {"lat1": 33.0, "lat2": 45.0, "lat0": 23.0, "lon0": -96.0, "a": 6378206.4,
+                       "f": 1 - 6356583.8 / 6378206.4},
+              "point": (35.0, -75.0), "xy_m": (1894410.9, 1564649.5)}
+URBAN_TM_VARIANTS_MM = {"urban_grid_tm_dn400.inp": 400.0, "urban_grid_tm_id388.inp": 388.6,   # the metric 16 in, and a
+                        # 16 in main by its internal diameter (15.3 in); the final verification's 16 in plastic mains by
+                        # internal diameter, under the 15.0 in cut: AWWA C905 DR14 (14.9 in) and PE100 DN400 SDR11
+                        # (12.9 in)
+                        "urban_grid_tm_c905_dr14.inp": 378.8, "urban_grid_tm_pe100_sdr11.inp": 327.4}
+URBAN_DEG_LAT = 45.0                 # urban_grid_degrees.inp: the grid drawn in degrees around 45 N, 100 W
+URBAN_PLACEHOLDERS = ("J0808", "J0604")   # urban_grid_placeholders.inp: drawn at 0,0, as an export does for a node
+URBAN_DRAWN_MAX_X = 1200.0           # urban_grid_part_drawn.inp: no position for any node east of this
+NARROW_ZONE_M = (8000.0, 300.0)      # lcc_narrow_zone.csv: a valley 8 km long and 300 m wide
+NARROW_CONTROL_NOISE_M = 3.0         # radial RMS GPS error on its control taps' positions (default_rng(5))
+ANTIMERIDIAN_SHIFT_DEG = 180.0 - LCC_CENTRE[1]   # lcc_antimeridian.csv: the 20 km zone moved to 180 degrees
+TRIANGLE_ONLY_OFFSETS_M = ((-1000.0, 0.0), (1000.0, 0.0), (0.0, 60.0), (0.0, -60.0))   # 17 times longer than wide
+
+
+def _urban_rewrite(text: str, coord=None, tm_mm: float | None = None, drop=None) -> bytes:
+    """The urban grid's .inp text with its [COORDINATES] and [VERTICES] rewritten by coord(node or link, x, y) ->
+    (x text, y text), the lines for which drop(node, x, y) is true removed, and the transmission main's diameter set
+    to tm_mm."""
+    out, sec = [], None
+    for ln in text.split("\n"):
+        s = ln.strip()
+        if s.startswith("["):
+            sec = s.upper()
+        elif s and not s.startswith(";") and sec in ("[COORDINATES]", "[VERTICES]"):
+            name, x, y = s.split("\t")
+            if sec == "[COORDINATES]" and drop and drop(name, float(x), float(y)):
+                continue
+            if coord:
+                ln = " " + "\t".join((name, *coord(name, float(x), float(y))))
+        elif s and not s.startswith(";") and sec == "[PIPES]" and tm_mm is not None and s.split("\t")[0].startswith("TM"):
+            tok = s.split("\t")
+            tok[4] = f"{tm_mm:.1f}"
+            ln = " " + "\t".join(tok)
+        out.append(ln)
+    return "\n".join(out).encode()
+
+
+def _urban_text() -> str:
+    return synthetic_urban_grid().decode()
+
+
+def urban_grid_degrees() -> bytes:
+    """The urban grid drawn in degrees of longitude and latitude (lengths in the file still in metres), as a GIS
+    export that keeps WGS84 writes it."""
+    k = 111_320.0 * math.cos(math.radians(URBAN_DEG_LAT))
+    return _urban_rewrite(_urban_text(), coord=lambda n, x, y: (f"{-100.0 + x / k:.8f}", f"{URBAN_DEG_LAT + y / 110_574.0:.8f}"))
+
+
+def urban_grid_miles() -> bytes:
+    """The urban grid drawn in miles (lengths in the file still in metres)."""
+    return _urban_rewrite(_urban_text(), coord=lambda n, x, y: (f"{x / 1609.344:.7f}", f"{y / 1609.344:.7f}"))
+
+
+def urban_grid_placeholders() -> bytes:
+    """The urban grid with two junctions drawn at 0,0, as an export writes a node it has no position for."""
+    return _urban_rewrite(_urban_text(), coord=lambda n, x, y: ("0.000", "0.000") if n in URBAN_PLACEHOLDERS else
+                          (f"{x:.3f}", f"{y:.3f}"))
+
+
+def urban_grid_part_drawn() -> bytes:
+    """The urban grid with no position for any node east of URBAN_DRAWN_MAX_X (a model drawn in part)."""
+    return _urban_rewrite(_urban_text(), drop=lambda n, x, y: x > URBAN_DRAWN_MAX_X)
+
+
+def _urban_tm(mm: float):
+    return lambda: _urban_rewrite(_urban_text(), tm_mm=mm)
+
+
+def _urban_ll_rows(points, junction: bool = False) -> list:
+    rows = []
+    for tap, (x, y), j in points:
+        la, lo = _urban_latlon(x, y)
+        rows.append((tap, la, lo, f"{x:.1f}", f"{y:.1f}", *((j,) if junction else ())))
+    return rows
+
+
+_REVIEW_TAPS = (("T1", (503.0, 403.0), ""), ("T2", (1197.0, 1110.0), ""), ("T3", (700.0, 1004.0), ""))
+
+
+def taps_both_pairs_latlon_blank() -> bytes:
+    """Latitude and longitude columns left blank, x and y filled (the template with x and y columns added)."""
+    return _csv_text("tap_id,lat,lon,x,y", [(t, "", "", f"{x:g}", f"{y:g}") for t, (x, y), _ in _REVIEW_TAPS]).encode()
+
+
+def taps_both_pairs_no_controls() -> bytes:
+    """Both pairs filled on every row and no junction column: x and y place every tap, latitude and longitude would
+    need control taps."""
+    return _csv_text("tap_id,lat,lon,x,y", _urban_ll_rows(_REVIEW_TAPS)).encode()
+
+
+def taps_both_pairs_controls() -> bytes:
+    """Both pairs filled, with the template's four control taps: latitude and longitude by default, x and y when
+    those columns are chosen."""
+    nodes, _, _ = _urban_parts()
+    pts = [(tap, nodes[j][:2], j) for tap, j in TEMPLATE_CONTROLS] + [(t, p, "") for t, p, _ in _REVIEW_TAPS]
+    return _csv_text("tap_id,lat,lon,x,y,junction_id", _urban_ll_rows(pts, junction=True)).encode()
+
+
+def taps_thousands_ambiguous() -> bytes:
+    """x and y with thousands commas ('1,197') and nothing else in the column to say so."""
+    return b'tap_id,x,y\nT1,503,403\nT2,"1,197","1,110"\nT3,700,"1,004"\n'
+
+
+def taps_thousands_settled() -> bytes:
+    """The same, with values of 1,000 or more written plainly in both columns, which settle the commas as thousands."""
+    return b'tap_id,x,y\nT1,1503.5,1403\nT2,"1,197","1,110"\n'
+
+
+def taps_decimal_comma() -> bytes:
+    """A semicolon file with decimal commas ('503,5'), which settle '1,197' as 1.197."""
+    return b"tap_id;x;y\nT1;503,5;403,25\nT2;1,197;1,110\n"
+
+
+def taps_letters_swapped() -> bytes:
+    """The template with T1's latitude written with W and its longitude with N."""
+    rows = [r.split(",") for r in coordinates_template().decode().strip().split("\n")]
+    for r in rows[1:]:
+        if r[0] == "T1":
+            r[1], r[2] = f"{r[1]} W", f"{r[2].lstrip('-')} N"
+    return ("\n".join(",".join(r) for r in rows) + "\n").encode()
+
+
+def taps_latlon_swapped() -> bytes:
+    """The template with its latitude and longitude values in each other's columns."""
+    rows = [r.split(",") for r in coordinates_template().decode().strip().split("\n")]
+    for r in rows[1:]:
+        r[1], r[2] = r[2], r[1]
+    return ("\n".join(",".join(r) for r in rows) + "\n").encode()
+
+
+def taps_junction_header_unknown() -> bytes:
+    """A tap map by ID whose junction column has a header nothing guesses, with x and y too."""
+    return b"tap_id,EPANET_Name,x,y\nT1,J0101,203,198\nT2,J0909,1797,1802\n"
+
+
+def taps_duplicate_positions() -> bytes:
+    """Tap T1 listed twice, at two positions 900 m apart."""
+    return b"tap_id,x,y\nT1,503,403\nT1,1197,1110\nT2,700,1004\n"
+
+
+def taps_duplicate_junctions() -> bytes:
+    """Tap T1 listed twice, with two different junctions."""
+    return b"tap_id,x,y,junction_id\nT1,503,403,J0101\nT1,505,404,J0909\nT2,700,1004,\n"
+
+
+def taps_absurd() -> bytes:
+    """A position far beyond any drawing (x = 1e200) beside a good one."""
+    return b"tap_id,x,y\nT1,1e200,5\nT2,503,403\n"
+
+
+def taps_beside_main() -> bytes:
+    """One position 1 m from the 24 in main and 21 m from the 4 in line, untagged and tagged on_main."""
+    return b"tap_id,x,y,on_main\nT1,1250,1021,\nT2,1250,1021,yes\n"
+
+
+def taps_mapping_missing() -> bytes:
+    """A junction column 'node_ref', for a mapping that names 'node ref', a column the file does not have."""
+    return b"tap_id,x,y,node_ref\nT1,503,403,J0101\nT2,700,1004,\n"
+
+
+def _lcc_rows(points, controls: int, noise_m: float = 0.0, seed: int = 0) -> bytes:
+    """tap_id, role, lat, lon, x_m, y_m for points (east, north) in metres around LCC_CENTRE's projected position,
+    the first `controls` of them control taps whose latitude and longitude carry noise_m of radial RMS GPS error."""
+    import numpy as np
+    x0, y0 = lcc_forward(*LCC_CENTRE)
+    rng = np.random.default_rng(seed)
+    rows = []
+    for k, (e, n) in enumerate(points):
+        de, dn = rng.normal(0.0, noise_m / math.sqrt(2.0), 2) if k < controls and noise_m else (0.0, 0.0)
+        la, lo = lcc_inverse(x0 + e + de, y0 + n + dn)
+        tap = f"C{k + 1}" if k < controls else f"T{k - controls + 1:03d}"
+        rows.append((tap, "control" if k < controls else "test", f"{la:.9f}", f"{lo:.9f}", f"{e:.4f}", f"{n:.4f}"))
+    return _csv_text("tap_id,role,lat,lon,x_m,y_m", rows).encode()
+
+
+def lcc_narrow_zone() -> bytes:
+    """A narrow valley zone: six control taps at its corners and the middle of its long sides (positions with
+    NARROW_CONTROL_NOISE_M of GPS error), 300 test taps inside it (default_rng(4)).  The relative tests alone (more
+    than COLLINEAR_MAX_COND times longer than wide, or a triangle under COLLINEAR_MIN_AREA) refuse it."""
+    import numpy as np
+    L, W = NARROW_ZONE_M
+    ctrl = [(-L / 2, -W / 2), (L / 2, -W / 2), (L / 2, W / 2), (-L / 2, W / 2), (0.0, W / 2), (0.0, -W / 2)]
+    u = np.random.default_rng(4).uniform(-0.5, 0.5, size=(300, 2)) * np.array([L, W])
+    return _lcc_rows(ctrl + [tuple(p) for p in u], len(ctrl), NARROW_CONTROL_NOISE_M, 5)
+
+
+def lcc_antimeridian() -> bytes:
+    """lcc_taps_20km.csv moved east by ANTIMERIDIAN_SHIFT_DEG, so the zone's centre is at 180 degrees, its
+    longitudes written from -180 to 180 as a GPS writes them; its x_m and y_m are unchanged (the projection moves
+    with its central meridian)."""
+    rows = [r.split(",") for r in lcc_taps_20km().decode().strip().split("\n")]
+    for r in rows[1:]:
+        lo = float(r[3]) + ANTIMERIDIAN_SHIFT_DEG
+        r[3] = f"{lo - 360.0 if lo > 180.0 else lo:.9f}"
+    return ("\n".join(",".join(r) for r in rows) + "\n").encode()
+
+
+def triangle_only_controls() -> bytes:
+    """Four control taps 14 times longer than wide (under the condition-number limit) whose largest triangle is below
+    the area limit, within about 42 m of their line, and two taps to place."""
+    return _lcc_rows(list(TRIANGLE_ONLY_OFFSETS_M) + [(300.0, 20.0), (-400.0, -30.0)], len(TRIANGLE_ONLY_OFFSETS_M))
+
+
+# The final verification of task 16b: its cases as fixtures, for part 'review' of outputs/intake/tap_snapping.json.
+URBAN_SENTINEL_NODE = "J0505"        # drawn at a no-data value: the float32 maximum some exports write, or nan
+URBAN_SENTINELS = {"urban_grid_sentinel_node.inp": "-3.4028235e38", "urban_grid_nan_node.inp": "nan"}
+URBAN_DEG_PLACEHOLDER = ("J0808", "9999")   # urban_grid_degrees_placeholder.inp: one node at 9999,9999
+STRIP_CONTROLS_M = ((-2000.0, -55.0), (-1000.0, 55.0), (0.0, -55.0), (1000.0, 55.0), (2000.0, -55.0), (0.0, 55.0))
+STRIP_SIDE_M, STRIP_GPS_M = 4000.0, 3.0    # lcc_strip_controls.csv: control taps along one avenue, 3 m of GPS error
+                                           # (default_rng(0)), 400 test taps over the 4 km square (default_rng(4))
+
+
+def _urban_degrees(n, x, y, lat_as_x: bool = False):
+    k = 111_320.0 * math.cos(math.radians(URBAN_DEG_LAT))
+    lon, lat = f"{-100.0 + x / k:.8f}", f"{URBAN_DEG_LAT + y / 110_574.0:.8f}"
+    return (lat, lon) if lat_as_x else (lon, lat)
+
+
+def urban_grid_degrees_lat_as_x() -> bytes:
+    """The urban grid drawn in degrees with latitude as x and longitude as y, the order some exports write."""
+    return _urban_rewrite(_urban_text(), coord=lambda n, x, y: _urban_degrees(n, x, y, lat_as_x=True))
+
+
+def urban_grid_degrees_placeholder() -> bytes:
+    """The urban grid drawn in degrees (longitude as x) with one node at the placeholder 9999,9999."""
+    j, v = URBAN_DEG_PLACEHOLDER
+    return _urban_rewrite(_urban_text(), coord=lambda n, x, y: (v, v) if n == j else _urban_degrees(n, x, y))
+
+
+def _urban_sentinel(value: str):
+    return lambda: _urban_rewrite(_urban_text(), coord=lambda n, x, y: (value, value) if n == URBAN_SENTINEL_NODE else
+                                  (f"{x:.3f}", f"{y:.3f}"))
+
+
+def taps_dot_thousands() -> bytes:
+    """A European tap map (semicolons, decimal commas) whose values of 1,000 or more carry a dot thousands separator
+    ('1.197' for 1197), with nothing in the columns to settle the dots."""
+    return b"tap_id;x;y\nT1;503,5;403,25\nT2;1.197;1.110\nT3;700;1.004\n"
+
+
+def taps_dot_thousands_settled() -> bytes:
+    """The same, with '1.503,5' and '1.403,25' (a dot thousands separator for certain) settling both columns."""
+    return b"tap_id;x;y\nT1;1.503,5;1.403,25\nT2;1.197;1.110\nT3;700;1.004\n"
+
+
+def taps_lon_0_to_360() -> bytes:
+    """The coordinates template with 360 added to every longitude (259.4 for 100.6 W), as some receivers write them."""
+    rows = [r.split(",") for r in coordinates_template().decode().strip().split("\n")]
+    for r in rows[1:]:
+        r[2] = f"{float(r[2]) + 360.0:.6f}"
+    return ("\n".join(",".join(r) for r in rows) + "\n").encode()
+
+
+def lcc_strip_controls() -> bytes:
+    """Six control taps along one avenue, 4 km long and 55 m to either side of it (STRIP_GPS_M of GPS error on each,
+    default_rng(0)), and 400 test taps over the 4 km square around it (default_rng(4)): accepted, as a narrow strip
+    more than ACROSS_MIN_M across, and the taps far across the avenue are where the fit is uncertain."""
+    import numpy as np
+    h = STRIP_SIDE_M / 2
+    test = np.random.default_rng(4).uniform(-h, h, size=(400, 2))
+    return _lcc_rows(list(STRIP_CONTROLS_M) + [tuple(p) for p in test], len(STRIP_CONTROLS_M), STRIP_GPS_M, 0)
+
+
+STREET_CONTROLS = (("C1", "J0100"), ("C2", "J0500"), ("C3", "J0900"), ("C4", "J0501"))   # along y = 0, one 200 m off
+STREET_TAPS = (("T1", (503.0, 203.0)), ("T2", (1197.0, 1110.0)), ("T3", (700.0, 1797.0)))
+
+
+def taps_controls_along_one_street() -> bytes:
+    """Four control taps on the urban grid, three along its street at y = 0 and one 200 m off it (accepted: not a
+    narrow strip), and three taps to place, one beside them and two far across that street, in latitude and
+    longitude through the invented zone (no GPS error)."""
+    nodes, _, _ = _urban_parts()
+    rows = [(tap, *_urban_latlon(*nodes[j][:2]), j) for tap, j in STREET_CONTROLS]
+    rows += [(tap, *_urban_latlon(x, y), "") for tap, (x, y) in STREET_TAPS]
+    return _csv_text("tap_id,lat,lon,junction_id", rows).encode()
+
+
+FINAL_16B_FIXTURES = {
+    "taps_controls_along_one_street.csv": taps_controls_along_one_street,
+    **{n: _urban_sentinel(v) for n, v in URBAN_SENTINELS.items()},
+    "urban_grid_degrees_lat_as_x.inp": urban_grid_degrees_lat_as_x,
+    "urban_grid_degrees_placeholder.inp": urban_grid_degrees_placeholder,
+    "taps_dot_thousands.csv": taps_dot_thousands, "taps_dot_thousands_settled.csv": taps_dot_thousands_settled,
+    "taps_lon_0_to_360.csv": taps_lon_0_to_360, "lcc_strip_controls.csv": lcc_strip_controls,
+}
+
+
+REVIEW_16B_FIXTURES = {
+    **{n: _urban_tm(mm) for n, mm in URBAN_TM_VARIANTS_MM.items()},
+    "urban_grid_degrees.inp": urban_grid_degrees, "urban_grid_miles.inp": urban_grid_miles,
+    "urban_grid_placeholders.inp": urban_grid_placeholders, "urban_grid_part_drawn.inp": urban_grid_part_drawn,
+    "taps_both_pairs_latlon_blank.csv": taps_both_pairs_latlon_blank,
+    "taps_both_pairs_no_controls.csv": taps_both_pairs_no_controls,
+    "taps_both_pairs_controls.csv": taps_both_pairs_controls, "taps_thousands_ambiguous.csv": taps_thousands_ambiguous,
+    "taps_thousands_settled.csv": taps_thousands_settled, "taps_decimal_comma.csv": taps_decimal_comma,
+    "taps_letters_swapped.csv": taps_letters_swapped, "taps_latlon_swapped.csv": taps_latlon_swapped,
+    "taps_junction_header_unknown.csv": taps_junction_header_unknown,
+    "taps_duplicate_positions.csv": taps_duplicate_positions, "taps_duplicate_junctions.csv": taps_duplicate_junctions,
+    "taps_absurd.csv": taps_absurd, "taps_beside_main.csv": taps_beside_main,
+    "taps_mapping_missing.csv": taps_mapping_missing, "lcc_narrow_zone.csv": lcc_narrow_zone,
+    "lcc_antimeridian.csv": lcc_antimeridian, "triangle_only_controls.csv": triangle_only_controls,
+}
+REVIEW_16B_FIXTURES.update(FINAL_16B_FIXTURES)
+FIXTURES.update(REVIEW_16B_FIXTURES)
+TAP_FIXTURES = TAP_FIXTURES + tuple(REVIEW_16B_FIXTURES)
+
+
 # (fixture, kind it must come back as, the file name may decide something, a backup copy)
 SNIFF_TABLE: list[tuple[str, str, bool, bool]] = [
     ("net3_as_txt.txt", "epanet_inp", False, False), ("net3_backup.inp.bak", "epanet_inp", False, True),

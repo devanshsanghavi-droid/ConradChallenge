@@ -1,0 +1,1861 @@
+{
+ "about": "Task 16b's tap mapping by coordinates, stopped at its pre-registered bar, on files built by residualmap/fixtures.py: ky4 (a public network, feet, with vertices) and a synthetic urban grid (invented, metres) for snapping, an invented Lambert conformal conic zone for the georeference. Simulated GPS noise only, never a utility's own taps (R6). Part 'ky4' is the pre-registered scored run, which missed its bar (ky4.bar.passed is false); part 'ky4_after_the_stop' measures its misses afterwards and is not a rescoring; part 'review' and the 'review' and 'transmission_main_variants' entries hold the review's cases, and the 'final' entries (of part 'review', and of part 'georef' in its 'review' entry) the final verification's, its plastic mains among the 'transmission_main_variants'. Written by python -m residualmap.intake_exp snapping; six task16b checks in residualmap/checks.py (five of the plan's six, the pilot's step and its check not being built, and tap_coordinates_review_cases) rerun every part and compare.",
+ "ky4": {
+  "network": "ky4",
+  "units": "feet",
+  "pipes": 1156,
+  "segments": 3968,
+  "pipes_16in_or_more": 5,
+  "taps": 2000,
+  "rule_codes": {
+   "reverses": 6,
+   "no_flow": 5,
+   "end_not_junction": 3
+  },
+  "by_noise": {
+   "5": {
+    "taps": 2000,
+    "right_junction": 0.967,
+    "right_junction_or_flagged_second": 0.9775,
+    "right_pipe": 0.965,
+    "flagged_two_pipes_close": 0.0295,
+    "flagged_far": 0.0,
+    "flagged_flow_reverses": 0.0035,
+    "flagged_no_flow": 0.0055,
+    "snap_m_median": 2.37,
+    "snap_m_p95": 6.89,
+    "ambiguous_rows_list_two_candidates": true
+   },
+   "10": {
+    "taps": 2000,
+    "right_junction": 0.9305,
+    "right_junction_or_flagged_second": 0.951,
+    "right_pipe": 0.925,
+    "flagged_two_pipes_close": 0.0475,
+    "flagged_far": 0.0,
+    "flagged_flow_reverses": 0.003,
+    "flagged_no_flow": 0.0055,
+    "snap_m_median": 4.57,
+    "snap_m_p95": 13.13,
+    "ambiguous_rows_list_two_candidates": true
+   },
+   "20": {
+    "taps": 2000,
+    "right_junction": 0.8915,
+    "right_junction_or_flagged_second": 0.9135,
+    "right_pipe": 0.8795,
+    "flagged_two_pipes_close": 0.089,
+    "flagged_far": 0.031,
+    "flagged_flow_reverses": 0.0035,
+    "flagged_no_flow": 0.0055,
+    "snap_m_median": 9.09,
+    "snap_m_p95": 27.06,
+    "ambiguous_rows_list_two_candidates": true
+   }
+  },
+  "bar": {
+   "network": "ky4",
+   "noise_m": 5.0,
+   "share_at_least": 0.98,
+   "counting": "strict: the suggested junction_id is the right junction (the rule applied to the tap's true pipe); a right junction shown only as the flagged second choice does not count (open decision 11; that share is reported beside it, not scored)",
+   "taps": "2,000 uniform by length on ky4's pipes under 16 in that have a junction at one end, default_rng(0); noise Gaussian, r / sqrt(2) per axis, default_rng(1), (2), (3) for 5, 10, 20 m",
+   "rule": "nearest pipe under 16 in, segments and vertices in metres; its downstream end by the sign of the mean simulated flow between 07:00 and 17:00 of the scored day; no flow (every hour at most 1e-7 m3/s) takes the end with the older water; a downstream tank or reservoir takes the other end; second choice the nearest pipe with another junction, shown within 1.5 times the distance",
+   "result": 0.967,
+   "passed": false
+  }
+ },
+ "ky4_after_the_stop": {
+  "by_noise": {
+   "5": {
+    "taps": 2000,
+    "wrong_junction": 66,
+    "wrong_junction_unflagged": 41,
+    "wrong_junction_unflagged_share": 0.0205,
+    "misses_on_the_wrong_pipe": 66,
+    "misses_within_5m_of_an_end_node_of_the_true_pipe": 40,
+    "taps_within_5m_of_an_end_node": 88,
+    "misses_flagged_two_pipes_close": 25,
+    "misses_with_the_right_junction_as_flagged_second_choice": 21
+   },
+   "10": {
+    "taps": 2000,
+    "wrong_junction": 139,
+    "wrong_junction_unflagged": 91,
+    "wrong_junction_unflagged_share": 0.0455
+   },
+   "20": {
+    "taps": 2000,
+    "wrong_junction": 217,
+    "wrong_junction_unflagged": 150,
+    "wrong_junction_unflagged_share": 0.075
+   }
+  }
+ },
+ "urban_grid": {
+  "network": "synthetic urban grid",
+  "units": "metres",
+  "pipes": 271,
+  "segments": 274,
+  "taps": 2000,
+  "dual_main_taps": 326,
+  "four_inch_taps": 82,
+  "on_main_taps": 100,
+  "by_noise": {
+   "5": {
+    "small_mains": {
+     "taps": 2000,
+     "right_junction": 0.964,
+     "right_junction_or_flagged_second": 0.976,
+     "right_pipe": 0.954,
+     "flagged_two_pipes_close": 0.0385,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 2.3,
+     "snap_m_p95": 6.72,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "dual_mains": {
+     "taps": 326,
+     "right_junction": 0.9571,
+     "right_junction_or_flagged_second": 0.9847,
+     "right_pipe": 0.9509,
+     "flagged_two_pipes_close": 0.0736,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 2.26,
+     "snap_m_p95": 5.78,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "four_inch_line": {
+     "taps": 82,
+     "right_junction": 0.9756,
+     "right_junction_or_flagged_second": 0.9756,
+     "right_pipe": 0.9634,
+     "flagged_two_pipes_close": 0.0366,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 2.43,
+     "snap_m_p95": 7.15,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "untagged_taps_put_on_the_transmission_main": 0,
+    "four_inch_taps_put_on_the_transmission_main": 0,
+    "on_main_tagged": {
+     "taps": 100,
+     "put_on_the_transmission_main": 0.97,
+     "right_pipe": 0.97
+    }
+   },
+   "10": {
+    "small_mains": {
+     "taps": 2000,
+     "right_junction": 0.9115,
+     "right_junction_or_flagged_second": 0.935,
+     "right_pipe": 0.9,
+     "flagged_two_pipes_close": 0.064,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 4.57,
+     "snap_m_p95": 12.91,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "dual_mains": {
+     "taps": 326,
+     "right_junction": 0.816,
+     "right_junction_or_flagged_second": 0.8712,
+     "right_pipe": 0.8067,
+     "flagged_two_pipes_close": 0.1288,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 3.99,
+     "snap_m_p95": 11.88,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "four_inch_line": {
+     "taps": 82,
+     "right_junction": 0.9268,
+     "right_junction_or_flagged_second": 0.939,
+     "right_pipe": 0.9024,
+     "flagged_two_pipes_close": 0.0854,
+     "flagged_far": 0.0,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 4.9,
+     "snap_m_p95": 12.29,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "untagged_taps_put_on_the_transmission_main": 0,
+    "four_inch_taps_put_on_the_transmission_main": 0,
+    "on_main_tagged": {
+     "taps": 100,
+     "put_on_the_transmission_main": 0.85,
+     "right_pipe": 0.85
+    }
+   },
+   "20": {
+    "small_mains": {
+     "taps": 2000,
+     "right_junction": 0.851,
+     "right_junction_or_flagged_second": 0.8775,
+     "right_pipe": 0.823,
+     "flagged_two_pipes_close": 0.0995,
+     "flagged_far": 0.022,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 8.04,
+     "snap_m_p95": 25.3,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "dual_mains": {
+     "taps": 326,
+     "right_junction": 0.6166,
+     "right_junction_or_flagged_second": 0.6503,
+     "right_pipe": 0.592,
+     "flagged_two_pipes_close": 0.1227,
+     "flagged_far": 0.0153,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 4.58,
+     "snap_m_p95": 20.95,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "four_inch_line": {
+     "taps": 82,
+     "right_junction": 0.8902,
+     "right_junction_or_flagged_second": 0.9146,
+     "right_pipe": 0.8415,
+     "flagged_two_pipes_close": 0.1585,
+     "flagged_far": 0.0122,
+     "flagged_flow_reverses": 0.0,
+     "flagged_no_flow": 0.0,
+     "snap_m_median": 9.58,
+     "snap_m_p95": 24.36,
+     "ambiguous_rows_list_two_candidates": true
+    },
+    "untagged_taps_put_on_the_transmission_main": 0,
+    "four_inch_taps_put_on_the_transmission_main": 0,
+    "on_main_tagged": {
+     "taps": 100,
+     "put_on_the_transmission_main": 0.77,
+     "right_pipe": 0.76
+    }
+   }
+  },
+  "transmission_main_variants": {
+   "urban_grid_tm_dn400.inp": {
+    "main_mm": 400.0,
+    "main_in_model": 15.748,
+    "by_noise": {
+     "5": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.963
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.9615
+      }
+     },
+     "10": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.911
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9055
+      }
+     },
+     "20": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.8495
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.84
+      }
+     }
+    }
+   },
+   "urban_grid_tm_id388.inp": {
+    "main_mm": 388.6,
+    "main_in_model": 15.299,
+    "by_noise": {
+     "5": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.9625
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.961
+      }
+     },
+     "10": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.911
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9055
+      }
+     },
+     "20": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 0,
+       "four_inch_taps_put_on_the_transmission_main": 0,
+       "small_mains_right_junction": 0.8475
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.839
+      }
+     }
+    }
+   },
+   "urban_grid_tm_c905_dr14.inp": {
+    "main_mm": 378.8,
+    "main_in_model": 14.913,
+    "by_noise": {
+     "5": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.961,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 3,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 3
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.961
+      }
+     },
+     "10": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9055,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 13,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 11
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9055
+      }
+     },
+     "20": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.8395,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 25,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 17
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.8395
+      }
+     }
+    }
+   },
+   "urban_grid_tm_pe100_sdr11.inp": {
+    "main_mm": 327.4,
+    "main_in_model": 12.89,
+    "by_noise": {
+     "5": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.9605,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 3,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 3
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 3,
+       "four_inch_taps_put_on_the_transmission_main": 1,
+       "small_mains_right_junction": 0.9605
+      }
+     },
+     "10": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9065,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 13,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 11
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 13,
+       "four_inch_taps_put_on_the_transmission_main": 10,
+       "small_mains_right_junction": 0.9065
+      }
+     },
+     "20": {
+      "cut_15in": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.839,
+       "untagged_taps_on_the_main_with_no_flag_naming_a_main": 0,
+       "untagged_taps_on_the_main_flagged_under_the_cut": 25,
+       "flag_names_the_true_pipe_as_the_nearest_smaller_one": 17
+      },
+      "cut_16in_as_first_built": {
+       "untagged_taps_put_on_the_transmission_main": 25,
+       "four_inch_taps_put_on_the_transmission_main": 20,
+       "small_mains_right_junction": 0.839
+      }
+     }
+    }
+   }
+  },
+  "main_cut_in": 15.0,
+  "main_band_from_in": 12.8
+ },
+ "direction": {
+  "taps": 2000,
+  "pipes_flipped": 578,
+  "flipped_with_flow": 575,
+  "flow_sign_flipped_on": 575,
+  "same_origin": true,
+  "assignments_differ": 0,
+  "junction_rules_differ": 0
+ },
+ "schematic": {
+  "Net3 with net3_taps_xy.csv": {
+   "refused": true,
+   "message": "This model's drawing is a schematic, not to scale: its drawn pipe lengths are not in proportion to the lengths in the file, so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID.",
+   "says_use_junction_ids": true
+  },
+  "Net3 with net3_taps_latlon.csv": {
+   "refused": true,
+   "message": "This model's drawing is a schematic, not to scale: its drawn pipe lengths are not in proportion to the lengths in the file, so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID.",
+   "says_use_junction_ids": true
+  },
+  "net3_no_coords.inp with net3_taps_xy.csv": {
+   "refused": true,
+   "message": "This model has no coordinates, so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID.",
+   "says_use_junction_ids": true
+  }
+ },
+ "georef": {
+  "20km": {
+   "test_taps": 400,
+   "3_controls": {
+    "max_error_m": 0.0072,
+    "median_error_m": 0.0031,
+    "max_error_m_plane_at_the_mean_as_first_built": 0.0071,
+    "checked": false,
+    "loo_m": {},
+    "direct_latlon_affine_max_error_m": 25.3173,
+    "direct_latlon_affine_median_error_m": 4.0618
+   },
+   "6_controls": {
+    "max_error_m": 0.0065,
+    "median_error_m": 0.0027,
+    "max_error_m_plane_at_the_mean_as_first_built": 0.0062,
+    "checked": true,
+    "loo_m": {
+     "C1": 0.0034,
+     "C2": 0.0012,
+     "C3": 0.0006,
+     "C4": 0.0025,
+     "C5": 0.0007,
+     "C6": 0.0018
+    },
+    "direct_latlon_affine_max_error_m": 12.7648,
+    "direct_latlon_affine_median_error_m": 3.4162
+   }
+  },
+  "moved_control": {
+   "moved": "C4",
+   "by_m": 25.0,
+   "flagged": [
+    "C1",
+    "C2",
+    "C3",
+    "C4"
+   ],
+   "loo_m": {
+    "C1": 22.0863,
+    "C2": 16.7836,
+    "C3": 11.7232,
+    "C4": 24.9975,
+    "C5": 1.9781,
+    "C6": 4.0928
+   },
+   "flag_above_m": 10.0,
+   "closed_form_against_a_refit_per_control_tap_max_abs_diff_m": 0.0
+  },
+  "50km": {
+   "test_taps": 400,
+   "3_controls": {
+    "max_error_m": 0.1058,
+    "median_error_m": 0.0468,
+    "max_error_m_plane_at_the_mean_as_first_built": 0.1011,
+    "checked": false,
+    "loo_m": {},
+    "direct_latlon_affine_max_error_m": 158.2232,
+    "direct_latlon_affine_median_error_m": 25.4035
+   },
+   "6_controls": {
+    "max_error_m": 0.103,
+    "median_error_m": 0.0429,
+    "max_error_m_plane_at_the_mean_as_first_built": 0.0977,
+    "checked": true,
+    "loo_m": {
+     "C1": 0.0246,
+     "C2": 0.0167,
+     "C3": 0.0166,
+     "C4": 0.0207,
+     "C5": 0.0092,
+     "C6": 0.0268
+    },
+    "direct_latlon_affine_max_error_m": 79.7787,
+    "direct_latlon_affine_median_error_m": 21.3704
+   }
+  },
+  "bar": {
+   "what": "maximum error over the test taps with 3 control taps, both zones",
+   "at_most_m": 1.0,
+   "result_m": 0.1058,
+   "result_m_as_scored": 0.1011,
+   "plane": "tangent at the taps' median position since the final verification (the bar was scored with it at their mean: result_m_as_scored)",
+   "passed": true
+  },
+  "collinear": {
+   "refused": true,
+   "message": "The 4 control taps lie almost on one line, so the fit cannot tell the map's turn and stretch across that line (their positions are 323 times longer than wide, above 20; their largest triangle is 0.001 of the square of their largest distance, below 0.02; they lie within about 2.0 m of that line, under 50 m). Add a control tap well away from that line.",
+   "cond": 322.6,
+   "area": 0.000988
+  },
+  "review": {
+   "lcc_against_snyder": {
+    "x_m": 1894410.9,
+    "y_m": 1564649.48,
+    "snyder_x_m": 1894410.9,
+    "snyder_y_m": 1564649.5,
+    "max_abs_diff_m": 0.022
+   },
+   "antimeridian": {
+    "lon_min": -180.0,
+    "lon_max": 180.0,
+    "3_controls": {
+     "max_error_m": 0.0072,
+     "zone_at_100w_max_error_m": 0.0072,
+     "flagged": [],
+     "arithmetic_mean_longitude_max_error_m": 71.1027
+    },
+    "6_controls": {
+     "max_error_m": 0.0065,
+     "zone_at_100w_max_error_m": 0.0065,
+     "flagged": [],
+     "arithmetic_mean_longitude_max_error_m": 57.8607
+    }
+   },
+   "narrow_zone": {
+    "zone_m": [
+     8000.0,
+     300.0
+    ],
+    "control_gps_error_m": 3.0,
+    "accepted": true,
+    "relative_tests_alone_refuse": true,
+    "warned": true,
+    "cond": 21.6,
+    "area": 0.019,
+    "across_m": 151.2,
+    "test_taps": 300,
+    "max_error_m": 2.75,
+    "median_error_m": 1.05
+   },
+   "triangle_only": {
+    "refused": true,
+    "message": "The 4 control taps lie almost on one line, so the fit cannot tell the map's turn and stretch across that line (their largest triangle is 0.015 of the square of their largest distance, below 0.02; they lie within about 42.4 m of that line, under 50 m). Add a control tap well away from that line.",
+    "names_the_triangle_test_only": true
+   },
+   "many_controls": {
+    "controls": 4000,
+    "cond": 1.0304,
+    "area": 0.2544,
+    "largest_distance_m": 13885.85,
+    "across_m": 2851.35
+   },
+   "final": {
+    "settings": {
+     "same_place_m": 50.0,
+     "loo_leverage_max": 0.99,
+     "gps_assumed_m": 5.0,
+     "predicted_flag_above_m": 10.0
+    },
+    "typo_in_a_small_map": {
+     "20km_4_controls": {
+      "latitude 4.001 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.007,
+        "loo_max_m": 0.011
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 0.939,
+        "loo_max_m": 0.908
+       }
+      },
+      "longitude -10.06 for -100.6": {
+       "plane_at_the_median": {
+        "max_error_m": 0.009,
+        "loo_max_m": 0.015
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 1.828,
+        "loo_max_m": 1.771
+       }
+      },
+      "latitude -40.01 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.007,
+        "loo_max_m": 0.011
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 2.119,
+        "loo_max_m": 2.048
+       }
+      }
+     },
+     "20km_6_controls": {
+      "latitude 4.001 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.006,
+        "loo_max_m": 0.006
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 0.597,
+        "loo_max_m": 0.725
+       }
+      },
+      "longitude -10.06 for -100.6": {
+       "plane_at_the_median": {
+        "max_error_m": 0.006,
+        "loo_max_m": 0.009
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 1.158,
+        "loo_max_m": 1.405
+       }
+      },
+      "latitude -40.01 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.006,
+        "loo_max_m": 0.006
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 1.339,
+        "loo_max_m": 1.625
+       }
+      }
+     },
+     "50km_4_controls": {
+      "latitude 4.001 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.098,
+        "loo_max_m": 0.139
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 5.871,
+        "loo_max_m": 5.666
+       }
+      },
+      "longitude -10.06 for -100.6": {
+       "plane_at_the_median": {
+        "max_error_m": 0.133,
+        "loo_max_m": 0.212
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 11.446,
+        "loo_max_m": 11.097
+       }
+      },
+      "latitude -40.01 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.098,
+        "loo_max_m": 0.139
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 13.245,
+        "loo_max_m": 12.799
+       }
+      }
+     },
+     "50km_6_controls": {
+      "latitude 4.001 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.096,
+        "loo_max_m": 0.089
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 3.721,
+        "loo_max_m": 4.535
+       }
+      },
+      "longitude -10.06 for -100.6": {
+       "plane_at_the_median": {
+        "max_error_m": 0.096,
+        "loo_max_m": 0.131
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 7.244,
+        "loo_max_m": 8.8
+       }
+      },
+      "latitude -40.01 for 40.01": {
+       "plane_at_the_median": {
+        "max_error_m": 0.096,
+        "loo_max_m": 0.089
+       },
+       "plane_at_the_mean_as_first_built": {
+        "max_error_m": 8.359,
+        "loo_max_m": 10.159
+       }
+      }
+     }
+    },
+    "strip_controls": {
+     "controls": 6,
+     "control_gps_error_m": 3.0,
+     "zone_m": 4000.0,
+     "accepted": true,
+     "narrow_strip": true,
+     "across_m": 55.8,
+     "cond": 23.1,
+     "test_taps": 400,
+     "max_error_m": 42.24,
+     "over_10m": 305,
+     "over_30m": 112,
+     "flagged_uncertain": 348,
+     "over_10m_not_flagged": 0,
+     "over_30m_not_flagged": 0,
+     "loo_max_m": 5.15,
+     "control_flagged_by_loo": [],
+     "flag_above_m": 10.0
+    },
+    "one_place": {
+     "refused": true,
+     "message": "The 4 control taps were all taken at the same place, so the fit has nothing to measure the map's turn and stretch with. Take the control taps at junctions spread over the area: at least 3 of them not on one line, and 4 or more so the fit can be checked."
+    },
+    "two_places": {
+     "refused": true,
+     "message": "The 4 control taps were taken at only two places, about 500 m apart, so they lie on one line and the fit cannot tell the map's turn and stretch across it. Add a control tap at a junction well away from that line."
+    },
+    "within_4m": {
+     "refused": true,
+     "message": "The 4 control taps were all taken at about the same place (within 3.6 m of each other), so the fit has nothing to measure the map's turn and stretch with. Take the control taps at junctions spread over the area: at least 3 of them not on one line, and 4 or more so the fit can be checked."
+    }
+   }
+  }
+ },
+ "template": {
+  "rows": [
+   {
+    "tap_id": "C1",
+    "junction_id": "J0101",
+    "snap_m": "",
+    "pipe": "",
+    "second_choice": "",
+    "second_m": "",
+    "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+   },
+   {
+    "tap_id": "C2",
+    "junction_id": "J0901",
+    "snap_m": "",
+    "pipe": "",
+    "second_choice": "",
+    "second_m": "",
+    "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+   },
+   {
+    "tap_id": "C3",
+    "junction_id": "J0909",
+    "snap_m": "",
+    "pipe": "",
+    "second_choice": "",
+    "second_m": "",
+    "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+   },
+   {
+    "tap_id": "C4",
+    "junction_id": "J0109",
+    "snap_m": "",
+    "pipe": "",
+    "second_choice": "",
+    "second_m": "",
+    "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+   },
+   {
+    "tap_id": "T1",
+    "junction_id": "J0302",
+    "snap_m": "3.0",
+    "pipe": "H0202",
+    "second_choice": "",
+    "second_m": "",
+    "flags": ""
+   },
+   {
+    "tap_id": "T2",
+    "junction_id": "J0606",
+    "snap_m": "3.0",
+    "pipe": "V0605",
+    "second_choice": "",
+    "second_m": "",
+    "flags": ""
+   },
+   {
+    "tap_id": "T3",
+    "junction_id": "J0305",
+    "snap_m": "4.0",
+    "pipe": "H0305",
+    "second_choice": "",
+    "second_m": "",
+    "flags": ""
+   },
+   {
+    "tap_id": "T4",
+    "junction_id": "M3",
+    "snap_m": "1.0",
+    "pipe": "TM3",
+    "second_choice": "",
+    "second_m": "",
+    "flags": "on a main of 16 in or more (on_main yes)"
+   }
+  ],
+  "controls": 4,
+  "checked": true,
+  "loo_max_m": 0.1414,
+  "notes": [
+   "Tap map by coordinates: 8 taps, placed by latitude and longitude (columns 'lat' and 'lon'); 4 with a junction given (control taps, when they have a position too).",
+   "Placed by latitude and longitude through a local east-north plane and an affine fit to 4 control taps; each control tap's leave-one-out residual (the fit made without it) is at most 0.1 m (tap C3).",
+   "4 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 1 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+  ],
+  "warnings": [],
+  "not_used": [],
+  "accepted_rows_through_load_log": 32,
+  "accepted_junctions": [
+   "J0101",
+   "J0109",
+   "J0302",
+   "J0305",
+   "J0606",
+   "J0901",
+   "J0909",
+   "M3"
+  ]
+ },
+ "review": {
+  "taps_both_pairs_latlon_blank.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0302",
+     "snap_m": "3.0",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0606",
+     "snap_m": "3.0",
+     "pipe": "V0605",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T3",
+     "junction_id": "J0305",
+     "snap_m": "4.0",
+     "pipe": "H0305",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [],
+   "notes": [
+    "Tap map by coordinates: 3 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "The columns 'lat' and 'lon' are not used: x and y are filled on more rows (3 rows filled against 0). To place the taps by latitude and longitude, choose those columns.",
+    "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_both_pairs_no_controls.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0302",
+     "snap_m": "3.0",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0606",
+     "snap_m": "3.0",
+     "pipe": "V0605",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T3",
+     "junction_id": "J0305",
+     "snap_m": "4.0",
+     "pipe": "H0305",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [],
+   "notes": [
+    "Tap map by coordinates: 3 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "The columns 'lat' and 'lon' are not used: latitude and longitude have 0 control taps (a row with a junction too), fewer than the 3 their fit needs, and x and y need none (3 rows filled against 3). To place the taps by latitude and longitude, choose those columns.",
+    "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_thousands_ambiguous.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0302",
+     "snap_m": "3.0",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [
+    {
+     "row": 3,
+     "tap_id": "T2",
+     "example": "1,197",
+     "reason": "the x or y reads two ways ('1,197' is a number of thousands, or one with a decimal comma): write it without the comma, or with a decimal point"
+    },
+    {
+     "row": 4,
+     "tap_id": "T3",
+     "example": "1,004",
+     "reason": "the x or y reads two ways ('1,004' is a number of thousands, or one with a decimal comma): write it without the comma, or with a decimal point"
+    }
+   ],
+   "notes": [
+    "Tap map by coordinates: 1 tap, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "1 tap put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_thousands_settled.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0707",
+     "snap_m": "3.0",
+     "pipe": "H0707",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0606",
+     "snap_m": "3.0",
+     "pipe": "V0605",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [],
+   "notes": [
+    "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "2 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_decimal_comma.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0302",
+     "snap_m": "3.2",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0100",
+     "snap_m": "1.1",
+     "pipe": "H0000",
+     "second_choice": "J0000",
+     "second_m": "1.2",
+     "flags": "two pipes close: the second choice, junction J0000 on pipe V0000, is 1.2 m away"
+    }
+   ],
+   "not_used": [],
+   "notes": [
+    "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "2 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 1 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_letters_swapped.csv": {
+   "refused": false,
+   "kind": "latlon",
+   "rows": [
+    {
+     "tap_id": "C1",
+     "junction_id": "J0101",
+     "snap_m": "",
+     "pipe": "",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+    },
+    {
+     "tap_id": "C2",
+     "junction_id": "J0901",
+     "snap_m": "",
+     "pipe": "",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+    },
+    {
+     "tap_id": "C3",
+     "junction_id": "J0909",
+     "snap_m": "",
+     "pipe": "",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+    },
+    {
+     "tap_id": "C4",
+     "junction_id": "J0109",
+     "snap_m": "",
+     "pipe": "",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0606",
+     "snap_m": "3.0",
+     "pipe": "V0605",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T3",
+     "junction_id": "J0305",
+     "snap_m": "4.0",
+     "pipe": "H0305",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T4",
+     "junction_id": "M3",
+     "snap_m": "1.0",
+     "pipe": "TM3",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "on a main of 16 in or more (on_main yes)"
+    }
+   ],
+   "not_used": [
+    {
+     "row": 6,
+     "tap_id": "T1",
+     "example": "40.003661 W",
+     "reason": "the latitude '40.003661 W' has the letter W, which belongs to a longitude: are the two columns swapped?"
+    }
+   ],
+   "notes": [
+    "Tap map by coordinates: 7 taps, placed by latitude and longitude (columns 'lat' and 'lon'); 4 with a junction given (control taps, when they have a position too).",
+    "Placed by latitude and longitude through a local east-north plane and an affine fit to 4 control taps; each control tap's leave-one-out residual (the fit made without it) is at most 0.1 m (tap C3).",
+    "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 1 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_latlon_swapped.csv": {
+   "refused": true,
+   "message": "The columns 'lat' and 'lon' look swapped: 'lat' holds numbers between 90 and 180 (for example -100.597673, 40.001814), which only a longitude can be, and 'lon' numbers of at most 90. Swap the two column names."
+  },
+  "taps_duplicate_positions.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0302",
+     "snap_m": "3.0",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "J0305",
+     "snap_m": "4.0",
+     "pipe": "H0305",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [
+    {
+     "row": 3,
+     "tap_id": "T1",
+     "reason": "tap T1 is listed again: its first row (row 2) is used"
+    }
+   ],
+   "notes": [
+    "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "2 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": [
+    "1 tap is listed again with another position or junction (T1, rows 2 and 3): the first row is used. Check which row is right."
+   ]
+  },
+  "taps_duplicate_junctions.csv": {
+   "refused": true,
+   "message": "The tap map lists 1 tap with two different junctions: T1. Keep one junction per tap."
+  },
+  "taps_beside_main.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T1",
+     "junction_id": "J0705",
+     "snap_m": "21.0",
+     "pipe": "H0605",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "a main of 16 in or more is 1.0 m away: if the tap is on it, say on_main yes"
+    },
+    {
+     "tap_id": "T2",
+     "junction_id": "M3",
+     "snap_m": "1.0",
+     "pipe": "TM3",
+     "second_choice": "",
+     "second_m": "",
+     "flags": "on a main of 16 in or more (on_main yes)"
+    }
+   ],
+   "not_used": [],
+   "notes": [
+    "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "2 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 2 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": []
+  },
+  "taps_both_pairs_controls.csv": {
+   "guessed": {
+    "refused": false,
+    "kind": "latlon",
+    "rows": [
+     {
+      "tap_id": "C1",
+      "junction_id": "J0101",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C2",
+      "junction_id": "J0901",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C3",
+      "junction_id": "J0909",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C4",
+      "junction_id": "J0109",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "T1",
+      "junction_id": "J0302",
+      "snap_m": "3.0",
+      "pipe": "H0202",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0606",
+      "snap_m": "3.0",
+      "pipe": "V0605",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T3",
+      "junction_id": "J0305",
+      "snap_m": "4.0",
+      "pipe": "H0305",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 7 taps, placed by latitude and longitude (columns 'lat' and 'lon'); 4 with a junction given (control taps, when they have a position too).",
+     "The columns 'x' and 'y' are not used: both pairs are filled (7 rows filled against 7). To place the taps by x and y in the model's own coordinates, choose those columns.",
+     "Placed by latitude and longitude through a local east-north plane and an affine fit to 4 control taps; each control tap's leave-one-out residual (the fit made without it) is at most 0.1 m (tap C3).",
+     "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": []
+   },
+   "x_and_y_chosen": {
+    "refused": false,
+    "kind": "xy",
+    "rows": [
+     {
+      "tap_id": "C1",
+      "junction_id": "J0101",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "junction given in the tap map"
+     },
+     {
+      "tap_id": "C2",
+      "junction_id": "J0901",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "junction given in the tap map"
+     },
+     {
+      "tap_id": "C3",
+      "junction_id": "J0909",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "junction given in the tap map"
+     },
+     {
+      "tap_id": "C4",
+      "junction_id": "J0109",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "junction given in the tap map"
+     },
+     {
+      "tap_id": "T1",
+      "junction_id": "J0302",
+      "snap_m": "3.0",
+      "pipe": "H0202",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0606",
+      "snap_m": "3.0",
+      "pipe": "V0605",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T3",
+      "junction_id": "J0305",
+      "snap_m": "4.0",
+      "pipe": "H0305",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 7 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 4 with a junction given.",
+     "The columns 'lat' and 'lon' are not used: the taps are placed by the x and y chosen.",
+     "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": []
+   },
+   "same_junctions": true
+  },
+  "taps_mapping_missing.csv": {
+   "refused": true,
+   "message": "The tap map has no column 'node ref', chosen for the junction; its header is tap_id, x, y, node_ref. Choose one of its columns."
+  },
+  "taps_junction_header_unknown.csv": {
+   "kind_guessed": "coordinates",
+   "kind_with_mapping": "id",
+   "read_by_id_with_mapping": {
+    "T1": "J0101",
+    "T2": "J0909"
+   },
+   "by_coordinates": {
+    "refused": false,
+    "kind": "xy",
+    "rows": [
+     {
+      "tap_id": "T1",
+      "junction_id": "J0201",
+      "snap_m": "2.0",
+      "pipe": "H0101",
+      "second_choice": "J0100",
+      "second_m": "3.0",
+      "flags": "two pipes close: the second choice, junction J0100 on pipe V0100, is 3.0 m away"
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0809",
+      "snap_m": "2.0",
+      "pipe": "H0809",
+      "second_choice": "J0910",
+      "second_m": "3.0",
+      "flags": "two pipes close: the second choice, junction J0910 on pipe V0909, is 3.0 m away"
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+     "2 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 2 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": [
+     "The column 'EPANET_Name' holds junction IDs of this model (2 of its 2 filled rows) and is not used: if it gives each tap's junction, choose it as the junction column, and those taps keep their junctions."
+    ]
+   }
+  },
+  "taps_absurd.csv": {
+   "refused": false,
+   "kind": "xy",
+   "rows": [
+    {
+     "tap_id": "T2",
+     "junction_id": "J0302",
+     "snap_m": "3.0",
+     "pipe": "H0202",
+     "second_choice": "",
+     "second_m": "",
+     "flags": ""
+    }
+   ],
+   "not_used": [
+    {
+     "row": 2,
+     "tap_id": "T1",
+     "reason": "the position is not near the model's drawing (more than 1,414 km from its centre): check its x and y"
+    }
+   ],
+   "notes": [
+    "Tap map by coordinates: 2 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+    "1 tap put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+   ],
+   "warnings": [],
+   "runtime_warnings": 0
+  },
+  "models": {
+   "urban_grid_degrees.inp": {
+    "refused": true,
+    "message": "This model is drawn in degrees of longitude and latitude, not in feet or metres (about 1.3e-05 of its units per metre of pipe), so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID.",
+    "suggest_tap_map": {
+     "refused": true,
+     "message": "This model is drawn in degrees of longitude and latitude, not in feet or metres (about 1.3e-05 of its units per metre of pipe), so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID."
+    }
+   },
+   "urban_grid_miles.inp": {
+    "refused": false,
+    "units": "unknown",
+    "metres_per_unit": 1609.344,
+    "pipes": 271,
+    "left_out": [],
+    "warnings": [
+     "The model's drawing is to scale, in units that are neither feet nor metres (about 0.000621 per metre of pipe): distances use that scale."
+    ],
+    "metres_per_unit_true": 1609.344,
+    "metres_per_unit_as_first_built": 1666.667,
+    "taps_5m": {
+     "taps": 2000,
+     "same_junction_as_the_metres_drawing": 1.0,
+     "put_on_a_pipe_left_out": 0
+    }
+   },
+   "urban_grid_placeholders.inp": {
+    "refused": false,
+    "units": "metres",
+    "metres_per_unit": 1.0,
+    "pipes": 263,
+    "left_out": [
+     "H0504",
+     "V0603",
+     "H0604",
+     "V0604",
+     "H0708",
+     "V0807",
+     "H0808",
+     "V0808"
+    ],
+    "warnings": [
+     "8 pipes are left out of the placement (H0504, V0603, H0604, V0604, H0708, V0807, and more): drawn at under half or over twice the model's usual drawn length per metre of pipe, as when a node is drawn at a placeholder position such as 0,0. A tap beside one of them is put on the nearest other pipe."
+    ],
+    "taps_5m": {
+     "taps": 2000,
+     "same_junction_as_the_metres_drawing": 0.968,
+     "put_on_a_pipe_left_out": 0
+    }
+   },
+   "urban_grid_part_drawn.inp": {
+    "refused": false,
+    "units": "metres",
+    "metres_per_unit": 1.0,
+    "pipes": 155,
+    "left_out": [],
+    "warnings": [
+     "Only 155 of the model's 271 pipes are drawn (both ends with a position): a tap beside a pipe that is not drawn is put on the nearest drawn pipe, which may be the wrong one."
+    ]
+   }
+  },
+  "final": {
+   "far_node_spans": 100.0,
+   "taps_dot_thousands.csv": {
+    "refused": false,
+    "kind": "xy",
+    "rows": [
+     {
+      "tap_id": "T1",
+      "junction_id": "J0302",
+      "snap_m": "3.2",
+      "pipe": "H0202",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     }
+    ],
+    "not_used": [
+     {
+      "row": 3,
+      "tap_id": "T2",
+      "example": "1.197",
+      "reason": "the x or y reads two ways ('1.197' is a number of thousands, or one with a decimal point): write it without the dot, or with a decimal comma"
+     },
+     {
+      "row": 4,
+      "tap_id": "T3",
+      "example": "1.004",
+      "reason": "the x or y reads two ways ('1.004' is a number of thousands, or one with a decimal point): write it without the dot, or with a decimal comma"
+     }
+    ],
+    "notes": [
+     "Tap map by coordinates: 1 tap, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+     "1 tap put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": []
+   },
+   "taps_dot_thousands_settled.csv": {
+    "refused": false,
+    "kind": "xy",
+    "rows": [
+     {
+      "tap_id": "T1",
+      "junction_id": "J0707",
+      "snap_m": "3.2",
+      "pipe": "H0707",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0606",
+      "snap_m": "3.0",
+      "pipe": "V0605",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T3",
+      "junction_id": "J0305",
+      "snap_m": "4.0",
+      "pipe": "H0305",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 3 taps, placed by x and y in the model's own coordinates (columns 'x' and 'y'); 0 with a junction given.",
+     "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 0 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": []
+   },
+   "taps_controls_along_one_street.csv": {
+    "refused": false,
+    "kind": "latlon",
+    "rows": [
+     {
+      "tap_id": "C1",
+      "junction_id": "J0100",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C2",
+      "junction_id": "J0500",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.0 m"
+     },
+     {
+      "tap_id": "C3",
+      "junction_id": "J0900",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C4",
+      "junction_id": "J0501",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; its leave-one-out residual cannot be measured: without it the others lie almost on one line"
+     },
+     {
+      "tap_id": "T1",
+      "junction_id": "J0301",
+      "snap_m": "3.0",
+      "pipe": "H0201",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0606",
+      "snap_m": "3.1",
+      "pipe": "V0605",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "the fit is uncertain here, about 31 m (the control taps' GPS error, taken as 5 m, carried this far from them): a control tap near it would help"
+     },
+     {
+      "tap_id": "T3",
+      "junction_id": "J0409",
+      "snap_m": "3.3",
+      "pipe": "H0309",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "the fit is uncertain here, about 51 m (the control taps' GPS error, taken as 5 m, carried this far from them): a control tap near it would help"
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 7 taps, placed by latitude and longitude (columns 'lat' and 'lon'); 4 with a junction given (control taps, when they have a position too).",
+     "Placed by latitude and longitude through a local east-north plane and an affine fit to 4 control taps; each control tap's leave-one-out residual (the fit made without it) is at most 0.1 m (tap C3).",
+     "3 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 2 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": [
+     "Control tap C4 cannot be checked: without it, the other control taps lie almost on one line, so the fit made without it measures nothing. A control tap away from that line would let it be checked.",
+     "2 taps lie where the fit is uncertain (T2, T3): far from the control taps, or across the line they lie along, so 5 m of GPS error on each control tap could move them by more than 10 m. Each is flagged; a control tap near them would help."
+    ]
+   },
+   "taps_lon_0_to_360.csv": {
+    "refused": false,
+    "kind": "latlon",
+    "rows": [
+     {
+      "tap_id": "C1",
+      "junction_id": "J0101",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C2",
+      "junction_id": "J0901",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C3",
+      "junction_id": "J0909",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "C4",
+      "junction_id": "J0109",
+      "snap_m": "",
+      "pipe": "",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "control tap: junction given; leave-one-out residual 0.1 m"
+     },
+     {
+      "tap_id": "T1",
+      "junction_id": "J0302",
+      "snap_m": "3.0",
+      "pipe": "H0202",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T2",
+      "junction_id": "J0606",
+      "snap_m": "3.0",
+      "pipe": "V0605",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T3",
+      "junction_id": "J0305",
+      "snap_m": "4.0",
+      "pipe": "H0305",
+      "second_choice": "",
+      "second_m": "",
+      "flags": ""
+     },
+     {
+      "tap_id": "T4",
+      "junction_id": "M3",
+      "snap_m": "1.0",
+      "pipe": "TM3",
+      "second_choice": "",
+      "second_m": "",
+      "flags": "on a main of 16 in or more (on_main yes)"
+     }
+    ],
+    "not_used": [],
+    "notes": [
+     "Tap map by coordinates: 8 taps, placed by latitude and longitude (columns 'lat' and 'lon'); 4 with a junction given (control taps, when they have a position too).",
+     "The longitudes are written from 0 to 360, as some receivers write them: each one over 180 is read as that minus 360, west of Greenwich ('259.402327' as -100.597673).",
+     "Placed by latitude and longitude through a local east-north plane and an affine fit to 4 control taps; each control tap's leave-one-out residual (the fit made without it) is at most 0.1 m (tap C3).",
+     "4 taps put on the nearest pipe under 16 in (any pipe for a tap whose row says on_main yes), each given that pipe's downstream junction by the simulated flow between 07:00 and 17:00; 1 flagged for a look. A flag marks some of the wrong suggestions, not all of them: check every row."
+    ],
+    "warnings": [],
+    "same_junctions_as_the_template": true
+   },
+   "models": {
+    "clean drawing": {
+     "rows": [
+      [
+       "T1",
+       "J0302",
+       "3.0"
+      ],
+      [
+       "T2",
+       "J0606",
+       "3.0"
+      ],
+      [
+       "T3",
+       "J0305",
+       "4.0"
+      ],
+      [
+       "T4",
+       "J0709",
+       "3.0"
+      ]
+     ]
+    },
+    "urban_grid_sentinel_node.inp": {
+     "node_value": "-3.4028235e38",
+     "origin": [
+      1000.0,
+      1000.0
+     ],
+     "extent_m": 1414.2,
+     "pipes": 266,
+     "warnings": [
+      "1 node has a position far outside the rest of the drawing (more than 100 times the width of its middle half from its middle), as an export writes a position it does not have (a no-data value): J0505 at -3.40282e+38, -3.40282e+38. It is treated as not drawn, so the 5 pipes at it (F2, H0405, H0505, V0504, V0505) are left out of the placement."
+     ],
+     "rows": [
+      [
+       "T1",
+       "J0302",
+       "3.0"
+      ],
+      [
+       "T2",
+       "J0606",
+       "3.0"
+      ],
+      [
+       "T3",
+       "J0305",
+       "4.0"
+      ],
+      [
+       "T4",
+       "J0709",
+       "3.0"
+      ]
+     ],
+     "flags": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "not_used": [],
+     "same_rows_as_the_clean_drawing": true
+    },
+    "urban_grid_nan_node.inp": {
+     "node_value": "nan",
+     "origin": [
+      1000.0,
+      1000.0
+     ],
+     "extent_m": 1414.2,
+     "pipes": 266,
+     "warnings": [
+      "1 node has a position that is not a number: J0505 at nan, nan. It is treated as not drawn, so the 5 pipes at it (F2, H0405, H0505, V0504, V0505) are left out of the placement."
+     ],
+     "rows": [
+      [
+       "T1",
+       "J0302",
+       "3.0"
+      ],
+      [
+       "T2",
+       "J0606",
+       "3.0"
+      ],
+      [
+       "T3",
+       "J0305",
+       "4.0"
+      ],
+      [
+       "T4",
+       "J0709",
+       "3.0"
+      ]
+     ],
+     "flags": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "not_used": [],
+     "same_rows_as_the_clean_drawing": true
+    },
+    "urban_grid_degrees_lat_as_x.inp": {
+     "refused": true,
+     "message": "This model is drawn in degrees of longitude and latitude, not in feet or metres (about 1.3e-05 of its units per metre of pipe), so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID."
+    },
+    "urban_grid_degrees_placeholder.inp": {
+     "refused": true,
+     "message": "This model is drawn in degrees of longitude and latitude, not in feet or metres (about 1.3e-05 of its units per metre of pipe), so a tap cannot be placed on it by its position. Use junction IDs instead: a tap map with two columns, the tap ID and the junction ID."
+    }
+   }
+  }
+ }
+}

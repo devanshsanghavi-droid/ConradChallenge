@@ -4751,6 +4751,298 @@ def pilot_clock_and_log():
     return out
 
 
+# ----------------------------------------------------------------------------- task 16b: tap mapping by coordinates
+# Task 16b stopped at its pre-registered bar (ky4, 0.967 of 2,000 taps against 0.98).  Five of the plan's six checks
+# are here; pilot_suggested_tap_map is not, because the pilot's --taps by coordinates and --accept-snapped were not
+# built.  Each check reruns its part of outputs/intake/tap_snapping.json and compares; tap_coordinates_review_cases
+# holds the review's cases.
+INTAKE_RECORD_16B = os.path.join(REPO, "outputs", "intake", "tap_snapping.json")
+
+
+def _record_16b(part: str) -> dict:
+    """One part of the committed task-16b record (python -m residualmap.intake_exp snapping)."""
+    with open(INTAKE_RECORD_16B) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_16b(got: dict, part: str) -> dict:
+    want = _record_16b(part)
+    diff = _json_diff(json.loads(json.dumps(got)), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _tap_fixtures():
+    """The task-16b fixtures built into a temporary folder."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t16b_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), FX.TAP_FIXTURES)
+
+
+@check("task16b")
+def georef_enu_affine():
+    """Taps in latitude and longitude through the local east-north plane and the affine fit, against the ellipsoidal
+    Lambert conformal conic truth of fixtures.py (which matches Snyder's worked example to 0.1 m), over 20 and 50 km
+    zones.  Bar (plan task 16b, met): at most 1 m maximum error with 3 control taps, a fit marked unchecked; with 6
+    control taps each one's leave-one-out residual is printed; the direct latitude and longitude affine, kept only in
+    the record, is more than 10 times worse; a control tap moved 25 m is flagged, with the largest residual; nearly
+    collinear control taps are refused.  The review's cases: a zone across the antimeridian equals the same zone at
+    100 W, a narrow valley (8 km by 300 m, 3 m of GPS error on its control taps) is accepted with a warning, control
+    taps that fail only the triangle test are refused naming that test alone, and 4,000 control taps are measured in
+    under 2 s.  The final verification's cases: the plane's tangent point at the taps' median (the bar passes with it
+    and as scored, with it at their mean); one typo tap in a small tap map leaves every test tap within 1 m (with the
+    plane at the mean, as first built, it did not); control taps along one avenue for a 4 km square zone flag every
+    test tap placed more than 10 m off; control taps at one place or two are refused in those words; the leave-one-out
+    residuals in closed form equal one refit per control tap, and 4,000 control taps take under 2 s through
+    georeference.  Equals the committed record (part 'georef')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    from .importers import control_spread, georeference
+    with _tap_fixtures() as paths:
+        got = E.part_georef(paths)
+    bar = got["bar"]
+    assert bar["passed"] and bar["at_most_m"] == 1.0 and bar["result_m"] <= 1.0, bar
+    assert bar["result_m_as_scored"] <= 1.0, bar
+    assert got["moved_control"]["closed_form_against_a_refit_per_control_tap_max_abs_diff_m"] <= 1e-6, got["moved_control"]
+    for km in ("20km", "50km"):
+        z = got[km]
+        assert not z["3_controls"]["checked"] and z["3_controls"]["loo_m"] == {}, z["3_controls"]
+        assert z["6_controls"]["checked"] and len(z["6_controls"]["loo_m"]) == 6, z["6_controls"]
+        assert z["3_controls"]["direct_latlon_affine_max_error_m"] > 10 * z["3_controls"]["max_error_m"], z
+    mc = got["moved_control"]
+    assert mc["moved"] in mc["flagged"] and max(mc["loo_m"], key=mc["loo_m"].get) == mc["moved"], mc
+    assert got["collinear"]["refused"], got["collinear"]
+    rv = got["review"]
+    assert rv["lcc_against_snyder"]["max_abs_diff_m"] <= 0.1, rv["lcc_against_snyder"]
+    am = rv["antimeridian"]
+    assert am["lon_min"] < -179 and am["lon_max"] > 179, am
+    for k in ("3_controls", "6_controls"):
+        assert am[k]["max_error_m"] == am[k]["zone_at_100w_max_error_m"] and not am[k]["flagged"], am
+        assert am[k]["arithmetic_mean_longitude_max_error_m"] > 1.0, am          # as first built
+    nz = rv["narrow_zone"]
+    assert nz["accepted"] and nz["relative_tests_alone_refuse"] and nz["warned"] and nz["max_error_m"] <= 5.0, nz
+    tr = rv["triangle_only"]
+    assert tr["refused"] and tr["names_the_triangle_test_only"], tr
+    fin = rv["final"]
+    for zone, z in fin["typo_in_a_small_map"].items():
+        for label, v in z.items():
+            assert v["plane_at_the_median"]["max_error_m"] <= 1.0, (zone, label, v)
+            assert v["plane_at_the_median"]["loo_max_m"] < 10.0, (zone, label, v)
+    assert max(v["plane_at_the_mean_as_first_built"]["max_error_m"]
+               for z in fin["typo_in_a_small_map"].values() for v in z.values()) > 10.0, fin["typo_in_a_small_map"]
+    st = fin["strip_controls"]
+    assert st["accepted"] and st["narrow_strip"] and st["over_30m"] > 0, st
+    assert st["over_10m_not_flagged"] == 0 and st["over_30m_not_flagged"] == 0, st
+    for k, words in (("one_place", "at the same place"), ("two_places", "only two places"),
+                     ("within_4m", "about the same place")):
+        assert fin[k]["refused"] and words in fin[k]["message"] and "inf" not in fin[k]["message"], fin[k]
+    t0 = time.time()
+    control_spread(np.random.default_rng(1).uniform(-5000, 5000, size=(4000, 2)))
+    spread_s = time.time() - t0
+    assert spread_s < 2.0, spread_s
+    # 4,000 control taps through georeference (positions laid out in degrees: only the time is measured)
+    E4 = np.random.default_rng(1).uniform(-5000, 5000, size=(4001, 2))
+    lat4 = FX.LCC_CENTRE[0] + E4[:, 1] / 111_320.0
+    lon4 = FX.LCC_CENTRE[1] + E4[:, 0] / (111_320.0 * math.cos(math.radians(FX.LCC_CENTRE[0])))
+    t0 = time.time()
+    _, info4 = georeference(lat4, lon4, list(range(4000)), E4[:4000], 1.0)
+    georef_s = time.time() - t0
+    assert georef_s < 2.0 and len(info4["loo"]) == 4000, georef_s
+    _same_as_16b(got, "georef")
+    return {"bar_max_error_3_controls_m": bar["result_m"], "bar_at_most_m": bar["at_most_m"], "bar_passed": True,
+            "max_error_m": {km: {k: got[km][k]["max_error_m"] for k in ("3_controls", "6_controls")} for km in ("20km", "50km")},
+            "direct_latlon_affine_max_error_m": {km: got[km]["3_controls"]["direct_latlon_affine_max_error_m"]
+                                                  for km in ("20km", "50km")},
+            "moved_control_flagged": mc["flagged"], "collinear_refused": True,
+            "snyder_max_abs_diff_m": rv["lcc_against_snyder"]["max_abs_diff_m"],
+            "antimeridian_max_error_m": am["3_controls"]["max_error_m"], "narrow_zone_max_error_m": nz["max_error_m"],
+            "triangle_only_refused_naming_that_test": True,
+            "bar_result_m_as_scored": bar["result_m_as_scored"],
+            "typo_small_map_max_error_m": max(v["plane_at_the_median"]["max_error_m"]
+                                              for z in fin["typo_in_a_small_map"].values() for v in z.values()),
+            "strip_over_10m_not_flagged": st["over_10m_not_flagged"],
+            "_volatile": {"control_spread_4000_s": round(spread_s, 3), "georeference_4000_s": round(georef_s, 3)}}
+
+
+@check("task16b", quick=False)
+def tap_snapping_ky4():
+    """The pre-registered scored run of task 16b, rerun: 2,000 taps uniform by length on ky4's pipes under 16 in
+    (feet, with vertices), at 5, 10 and 20 m of radial RMS GPS noise, each put on the nearest pipe under 16 in and
+    given that pipe's downstream junction by the simulated daytime flow.  Equals the committed record (part 'ky4'),
+    and the measurement of its misses made after the stop (part 'ky4_after_the_stop', not a rescoring).
+    Not asserted: the bar (at least 0.98 of taps with the right junction at 5 m).  Its scored run missed it, 0.967
+    counted strictly and 0.9775 counting a right flagged second choice (open decision 11), so the task stopped; the
+    miss stands, recorded in the journal, and no passing run of this check counts as a pass of that bar."""
+    from . import intake_exp as E
+    got = E.part_snap_ky4()
+    after = E.part_ky4_after_the_stop()
+    _same_as_16b(got, "ky4")
+    _same_as_16b(after, "ky4_after_the_stop")
+    bar, five = got["bar"], got["by_noise"]["5"]
+    assert (bar["network"], bar["noise_m"], bar["share_at_least"]) == ("ky4", 5.0, 0.98), bar
+    assert bar["counting"].startswith("strict") and bar["result"] == five["right_junction"], bar
+    assert bar["passed"] == (five["right_junction"] >= 0.98), bar
+    assert after["by_noise"]["5"]["wrong_junction"] == round((1 - five["right_junction"]) * got["taps"]), after
+    assert all(v["ambiguous_rows_list_two_candidates"] for v in got["by_noise"].values()), got["by_noise"]
+    return {"bar": "pre-registered: at least 0.98 of 2,000 taps get the right junction at 5 m; missed in its scored "
+                   "run, so task 16b stopped; not asserted here",
+            "bar_passed": bar["passed"],
+            "right_junction": {k: v["right_junction"] for k, v in got["by_noise"].items()},
+            "right_junction_or_flagged_second": {k: v["right_junction_or_flagged_second"] for k, v in got["by_noise"].items()},
+            "wrong_junction_unflagged": {k: v["wrong_junction_unflagged"] for k, v in after["by_noise"].items()}}
+
+
+@check("task16b")
+def tap_snapping_urban_grid():
+    """The synthetic urban grid (invented, metres, to scale): 2,000 taps on its pipes under 16 in and 100 on its 24 in
+    transmission main tagged on_main yes, at 5, 10 and 20 m: no untagged tap is put on the transmission main, the 4 in
+    line 20 m beside it included, and every ambiguous row lists two candidates.  The review's variants: with the main
+    a metric DN400 (400 mm) or a 16 in main by its internal diameter (388.6 mm), no untagged tap is put on it either
+    (with the cut at 16.0 in on the model's diameter, as first built, some were).  The final verification's: a 16 in
+    plastic main by its internal diameter under the 15.0 in cut (C905 DR14, 378.8 mm; PE100 SDR11, 327.4 mm) takes
+    untagged taps, and every one of them is flagged as on a pipe under the cut.  Equals the committed record (part
+    'urban_grid')."""
+    from . import intake_exp as E
+    with _tap_fixtures() as paths:
+        got = E.part_snap_urban(paths)
+    for k, v in got["by_noise"].items():
+        assert v["untagged_taps_put_on_the_transmission_main"] == 0 and v["four_inch_taps_put_on_the_transmission_main"] == 0, (k, v)
+        assert all(v[m]["ambiguous_rows_list_two_candidates"] for m in ("small_mains", "dual_mains", "four_inch_line")), (k, v)
+    first_built = under_cut = 0
+    for name, z in got["transmission_main_variants"].items():
+        for k, v in z["by_noise"].items():
+            c15 = v["cut_15in"]
+            if z["main_in_model"] >= 15.0:
+                assert c15["untagged_taps_put_on_the_transmission_main"] == 0, (name, k, v)
+                first_built += v["cut_16in_as_first_built"]["untagged_taps_put_on_the_transmission_main"]
+            else:                       # under the cut: the taps put on it are flagged, every one
+                n = c15["untagged_taps_put_on_the_transmission_main"]
+                assert c15["untagged_taps_on_the_main_with_no_flag_naming_a_main"] == 0, (name, k, v)
+                assert c15["untagged_taps_on_the_main_flagged_under_the_cut"] == n, (name, k, v)
+                under_cut += n
+    assert first_built > 0 and under_cut > 0, got["transmission_main_variants"]
+    _same_as_16b(got, "urban_grid")
+    return {"right_junction_small_mains": {k: v["small_mains"]["right_junction"] for k, v in got["by_noise"].items()},
+            "right_junction_dual_mains": {k: v["dual_mains"]["right_junction"] for k, v in got["by_noise"].items()},
+            "untagged_taps_on_the_transmission_main": 0,
+            "variants_untagged_taps_on_the_main": {n: {k: (v["cut_15in"]["untagged_taps_put_on_the_transmission_main"],
+                                                          v["cut_16in_as_first_built"]["untagged_taps_put_on_the_transmission_main"])
+                                                      for k, v in z["by_noise"].items()}
+                                                  for n, z in got["transmission_main_variants"].items()}}
+
+
+@check("task16b", quick=False)
+def tap_snapping_direction_invariant():
+    """ky4_half_reversed.inp (every second pipe of ky4 drawn the other way, its vertices reversed, so the drawn
+    direction and the sign of the simulated flow both flip there) gives the same 2,000 assignments at 5 m as ky4, and
+    the flow sign flips on every flipped pipe that carries flow.  Equals the committed record (part 'direction')."""
+    from . import intake_exp as E
+    with _tap_fixtures() as paths:
+        got = E.part_snap_direction(paths)
+    assert got["assignments_differ"] == 0 and got["junction_rules_differ"] == 0 and got["same_origin"], got
+    assert got["flow_sign_flipped_on"] == got["flipped_with_flow"] > 0, got
+    _same_as_16b(got, "direction")
+    return {k: got[k] for k in ("taps", "pipes_flipped", "flipped_with_flow", "flow_sign_flipped_on", "assignments_differ")}
+
+
+@check("task16b")
+def tap_snapping_refuses_schematic():
+    """Net3 (a schematic drawing) with taps in x and y and in latitude and longitude, and Net3 without coordinates,
+    are refused with 'Use junction IDs instead'; no accuracy is computed on Net3.  Equals the committed record (part
+    'schematic')."""
+    from . import intake_exp as E
+    with _tap_fixtures() as paths:
+        got = E.part_snap_schematic(paths)
+    assert len(got) == 3 and all(v["refused"] and v["says_use_junction_ids"] for v in got.values()), got
+    _same_as_16b(got, "schematic")
+    return {"refused_with_use_junction_ids": sorted(got)}
+
+
+@check("task16b")
+def tap_coordinates_review_cases():
+    """The review of task 16b, each case a fixture (part 'review'), and the coordinates template's suggestion read
+    back through load_log as a tap map by ID (part 'template'; the template is a fixture only, not shipped in
+    docs/templates).  Which pair of columns places the taps (latitude and longitude left blank, both pairs and no
+    control taps: x and y; both pairs with control taps: latitude and longitude, or x and y when chosen, the same
+    junctions); '1,197' in x or y not settled by the column is not used, with its reason, and settled by plain values
+    of 1,000 or more it is 1197; a latitude with the letter W is not used, with its reason; swapped latitude and
+    longitude columns are refused as swapped; a tap listed again elsewhere warns, and with two junctions is refused; a
+    position at x = 1e200 is not used and raises no overflow warning; a tap 1 m from the 24 in main is flagged; a
+    mapping that names a missing column is refused; a junction column known only through a mapping makes the map 'id',
+    and unmapped it is named in a warning; a model drawn in degrees is refused (no traceback), one drawn in miles gets
+    1609.344 m per unit and the same junctions as in metres, two nodes drawn at 0,0 leave their 8 pipes out and no
+    tap on them, and a model drawn in part warns.  The final verification's cases: '1.197' in a file of decimal
+    commas is not used, with its reason, and settled by '1.503,5' it is 1197; longitudes written from 0 to 360 give
+    the template's junctions; control taps along one street flag the taps far across it, and the control tap the fit
+    cannot be made without is not flagged; one node at -3.4e38 or at nan leaves every tap's suggestion as on the clean
+    drawing, with a warning naming it; drawings in degrees with latitude as x, or with one node at 9999,9999, are
+    refused.  Equals the committed record."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _tap_fixtures() as paths:
+        got = E.part_review_16b(paths)
+        tpl = E.part_template(paths)
+    c = lambda n: got[n]
+    assert c("taps_both_pairs_latlon_blank.csv")["kind"] == "xy" and len(c("taps_both_pairs_latlon_blank.csv")["rows"]) == 3
+    assert c("taps_both_pairs_no_controls.csv")["kind"] == "xy"
+    bp = c("taps_both_pairs_controls.csv")
+    assert bp["guessed"]["kind"] == "latlon" and bp["x_and_y_chosen"]["kind"] == "xy" and bp["same_junctions"], bp
+    ta = c("taps_thousands_ambiguous.csv")
+    assert [d["tap_id"] for d in ta["not_used"]] == ["T2", "T3"] and all("reads two ways" in d["reason"] for d in ta["not_used"]), ta
+    ts = {r["tap_id"]: r["junction_id"] for r in c("taps_thousands_settled.csv")["rows"]}
+    want_t2 = {r["tap_id"]: r["junction_id"] for r in c("taps_both_pairs_latlon_blank.csv")["rows"]}["T2"]
+    assert ts["T2"] == want_t2, (ts, want_t2)
+    ls = c("taps_letters_swapped.csv")
+    assert any(d["tap_id"] == "T1" and "has the letter W" in d["reason"] for d in ls["not_used"]), ls["not_used"]
+    assert c("taps_latlon_swapped.csv")["refused"] and "look swapped" in c("taps_latlon_swapped.csv")["message"]
+    dp = c("taps_duplicate_positions.csv")
+    assert any("listed again with another position" in w for w in dp["warnings"]), dp
+    assert c("taps_duplicate_junctions.csv")["refused"] and "two different junctions" in c("taps_duplicate_junctions.csv")["message"]
+    ab = c("taps_absurd.csv")
+    assert ab["runtime_warnings"] == 0 and any(d["tap_id"] == "T1" and "not near the model" in d["reason"]
+                                                for d in ab["not_used"]), ab
+    bm = {r["tap_id"]: r for r in c("taps_beside_main.csv")["rows"]}
+    assert "a main of 16 in or more is 1.0 m away" in bm["T1"]["flags"] and bm["T2"]["pipe"].startswith("TM"), bm
+    assert c("taps_mapping_missing.csv")["refused"] and "no column 'node ref'" in c("taps_mapping_missing.csv")["message"]
+    jh = c("taps_junction_header_unknown.csv")
+    assert jh["kind_guessed"] == "coordinates" and jh["kind_with_mapping"] == "id", jh
+    assert jh["read_by_id_with_mapping"] == {"T1": "J0101", "T2": "J0909"}, jh
+    assert any("'EPANET_Name' holds junction IDs" in w for w in jh["by_coordinates"]["warnings"]), jh
+    m = got["models"]
+    deg = m["urban_grid_degrees.inp"]
+    assert deg["refused"] and "degrees" in deg["message"] and deg["suggest_tap_map"]["refused"], deg
+    mi = m["urban_grid_miles.inp"]
+    assert abs(mi["metres_per_unit"] / 1609.344 - 1) < 1e-4 and mi["taps_5m"]["same_junction_as_the_metres_drawing"] == 1.0, mi
+    assert abs(mi["metres_per_unit_as_first_built"] / 1609.344 - 1) > 0.01, mi                 # the rounded median
+    ph = m["urban_grid_placeholders.inp"]
+    assert len(ph["left_out"]) == 8 and ph["taps_5m"]["put_on_a_pipe_left_out"] == 0 and ph["warnings"], ph
+    assert any(w.startswith("Only ") for w in m["urban_grid_part_drawn.inp"]["warnings"]), m["urban_grid_part_drawn.inp"]
+    assert tpl["checked"] and tpl["accepted_rows_through_load_log"] == 32 and not tpl["not_used"], tpl
+    fin = got["final"]
+    dt = fin["taps_dot_thousands.csv"]
+    assert [r["tap_id"] for r in dt["rows"]] == ["T1"] and [d["tap_id"] for d in dt["not_used"]] == ["T2", "T3"], dt
+    assert all("reads two ways ('1." in d["reason"] and "decimal point" in d["reason"] for d in dt["not_used"]), dt
+    ds = {r["tap_id"]: r["junction_id"] for r in fin["taps_dot_thousands_settled.csv"]["rows"]}
+    clean = {t: j for t, j, _ in fin["models"]["clean drawing"]["rows"]}
+    assert ds["T2"] == clean["T2"] and ds["T3"] == clean["T3"], (ds, clean)
+    lz = fin["taps_lon_0_to_360.csv"]
+    assert lz["same_junctions_as_the_template"] and any("written from 0 to 360" in x for x in lz["notes"]), lz
+    sc = {r["tap_id"]: r["flags"] for r in fin["taps_controls_along_one_street.csv"]["rows"]}
+    assert all("the fit is uncertain here" in sc[t] for t in ("T2", "T3")) and "uncertain" not in sc["T1"], sc
+    assert "cannot be measured" in sc["C4"] and not any("over 10 m" in v for v in sc.values()), sc
+    for mname in FX.URBAN_SENTINELS:
+        mm = fin["models"][mname]
+        assert mm["same_rows_as_the_clean_drawing"] and any("J0505" in w for w in mm["warnings"]), mm
+    for mname in ("urban_grid_degrees_lat_as_x.inp", "urban_grid_degrees_placeholder.inp"):
+        assert fin["models"][mname]["refused"] and "degrees" in fin["models"][mname]["message"], fin["models"][mname]
+    _same_as_16b(got, "review")
+    _same_as_16b(tpl, "template")
+    return {"cases": len(got) - 2, "models": sorted(m), "template_rows_through_load_log": tpl["accepted_rows_through_load_log"],
+            "miles_metres_per_unit": mi["metres_per_unit"], "placeholder_pipes_left_out": len(ph["left_out"]),
+            "final_cases": len(fin) - 2, "final_models": sorted(fin["models"])}
+
+
 # ----------------------------------------------------------------------------- runner
 def _counts(rs: list) -> dict:
     return {"all_pass": all(r["pass"] is not False for r in rs),
