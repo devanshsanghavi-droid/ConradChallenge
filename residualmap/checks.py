@@ -1,6 +1,6 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: groups task15, task15b, task16, task16b, task20 and task16c, files built by
+and access (task 15 on: groups task15, task15b, task16, task16b, task20, task16c and task17, files built by
 residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
@@ -9,7 +9,9 @@ residualmap/fixtures.py).
                                             # 102 after task 16 and its review, 101 in the committed report;
                                             # 103 after its final verification, 102 in the report; 109 after
                                             # task 16b; 114 after task 20, 113 in the report; 120 after task
-                                            # 16c, 119 in the report; each run's time is in
+                                            # 16c, 119 in the report; 133 after task 17 and
+                                            # its final verification, 132 in the report;
+                                            # each run's time is in
                                             # outputs/chem/checks_run.json)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 50 s after task 16)
@@ -2499,7 +2501,8 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "residualmap/cloud.py", "hosted/streamlit_app.py", "hosted/.streamlit/config.toml",       # task 20
              "docs/deploy_streamlit_cloud.md", "docs/privacy.md", "requirements.txt",
              "docs/templates/inlet_residuals_template.csv",                                         # task 16c
-             "outputs/intake/zone_extract_Net3.json")     # its review: the names check covers it before it is committed
+             "outputs/intake/zone_extract_Net3.json",     # its review: the names check covers it before it is committed
+             "residualmap/gis_read.py", "residualmap/topology.py", "outputs/intake/gis_roundtrip.json")   # task 17
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -4547,7 +4550,8 @@ print("PAGE_JSON " + json.dumps(res))
 @check("task16", quick=False)
 def get_started_page_runs():
     """Headless AppTest of pages/1_Get_started.py (PYTHONPATH set): every software choice of step 1 renders its own
-    section of docs/how_to_export_your_model.md (12 choices; the GIS and CAD ones marked 'coming'); step 2 has one
+    section of docs/how_to_export_your_model.md (12 choices; the CAD ones marked 'coming', and since task 17 not the
+    GIS ones, whose reader is built); step 2 has one
     download button per template (the four CSVs and the Excel grab log, written on the fly by openpyxl); every template
     parses (the grab logs with load_log and the tap map template, the tap map as load_log's tap map, the plant log with
     load_plant, the workbook through the same reader: part 'templates' of the committed record); step 3, 'Check a
@@ -4588,7 +4592,8 @@ def get_started_page_runs():
     assert list(choices) == [s for s in sections if s != "Your grab samples"] and len(choices) == 12, list(choices)
     assert len(set(choices.values())) == len(choices), "two choices show the same steps"
     coming = [c for c in choices if "coming" in c]
-    assert len(coming) == 5 and all(any(w in c for w in ("AutoCAD", "MicroStation", "ArcGIS", "QGIS", "Google")) for c in coming)
+    # task 17: the GIS sections (ArcGIS, QGIS, Google Earth) are read now, so only the CAD ones are 'coming'
+    assert len(coming) == 2 and all(any(w in c for w in ("AutoCAD", "MicroStation")) for c in coming), coming
     assert len(res["downloads"]) == 5, res["downloads"]
     xlsx = [f for f in res["files"] if f and f.endswith(".xlsx")]
     assert xlsx and sorted(f for f in res["files"] if f) == sorted(
@@ -5054,11 +5059,16 @@ def tap_coordinates_review_cases():
 
 # ----------------------------------------------------------------------------- task 20: a no-install route (hosted demo)
 HOSTED_START = os.path.join(REPO, "hosted", "streamlit_app.py")
+CLOUD_PAGE_LIMIT_S = 30.0     # the hosted demo's page, uploading a GIS layer and building it, AppTest's run included
 CLOUD_LIMIT_S = 5.0          # a model over the cloud's limits is refused within this many seconds (it took about 32 s)
 CLOUD_LIMIT_APP_S = 15.0     # ... and the whole page run that refuses it, in AppTest
 GET_STARTED_BEFORE_TASK20 = ("Three steps: export the network from the software that holds it, put your grab samples in a "
                              "log ResidualMap reads, and check any file before you use it on the main page. Everything "
                              "runs on this laptop.")
+# task 17's review: the local intro names the page's fourth step (a skeleton from a GIS layer) before its last sentence
+GET_STARTED_AFTER_TASK17 = GET_STARTED_BEFORE_TASK20.replace(
+    " Everything runs on this laptop.", " A fourth step, for a system with no hydraulic model, builds a skeleton model "
+                                        "from a GIS layer of its water mains. Everything runs on this laptop.")
 
 
 @check("task20")
@@ -5071,7 +5081,8 @@ def mode_detection_fails_safe():
     junction over, not at the limit; the session cache keeps at most cloud.SESSION_KEEP results per kind.  What the
     mode changes in simulate.py, measured: nominal_scenario('Net1') in local mode writes temp.inp, temp.rpt and
     temp.bin to its working directory as it always has, and in cloud mode writes nothing there, with the same results.
-    The local Get started intro is the text before task 20, and no cloud text says the laptop.
+    The local Get started intro is the text before task 20, with the sentence on the fourth step that the review of
+    task 17 added, and no cloud text says the laptop.
     The review of task 20: the intake's limits (cloud.intake_limits, importers.prepare_inp) refuse a 32,400-junction
     grid model (fixtures.cloud_grid_inp(180), in a zip of about 1 MB, under the 5 MB file limit) by its [JUNCTIONS]
     lines before WNTR parses it, as a file and as a zip, within CLOUD_LIMIT_S seconds each and with nothing left in
@@ -5119,7 +5130,7 @@ def mode_detection_fails_safe():
     assert C.session_cached(store, "k", (C.SESSION_KEEP + 1,), lambda v: calls.append(v), 0) == 2 * (C.SESSION_KEEP + 1)
     kept = sorted(k[1][0] for k in store["_residualmap_session_results"])
     assert len(calls) == C.SESSION_KEEP + 2 and kept == list(range(2, C.SESSION_KEEP + 2)), (calls, kept)
-    assert C.get_started_intro(False, True) == GET_STARTED_BEFORE_TASK20
+    assert C.get_started_intro(False, True) == GET_STARTED_AFTER_TASK17      # the text before task 20, plus step 4
     texts = [C.notice(False), C.notice(True), C.get_started_intro(True, False), C.get_started_intro(True, True),
              C.footer(False), C.footer(True), C.CHECK_OFF, C.SAMPLES_OFF, C.REDUCED_TRUTH, C.LINK_NO_CHECK,
              C.DEMO_HELP_NO_UPLOADS, C.ACCOUNTS_FOR_NOTE, C.too_big(mb + 1, unpacked=True)] + [g[2] for g in C.GUIDE_CLOUD]
@@ -5762,14 +5773,17 @@ def cloud_mode_uploads_leave_no_files():
     assert k4["errors"] == [C.too_many_junctions(959)] and k4["flagged"] is None, k4["errors"]
     assert big["errors"] == [C.too_big(5_000_009)] and big["flagged"] is None, big["errors"]
     pg = res["page"]
-    assert pg["uploaders"] == ["Check a file"] and pg["readiness"] and pg["info"][:1] == [C.notice(True)], pg
+    # task 17: with uploads allowed, the page's step 4 adds its GIS uploader after 'Check a file', with the same limit
+    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains"] and pg["readiness"], pg
+    assert pg["info"][:1] == [C.notice(True)], pg
     from . import fixtures as FX
     gz, pz = res["grid180_zip"], res["padded_zip"]
     assert gz["errors"] == [C.too_many_junctions(180 * 180)] and gz["flagged"] is None, gz["errors"]
     assert gz["seconds"] < CLOUD_LIMIT_APP_S and C.too_big(gz["bytes"]) is None, gz["seconds"]
     unpacked = len(FX.cloud_grid_inp(180, pad_bytes=5_000_000))
     assert pz["errors"] == [C.too_big(unpacked, unpacked=True)] and C.too_big(pz["bytes"]) is None, pz["errors"]
-    assert res["model_uploader_mb"] == res["page_uploader_mb"] == [C.UPLOAD_MB], res["model_uploader_mb"]
+    assert res["model_uploader_mb"] == [C.UPLOAD_MB] and res["page_uploader_mb"] == [C.UPLOAD_MB] * 2, (
+        res["model_uploader_mb"], res["page_uploader_mb"])
     assert res["log_uploaders"] == [["Grab log (CSV or Excel)", C.UPLOAD_MB], ["Tap map (CSV)", C.UPLOAD_MB]]
     for k in ("big_log", "big_tap_map"):
         v = res[k]
@@ -6036,6 +6050,14 @@ def holdout_sites_fixed_route():
                      "validation_Net3_sites3.json"], files
     assert cli["mean"]["all"] == ref["mean"]["all"] and HELD_OUT_SITES in cli["mean"], cli["mean"]
     assert math.isnan(cli["mean"][HELD_OUT_SITES]["rmse_persistence"]), cli["mean"][HELD_OUT_SITES]
+    # task 17's fix of task 16c's leftovers: on a real fixed route (files), --holdout-sites at least the route's sites
+    # ended in a traceback after the first held-out month's fit; it is now a plain message before any fit
+    with _zone_fixtures() as fx, tempfile.TemporaryDirectory(prefix="rm_t16c_pilot_") as d:
+        r10 = subprocess.run([PY, "-m", "residualmap.pilot", "--inp", "Net3", "--samples", fx["fixed_route_log.csv"],
+                              "--taps", fx["fixed_route_tap_map.csv"], "--holdout-sites", "10", "--out", d],
+                             cwd=os.getcwd(), capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+    last = r10.stderr.strip().splitlines()[-1] if r10.stderr.strip() else ""
+    assert r10.returncode != 0 and "Traceback" not in r10.stderr and "leaves no training sample" in last, r10.stderr[-1500:]
     m = got["mean"]
     return {"fixed_route": {"held_out_sites": {k: m[HELD_OUT_SITES][k] for k in ("n", "rmse", "coverage90",
                                                                                  "n_true_below", "found_below",
@@ -6046,7 +6068,7 @@ def holdout_sites_fixed_route():
             "flag_leaves_every_other_row": True, "committed_log_held_out_sites": cli["mean"][HELD_OUT_SITES],
             "group_fit_training_sizes": {"min": hos[0]["n_train_min"], "max": hos[0]["n_train_max"],
                                          "month": got["by_month"]["all"][0]["n_train"]},
-            "group_leaving_no_training_refused": True}
+            "group_leaving_no_training_refused": True, "pilot_fixed_route_k10_plain_message": True}
 
 
 @check("task16c")
@@ -6063,7 +6085,9 @@ def analyzer_is_boundary_not_data():
     used; read only below detection, it is refused; roles that mention an inlet but mark none ('not inlet') are read as
     taps, with a warning; a tap marked as an inlet at a junction is refused naming the tap and its role; a µg/L value
     with a thousands separator, a total chlorine column and a residual under a hundredth of the highest are refused.
-    Equals the committed record (part 'analyzer')."""
+    The review of task 17: an inlet file's second column that is only a unit ('mg/L', 'ppm') or names a residual
+    ('flow-paced residual') is read, as before task 17's fix of the leftovers, and one that names nothing ('value') is
+    refused, asking for residual_mgL.  Equals the committed record (part 'analyzer')."""
     from . import intake_exp as E
     with _zone_fixtures() as paths:
         got = E.part_zone_analyzer(paths)
@@ -6084,12 +6108,90 @@ def analyzer_is_boundary_not_data():
     assert nm["inlet_taps"] == 0 and nm["rows_fitted"] == nm["rows_in_log"] == 9 and "not inlet" in nm["warning"], nm
     assert "tap INL (role 'Zone inlet')" in rv["inlet_at_a_junction_refused"], rv["inlet_at_a_junction_refused"]
     assert all(rv["files_refused"].values()) and len(rv["ugl_file_notes"]) == 2, rv
+    left = _zone_leftover_cases()
     return {"inlet_readings": got["inlet_readings"], "inlet_rows_in_S": 0, "rows_in_S": got["rows_in_S"],
             "inlet_residual_mgL": got["inlet_residual_mgL"], "r_lake": got["ratios"]["Lake"],
             "refused": sorted(got["refused"]),
             "review_cases": {"inlet_outside_window_refused": True, "inlet_only_below_detection_refused": True,
                              "roles_marking_no_inlet_read_as_taps": len(nm["roles"]),
-                             "inlet_at_a_junction_refused": True, "inlet_files_refused": sorted(rv["files_refused"])}}
+                             "inlet_at_a_junction_refused": True, "inlet_files_refused": sorted(rv["files_refused"])},
+            "final_verification_cases": left}
+
+
+def _zone_leftover_cases() -> dict:
+    """Task 16c's final verification, fixed in task 17 (each case a fixture of residualmap/fixtures.py): (1) a tap the
+    tap map marks as a zone inlet with an empty junction cell is refused, naming the tap, where it was dropped as an
+    inlet without a word; (2) a µg/L grab log's inlet-tap values of 1,000 µg/L or more set the inlet's residual and are
+    counted in the µg/L note, and written with a thousands separator ('1,180', read as 1.18 µg/L) they are refused as a
+    unit slip; (3) an inlet residuals file whose second column is pH, NH2Cl or a monochloramine residual is refused,
+    naming the column, where any second column was read as free chlorine; (4) an inlet tap read once a day with a date
+    and no time keeps its readings (an inlet's median needs no hour), a date that cannot be read is listed as the
+    inlet's, and an inlet with only unreadable dates is refused saying so, never 'the grab log has no reading of
+    it'."""
+    from . import fixtures as FX
+    from .importers import LogRefused, inlet_tap_residuals, read_grab_log, read_inlet_residuals
+    out = {}
+    with _zone_fixtures() as fx:
+        rd = lambda n: open(fx[n], "rb").read()
+
+        def log(name, taps="zone_window_tap_map.csv"):
+            return read_grab_log(rd(name), name, rd(taps), taps)
+
+        try:
+            log("zone_inlet_window_log.csv", "zone_tap_map_inlet_no_node.csv")
+            raise AssertionError("an inlet tap with no node ID was taken")
+        except LogRefused as e:
+            assert "marks tap INL (role 'inlet') as a zone inlet but gives no node ID" in str(e), e
+        out["inlet_tap_with_no_node_refused"] = True
+        g = log("zone_inlet_ugl_log.csv")
+        res = g.inlet_residuals()
+        n_rows = 2 * 3 + len(FX.ZONE_UGL_INLET)
+        assert res["Lake"]["residual_mgL"] == sorted(FX.ZONE_UGL_INLET)[1] / 1000, res
+        assert any(w.startswith(f"{n_rows} readings are in µg/L") for w in g.warnings), g.warnings
+        out["ugl_inlet_tap"] = {"residual_mgL": res["Lake"]["residual_mgL"], "readings_in_ugl_note": n_rows}
+        try:
+            log("zone_inlet_ugl_thousands_log.csv")
+            raise AssertionError("a thousands separator in µg/L inlet readings was taken")
+        except LogRefused as e:
+            assert "zone inlet" in str(e) and "under 10 µg/L" in str(e) and "'1,180'" in str(e), e
+        out["ugl_inlet_thousands_refused"] = True
+        refused = {}
+        for n in ("zone_inlets_ph.csv", "zone_inlets_nh2cl.csv", "zone_inlets_mono_residual.csv"):
+            try:
+                read_inlet_residuals(rd(n), n)
+                refused[n] = False
+            except LogRefused as e:
+                refused[n] = "does not hold chlorine residuals" in str(e)
+        assert all(refused.values()), refused
+        out["inlet_files_refused"] = sorted(refused)
+        # the review of task 17: a second column that is only a unit, or names a residual, is read as before the fix;
+        # one that names nothing is refused, asking for residual_mgL
+        heads = {}
+        for h in ("mg/L", "ppm", "flow-paced residual", "value"):
+            try:
+                heads[h] = sorted(read_inlet_residuals(f"inlet_node_id,{h}\nRiver,1.20\nLake,0.60\n".encode(),
+                                                       "inlet_header.csv")[0])
+            except LogRefused as e:
+                heads[h] = "refused" if "does not say it holds chlorine residuals" in str(e) else str(e)
+        assert heads == {"mg/L": ["Lake", "River"], "ppm": ["Lake", "River"], "flow-paced residual": ["Lake", "River"],
+                         "value": "refused"}, heads
+        out["inlet_headers_after_review"] = heads
+        g = log("zone_inlet_daily_log.csv")
+        res = g.inlet_residuals()
+        want = sorted(FX.ZONE_DAILY_INLET_MGL)[len(FX.ZONE_DAILY_INLET_MGL) // 2]
+        dd = [d for d in g.dropped if d["reason"] == "zone inlet Lake: date not read"]
+        assert res["Lake"]["readings"] == len(FX.ZONE_DAILY_INLET_MGL) and res["Lake"]["residual_mgL"] == want, res
+        assert len(dd) == 1 and "the grab log has none" not in " ".join(g.notes), (dd, g.notes)
+        out["daily_inlet_values"] = {"kept": res["Lake"]["readings"], "residual_mgL": want, "date_not_read": len(dd)}
+        g = log("zone_inlet_bad_dates_log.csv")
+        try:
+            inlet_tap_residuals(g, ["River", "Lake"])
+            raise AssertionError("an inlet with only unreadable dates was taken")
+        except LogRefused as e:
+            assert "cannot be read" in str(e) and "date not read" in str(e) and "no reading of it" not in str(e), e
+        assert "the grab log has none" not in " ".join(g.notes), g.notes
+        out["inlet_with_unreadable_dates_refused_saying_why"] = True
+    return out
 
 
 @check("task16c", quick=False)
@@ -6152,6 +6254,13 @@ def pilot_inlet_residuals():
     assert rc0 == 0 and rc1 == 0 and rc2 == 0, (t0[-1500:], t1[-1500:], t2[-1500:])
     assert "Inlet residuals: River 1.20 mg/L, Lake 0.60 mg/L." in t1 and "taking the highest inlet residual, 1.2 mg/L" in t1
     assert "Water age starts at 0 at every inlet" in t1 and "Inlet residuals" not in t0, t1[-2000:]
+    # task 17's fix of task 16c's leftovers: the pilot's readiness warning names the pilot's way to give inlet
+    # residuals, not the app's checkbox; and the CHANGELOG's per-inlet bullet says over which months each takes the median
+    from .importers import INLET_APP_ROUTE, INLET_PILOT_ROUTE
+    assert INLET_PILOT_ROUTE in _norm_ws(t0) and INLET_APP_ROUTE not in _norm_ws(t0), t0[:3000]
+    ch = open(os.path.join(REPO, "CHANGELOG.md"), encoding="utf-8").read()
+    e16c = ch[ch.index("## 2026-10-20, iteration 5, task 16c"):ch.index("## 2026-10-19, iteration 5, task 20")]
+    assert "over the grab log's window in the app, over the whole log in the pilot" in e16c
     want = {name_of({"River": 1.0, "Lake": 0.5}), name_of({"River": 1.0, "Lake": round(1.14 / 1.2, 6)})}
     assert set(built) == want == set(built_before_refusals), (built, want)
     assert after_refusals == built_now, (after_refusals, built_now)
@@ -6172,7 +6281,7 @@ def pilot_inlet_residuals():
                held_out_samples={"without_inlets": v0["mean"]["all"]["n"], "inlet_tap": v2["mean"]["all"]["n"]},
                inlet_tap_readings=int(len(g_tap.inlets)),
                samples_in_log={"without_inlets": int(len(g_all.frame)), "inlet_tap": int(len(g_tap.frame))},
-               refused=sorted(msg))
+               refused=sorted(msg), pilot_names_its_own_inlet_route=True, changelog_says_whole_log_in_the_pilot=True)
     return out
 
 
@@ -6337,6 +6446,636 @@ def app_inlet_residuals():
             "dose_input_drawn_at_stops": ["inlet file missing an inlet", "inlet tap outside the window",
                                           "cloud file over the size limit"],
             "inlet_outside_window_refused": True, "chloramine_offers_no_inlet_upload": True}
+
+
+# ----------------------------------------------------------------------------- iteration 5, task 17: the GIS importer
+INTAKE_RECORD_17 = os.path.join(REPO, "outputs", "intake", "gis_roundtrip.json")
+
+
+def _record_17(part: str) -> dict:
+    """One part of the committed task-17 record (python -m residualmap.intake_exp gis)."""
+    with open(INTAKE_RECORD_17) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_17(got: dict, part: str) -> dict:
+    want = _record_17(part)
+    diff = _json_diff(json.loads(json.dumps(_jsonable(got))), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _gis_fixtures(names=None):
+    """The task-17 fixtures built into a temporary folder."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t17_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), names or FX.GIS_FIXTURES)
+
+
+@check("task17", quick=False)
+def gis_utility_style_rebuild():
+    """The pre-registered bar (plan task 17): ky4's 1,156 pipes as a utility-style mains layer (lines only, PIPEDIAM in
+    three styles, every line end moved by up to +-0.3 ft, 19 ends 4 ft short, 43 pairs drawn as one line through a
+    tee) in four fixtures (a shapefile written by the fixtures' own writer and one written by pyshp with 3 null shapes
+    and 1 deleted record, both read by pyshp; a GeoPackage with Z written by the fixtures' WKB writer; GeoJSON in
+    longitude and latitude from the Lambert conformal conic inverse) rebuilt at the 6 ft default, scored by
+    endpoint-pair identity: at least 1,151 pipes, one connected part and 99% of diameters on every fixture.  The 1 and
+    3 ft diagnostics are recorded.  The pyshp fixture's null shapes and deleted record are left out (its extra pipes
+    are the same as the other fixtures').  Converter self-consistency on a public model, equal to the committed record
+    (part 'rebuild')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _gis_fixtures(FX.GIS_SCORED) as paths:
+        got = E.part_gis_rebuild(paths)
+    _same_as_17(got, "rebuild")
+    bar = E.GIS_BAR
+    for name, v in got["fixtures"].items():
+        s = v["by_tolerance_ft"]["6"]
+        assert s["pipes_rebuilt"] >= bar["pipes_at_least"] and s["components"] == 1, (name, s)
+        assert s["diameter_share"] >= bar["diameter_share_at_least"] and s["of_pipes"] == 1156, (name, s)
+        assert v["bar_met"], name
+    py, sh = got["fixtures"]["ky4_mains_pyshp.zip"], got["fixtures"]["ky4_mains_stdlib_shp.zip"]
+    assert py["dropped"] == {"null_shapes": 3, "deleted_records": 1}, py["dropped"]
+    assert py["by_tolerance_ft"]["6"]["extra_pipes"] == sh["by_tolerance_ft"]["6"]["extra_pipes"], (py, sh)
+    assert got["bar_met_on_every_fixture"]
+    return {n: {ft: {k: s[k] for k in ("pipes_rebuilt", "components", "diameter_share", "extra_pipes")}
+                for ft, s in v["by_tolerance_ft"].items()} for n, v in got["fixtures"].items()}
+
+
+@check("task17")
+def gis_kml_handdrawn():
+    """ky4 drawn by hand in Google Earth (ky4_googleearth.kmz: every line end about 5 m off, radial RMS) is read as
+    longitude and latitude, joined at the 10 m default for KML, with the network's counts at 5, 10, 15 and 20 m and
+    the diagnostic table at half, one and twice the default.  Recorded, no bar; equal to the committed record (part
+    'kml')."""
+    from . import intake_exp as E
+    with _gis_fixtures(["ky4_googleearth.kmz"]) as paths:
+        got = E.part_gis_kml(paths)
+    _same_as_17(got, "kml")
+    assert got["default_tolerance_m"] == 10.0 and sorted(got["by_tolerance_m"], key=float) == ["5", "10", "15", "20"]
+    assert [round(r["tolerance_m"], 6) for r in got["diagnostic_table_at_default"]] == [5.0, 10.0, 20.0]
+    return {t: {k: s[k] for k in ("pipes_rebuilt", "components", "dead_ends")} for t, s in got["by_tolerance_m"].items()}
+
+
+@check("task17")
+def gis_spec_quirks():
+    """The file-format quirks of critique 12 and the CRS and unit quirks of critique 14: a MultiLineString with two
+    disjoint parts gives two pipes and no bridge (GeoPackage and shapefile); a null shape and a deleted DBF record in
+    the middle leave every other pipe's diameter aligned; a .cpg of UTF-8 decodes accented street names; LineString Z,
+    M and ZM read in 2D; a State Plane .prj gives US survey feet (its last top-level UNIT, not the GEOGCS's degrees); a
+    GeoPackage whose coordinate system is 'undefined' asks for the unit and builds once it is given; a Shape_Leng field
+    3.28 times the geometry is flagged; GeoJSON at 4 decimals of a degree is warned.  The review of task 17's quirks:
+    Web Mercator (a crs member EPSG:3857, and ArcGIS's .prj for it) is converted to longitude and latitude, so a main
+    1,000 m long on the ground at 45 degrees north is 1,000 m, not the 1,412 m of its Web Mercator metres; Esri JSON
+    whose spatialReference is the code alone is read; GeoJSON lines with a position that cannot be read are left out
+    with a warning; a shapefile zip with a preview .kml is the shapefile, with a note; two shapefiles of one name in
+    two folders keep their folders in their layer names; KML paths numbered by their author give no size (the size is
+    asked), and an attribute table in a description gives its DIAMETER and INSTALLYEAR fields; an install-year field
+    with no year says so.  Equal to the committed record (part 'quirks')."""
+    from . import intake_exp as E
+    from .topology import FT_US
+    with _gis_fixtures() as paths:
+        got = E.part_gis_quirks(paths)
+    _same_as_17(got, "quirks")
+    for n in ("mercator_3857.geojson", "mercator_esri_prj.zip"):
+        m = got[n]
+        assert m["crs_kind"] == "geographic" and m["from_web_mercator"] and m["max_rel_error"] < 1e-5, m
+        assert all(abs(a / w - 2 ** 0.5) < 0.01 for a, w in zip(m["as_mercator_metres_m"], m["ground_lengths_m"])), m
+    assert got["esri_code_only.json"]["epsg"] == 2263 and got["esri_code_only.json"]["pipes"] == 24
+    assert got["geojson_bad_positions.geojson"]["lines_read"] == 22 and got["geojson_bad_positions.geojson"]["warned"]
+    pk = got["shp_with_preview_kml.zip"]
+    assert pk["sniffed"] == "shapefile_zip" and pk["pipes"] == 24 and pk["notes"], pk
+    assert [x[0] for x in got["two_folders_same_name.zip"]["layers"]] == ["north/mains", "south/mains"]
+    kn, kt = got["kml_numbered_paths.kml"], got["kml_attribute_table.kml"]
+    assert kn["diameter_field"] is None and kn["questions"] == ["default_diameter_in"], kn
+    assert kt["diameter_field"] == "DIAMETER" and kt["sizes_in"] == [8.0] and kt["year_field"] == "INSTALLYEAR", kt
+    assert got["year_all_null.geojson"]["row"][0][1].startswith("no year could be read"), got["year_all_null.geojson"]
+    for n in ("multipart_two_parts.gpkg", "multipart_two_parts.zip"):
+        assert got[n]["pipes"] == 2 and not got[n]["bridge"] and got[n]["components"] == 2, got[n]
+    for n in ("null_shape_mid.zip", "deleted_dbf_record.zip"):
+        assert got[n]["aligned"] and got[n]["pipes"] == 6, got[n]
+    assert got["null_shape_mid.zip"]["dropped"]["null_shapes"] == 1
+    assert got["deleted_dbf_record.zip"]["dropped"]["deleted_records"] == 1
+    assert got["cpg_utf8.zip"]["decoded"] and got["wkb_z_m_zm.gpkg"]["read_in_2d"]
+    assert got["prj_stateplane_ftus.zip"]["unit"] == "us_ft" and got["prj_stateplane_ftus.zip"]["unit_m"] == FT_US
+    u = got["gpkg_srs_undefined.gpkg"]
+    assert u["questions"] == ["unit"] and not u["built"] and u["with_unit_ft"]["built"], u
+    assert not got["shape_length_mismatch.zip"]["agrees"] and abs(got["shape_length_mismatch.zip"]["median_ratio"] - 3.28) < 0.01
+    assert got["quantized_4dp.geojson"]["decimals"] == 4 and got["quantized_4dp.geojson"]["warned"]
+    return {n: True for n in got}
+
+
+@check("task17")
+def gis_snapping_invariance():
+    """ky4's mains layer translated by 5e6 ft and rotated 37 degrees gives the same topology (every pipe between the
+    same line ends); the layer in metres and in feet gives the same SI model within 1e-9 relative; the skeleton written
+    in GPM and feet re-reads (WNTR) with lengths and diameters within 1e-9 relative.  Equal to the committed record
+    (part 'invariance')."""
+    from . import intake_exp as E
+    got = E.part_gis_invariance()
+    _same_as_17(got, "invariance")
+    assert got["translated_rotated_same_topology"] and got["metres_same_topology"], got
+    assert got["metres_vs_feet_max_rel_length"] <= 1e-9 and got["metres_vs_feet_max_diameter_diff_in"] == 0.0, got
+    assert got["skeleton_units"] == "GPM" and got["skeleton_max_rel_length"] <= 1e-9, got
+    assert got["skeleton_max_rel_diameter"] <= 1e-9 and got["skeleton_pipes"] == got["pipes"], got
+    return {k: got[k] for k in ("translated_rotated_same_topology", "metres_same_topology",
+                                "metres_vs_feet_max_rel_length", "skeleton_max_rel_length", "skeleton_max_rel_diameter")}
+
+
+@check("task17")
+def gis_snapping_chain():
+    """chain_cluster.geojson at the 6 ft default: a 5 ft plus 5 ft chain of three ends joins into one node, flagged as
+    wider than the tolerance (10 ft); a valve cluster of five ends 4 ft apart (16 ft) and a pump manifold of four ends
+    5 ft apart (15 ft), each wider than twice the tolerance, are split, into nodes whose ends are within the tolerance
+    of each other, and flagged.  The review of task 17's tees and loops, each one connected part: a main with a vertex
+    every 10 ft and a branch ending 4 ft short, its foot 5 ft from a vertex, is cut at the foot, not at the vertex
+    6.4 ft from the branch end; an offset cross (two branches 4 ft short, their feet 5 ft apart) gets one cut both
+    branch ends are within 6 ft of; a loop main drawn as one closed line is cut in two through a new node, not dropped.
+    Equal to the committed record (part 'chain')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _gis_fixtures(["chain_cluster.geojson", *FX.TEE_CASES]) as paths:
+        got = E.part_gis_chain(paths)
+    _same_as_17(got, "chain")
+    assert got["nodes_flagged_wide"] == 1 and got["nodes_split"] == 2, got
+    assert got["nodes_per_group"] == {"chain": 1, "pump_manifold": 2, "valve_cluster": 3}, got["nodes_per_group"]
+    assert all(s["span_m"] > 2 * 6 * 0.3048 for s in got["split_detail"]), got["split_detail"]
+    t = got["tees_and_loops"]
+    assert all(v["components"] == 1 and v["dropped_pieces"] == 0 for v in t.values()), t
+    assert t["tee_dense_vertex_main.geojson"]["pipes"] == 3 and t["tee_dense_vertex_main.geojson"]["tees_split"] == 1
+    assert t["tee_offset_cross.geojson"]["pipes"] == 4 and t["tee_offset_cross.geojson"]["tees_split"] == 1
+    assert t["loop_main_closed.geojson"]["loops_cut"] == 1 and t["loop_main_closed.geojson"]["pipes"] == 3
+    return {"flagged": got["nodes_flagged_wide"], "split": got["nodes_split"], "nodes_per_group": got["nodes_per_group"],
+            "tees_and_loops_connected": sorted(t)}
+
+
+@check("task17")
+def gis_ids_deterministic():
+    """ky4_mains_shuffled.geojson (the longitude and latitude layer in another order) gives the same node IDs, the same
+    pipes (ID and both nodes) and the same skeleton .inp, byte for byte; ids_dirty.geojson's IDs with a space, a ';',
+    quotes and 40 characters are cleaned through the mapping table, an accented ID and a clean one are kept, and no ID
+    is longer than 31 bytes.  Equal to the committed record (part 'ids')."""
+    from . import intake_exp as E
+    with _gis_fixtures(["ky4_mains_lonlat.geojson", "ky4_mains_shuffled.geojson", "ids_dirty.geojson"]) as paths:
+        got = E.part_gis_ids(paths)
+    _same_as_17(got, "ids")
+    assert got["shuffled_same_node_ids"] and got["shuffled_same_pipes"] and got["inp_identical"], got
+    assert len(got["dirty_mapping"]) == 4 and "W-17" in got["dirty_model_ids"] and got["longest_id_bytes"] <= 31
+    return {"shuffled_identical": True, "nodes": got["nodes"], "pipes": got["pipes"],
+            "dirty_ids_mapped": len(got["dirty_mapping"])}
+
+
+@check("task17")
+def diameter_parsing():
+    """Every row of diameter_cases.csv gives its expected value and unit, or its flag (8", 8 in, 200 mm, DN150,
+    1965 8" CI gives 8, L=350' 8" gives 8, 12x8 RED a reducer, 8 & 6 two sizes, fractions, metres, a thousands
+    separator, bare numbers), and bare numbers are read by their range across a layer (inches, mm, metres, or asked).
+    Equal to the committed record (part 'diameters')."""
+    from . import intake_exp as E
+    with _gis_fixtures(["diameter_cases.csv"]) as paths:
+        got = E.part_gis_diameters(paths)
+    _same_as_17(got, "diameters")
+    assert got["right"] == got["cases"] and not got["wrong"] and all(b["ok"] for b in got["bare"]), got
+    return {"cases": got["cases"], "right": got["right"], "bare_ranges": len(got["bare"])}
+
+
+@check("task17")
+def gis_readers_refuse_cleanly():
+    """No traceback, a question or a plain message: a shapefile with no .prj asks for the coordinates' unit; a zipped
+    file geodatabase gets the export guidance; a layer of points only and an empty GeoPackage layer get plain messages.
+    The review of task 17's cases, each read as build_gis reads it and as the Get started page does (read_layers, then
+    build_from_layer), neither raising: a GeoPackage with a vertex of NaN, infinity and 1e300 builds its 24 good lines
+    and warns; one in longitude and latitude whose lines are all empty is refused in plain words; a longitude and
+    latitude grid of 1,740 lines with no .prj asks for the unit, offering degrees and saying its coordinates look like
+    them, is refused within CLOUD_LIMIT_S as crowded when read as feet (it took 15 s and 3.4 GB before), and builds
+    as one connected part in degrees; longitude and latitude labelled EPSG:3857 is refused as crowded; State Plane
+    feet labelled EPSG:4326 asks for the unit and builds in US survey feet; a Mercator that is not Web Mercator is
+    refused; a zip of 101 shapefiles is refused; Esri JSON over the feature cap is refused, as GeoJSON is; and a
+    GeoPackage whose layer of points is over the cap builds its mains, with a note.  Equal to the committed record
+    (part 'refusals')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    names = ["no_prj.zip", "utility_gdb.zip", "points_only.geojson", "empty_layer.gpkg"] + sorted(
+        {n for n, _, _ in E.REVIEW_REFUSAL_CASES})
+    with _gis_fixtures(names) as paths:
+        got = E.part_gis_refusals(paths)
+        t0 = time.time()
+        crowded = E._gis(open(paths["lonlat_no_prj.zip"], "rb").read(), "lonlat_no_prj.zip", unit="ft")
+        crowded_s = time.time() - t0
+    _same_as_17(got, "refusals")
+    assert not any(v["raised"] or v.get("page_path", {}).get("raised") for v in got.values()), got
+    assert got["no_prj.zip"]["questions"] == ["unit"] and not got["no_prj.zip"]["built"]
+    assert "export the water mains layer" in got["utility_gdb.zip"]["refusal"]
+    assert "not lines" in got["points_only.geojson"]["refusal"] and "empty" in got["empty_layer.gpkg"]["refusal"]
+    bv = got["bad_vertices.gpkg"]
+    assert bv["pipes"] == 24 and bv["page_path"]["built"] and any("no usable coordinates" in w for w in bv["warnings"])
+    assert "no geometry" in got["empty_lines_4326.gpkg"]["refusal"]
+    ll = got["lonlat_no_prj.zip"]
+    assert ll["questions"] == ["unit"] and "deg" in ll["question_options"][0] and "probably degrees" in ll["question_text"][0]
+    assert "crowded together" in got["lonlat_no_prj.zip|unit=ft"]["refusal"] and crowded_s < CLOUD_LIMIT_S, crowded_s
+    assert crowded.refusal == got["lonlat_no_prj.zip|unit=ft"]["refusal"]
+    assert got["lonlat_no_prj.zip|unit=deg"]["pipes"] == 1740 and got["lonlat_no_prj.zip|unit=deg"]["components"] == 1
+    assert "crowded together" in got["lonlat_as_3857.geojson"]["refusal"]
+    assert got["stateplane_as_4326.geojson"]["questions"] == ["unit"]
+    assert got["stateplane_as_4326.geojson|unit=us_ft"]["pipes"] == 112
+    assert "Mercator" in got["world_mercator.zip"]["refusal"] and "101 shapefiles" in got["many_shapefiles.zip"]["refusal"]
+    cap = FX.REVIEW_MAX_FEATURES
+    assert f"more than {cap}" in got[f"esri_over_limit.json|cap={cap}"]["refusal"]
+    mp = got[f"mains_and_many_points.gpkg|cap={cap}"]
+    assert mp["pipes"] == 24 and any(x.startswith("Not read") and "meters" in x for x in mp["notes"]), mp
+    return {n: ("asks" if v["questions"] else "built" if v["built"] else "refused in plain words")
+            for n, v in got.items()}
+
+
+@check("task17")
+def gis_valve_status():
+    """valves_normal_pos.geojson (four mains and seven valves): NORMAL_POS gives proposed closed_valve rows for the
+    valves marked CLOSED, Normally Closed, C and closed (two open, one blank), each at its node when one is within the
+    tolerance (one is not), for the operator to confirm; mains_and_valves.gpkg, the same as two layers of one
+    GeoPackage, gives the same rows from its valve layer.  Equal to the committed record (part 'valves')."""
+    from . import intake_exp as E
+    with _gis_fixtures(["valves_normal_pos.geojson", "mains_and_valves.gpkg"]) as paths:
+        got = E.part_gis_valves(paths)
+    _same_as_17(got, "valves")
+    assert [p["valve"] for p in got["proposed"]] == ["V2", "V3", "V4", "V7"], got
+    assert got["open"] == 2 and got["unread"] == 1 and [p["node"] is None for p in got["proposed"]] == [False] * 3 + [True]
+    sep = got["separate_layer"]
+    assert sep["valve_layer"] == "valves" and sep["line_layer"] == "mains" and sep["proposed"] == got["proposed"], sep
+    return {"proposed_closed": len(got["proposed"]), "status_field": got["status_field"],
+            "from_a_separate_valve_layer": len(sep["proposed"])}
+
+
+@check("task17", quick=False)
+def gis_wntr_schema_roundtrip():
+    """For WNTR users, converter self-consistency: Net3, Net2 and ky4 written in WNTR's GIS schema (one GeoJSON per
+    element, as our own writer emulates to_gis; never a file WNTR itself wrote) with WNTR's JSON rebuild through from_dict with 0.0 difference in pressure, flow,
+    tank head and water age (7 days) and chlorine (kb 0.40, kw 0.70, gamma 1), against each bundled file as WNTR reads
+    and writes it.  Negative control: without copying demand_pattern into pattern_name, Net3's chlorine moves by more
+    than 0.5 mg/L, so the test can fail.  Equal to the committed record (part 'wntr')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _gis_fixtures([f"wntr_schema_{n}.zip" for n in FX.WNTR_SCHEMA_NETS]) as paths:
+        got = E.part_gis_wntr(paths)
+    _same_as_17(got, "wntr")
+    for n, v in got["networks"].items():
+        assert all(x in (0.0, None) for x in v["max_abs_diff"].values()), (n, v)
+    neg = got["networks"]["Net3"]["without_pattern_workaround"]
+    assert neg["above_bar"] and neg["chlorine_max_abs_diff_mgL"] > E.NEGATIVE_BAR_MGL, neg
+    return {"exact": sorted(got["networks"]), "negative_control_mgL": neg["chlorine_max_abs_diff_mgL"]}
+
+
+@check("task17")
+def gis_external_file():
+    """A public open-data mains layer (external_mains_A) would be imported here, with no accuracy bar.  The lead's
+    decision for this iteration is that fixtures are generated locally and nothing is downloaded, so the file is not
+    on this machine and the check is skipped, and says so (part 'external' of the record)."""
+    got = _record_17("external")
+    assert got["skipped"]
+    raise SkipCheck("no external mains layer: fixtures are generated locally this iteration, nothing was downloaded")
+
+
+@check("task17")
+def gis_final_verification():
+    """Each issue the final verification of task 17 confirmed, as a fixture or a case (fixtures.FINAL_FIXTURES), each
+    read as build_gis reads it with the hosted demo's unpacked limit and as the Get started page does, neither
+    raising.  Time: a KMZ of about 5 KB that unpacks to a coordinates element of 4.9 MB of spaces, and ones of 1.2 MB
+    of escaped '<' and 4.9 MB of table rows never closed, each build within CLOUD_LIMIT_S (the first would have taken
+    about 3.5 h), and so do .prj and Esri JSON definitions of 'PROJCS["x",', a run of spaces, a comma and a run of
+    spaces (28 s for the zip of under 1 KB, cubic in the run), each asked for its unit; a document type declaration
+    after 200,001 blank lines or a comment of 200 KB is refused.  Layers: a GeoPackage and a zip whose service lines
+    (and, in the GeoPackage, hydrants declared GEOMETRY) are over the feature cap build their mains, naming the layers
+    left unread, and a layer chosen among those is refused in plain words.  Coordinates: World Mercator by its code
+    alone (a crs member, a wkid) is refused, its unit not asked; a grid written latitude first, with EPSG::4326 or no
+    crs, asks the axes' order, and swapped it measures the true lengths exactly (kept, 50.1 to 223.3 m against 173.5
+    to 222.0); longitude and latitude under a State Plane .prj or EPSG:2263 is refused as crowded with degrees named
+    and the unit offered (offer_unit), and builds in degrees.  Topology: in the verifier's sweep (2 to 5 branches 3 to
+    5.5 ft apart, ending 4 ft short of a straight main and of one with a vertex every 2 ft) every case is one connected
+    part, and so are the two fixtures of it; a loop main whose ends join only through a feed main's end is cut in two,
+    not dropped.  Fields: 'Line 3 in Oak St' gives no size (asked); epoch milliseconds give their years (1931 to
+    2004); a zipped GeoPackage or GeoJSON is read as that file, two GIS files in a zip are refused saying to unzip;
+    400 nines are no size and no 'inf' is written; '8"x8"x6"' is a reducer; a crs member whose properties are a string,
+    Esri attributes as a list or a string and paths as a number, and text that is not UTF-8 in a GeoPackage are read
+    without an exception.  Inlet residuals headers: 'Cl', 'FAC', 'Free', 'FCl', 'Res', 'Resid' and 'mg_l' are read,
+    'value', 'conc', 'dose' and the like refused as before, 'Total' and 'TRC' refused as total chlorine.  Equal to the
+    committed record (part 'final')."""
+    from . import cloud
+    from . import fixtures as FX
+    from . import gis_read as G
+    from . import intake_exp as E
+    with _gis_fixtures(list(FX.FINAL_FIXTURES)) as paths:
+        got = E.part_gis_final(paths)
+        secs = {}
+        for n in ("kmz_long_whitespace.kmz", "kmz_long_lt.kmz", "kmz_open_rows.kmz", "prj_spaces_comma.zip",
+                  "prj_spaces_comma_20kb.zip", "esri_wkt_spaces_comma.json", "kmz_doctype_after_blank_lines.kmz"):
+            data = open(paths[n], "rb").read()
+            t0 = time.time()
+            G.build_gis(data, n, max_unpacked=cloud.UPLOAD_MB * 1_000_000)
+            secs[n] = round(time.time() - t0, 3)
+        sizes = {n: os.path.getsize(paths[n]) for n in ("kmz_long_whitespace.kmz", "prj_spaces_comma.zip")}
+    t0 = time.time()
+    G.wkt_unit(FX._prj_run(FX.FINAL_PRJ_RUN[1]))
+    secs["wkt_unit_20kb"] = round(time.time() - t0, 3)
+    _same_as_17(got, "final")
+    assert all(s < CLOUD_LIMIT_S for s in secs.values()), secs
+    assert sizes["kmz_long_whitespace.kmz"] < 10_000 and sizes["prj_spaces_comma.zip"] < 1_000, sizes
+    cases = {k: v for k, v in got.items() if isinstance(v, dict) and "raised" in v}
+    assert not any(v["raised"] or v.get("page_path", {}).get("raised") for v in cases.values()), cases
+    for n in ("kmz_long_whitespace.kmz", "kmz_long_lt.kmz", "kmz_open_rows.kmz"):
+        assert got[n]["pipes"] == 8 and got[n]["components"] == 1, got[n]
+    for n in ("kmz_doctype_after_blank_lines.kmz", "kmz_doctype_after_comment.kmz"):
+        assert got[n]["refusal"].startswith("The KML declares a document type"), got[n]
+    for n in ("prj_spaces_comma.zip", "prj_spaces_comma_20kb.zip", "esri_wkt_spaces_comma.json",
+              "geojson_crs_props_string.geojson"):
+        assert got[n]["questions"] == ["unit"], got[n]
+    cap = FX.REVIEW_MAX_FEATURES
+    for n in ("mains_and_service_lines.gpkg", "mains_and_service_lines.zip"):
+        for k in (f"{n}|cap={cap}", f"{n}|layer=mains|cap={cap}"):
+            assert got[k]["pipes"] == 24 and any(x.startswith("Not read") and "service_lines" in x
+                                                 for x in got[k]["notes"]), got[k]
+        assert "service_lines is larger than" in got[f"{n}|layer=service_lines|cap={cap}"]["refusal"]
+    assert "hydrants" in " ".join(got[f"mains_and_service_lines.gpkg|cap={cap}"]["notes"])
+    for n in ("world_mercator_3395.geojson", "esri_wkid_3395.json"):
+        assert "Mercator" in got[n]["refusal"] and got[n]["questions"] == [], got[n]
+    for n in ("swapped_latlon_4326.geojson", "swapped_latlon_nocrs.geojson"):
+        assert got[n]["questions"] == ["axes"] and not got[n]["built"], got[n]
+        sw, kept = got[f"{n}|swap_axes=True"], got[f"{n}|swap_axes=False"]
+        assert sw["max_rel_error"] == 0.0 and sw["components"] == 1 and kept["max_rel_error"] > 0.5, (sw, kept)
+        assert any("read as written" in w for w in kept["warnings"]), kept
+    for n in ("lonlat_stateplane_prj.zip", "lonlat_as_2263.geojson"):
+        assert "crowded together" in got[n]["refusal"] and "choose degrees" in got[n]["refusal"], got[n]
+        assert got[n]["offer_unit"] and got[f"{n}|unit=deg"]["pipes"] == 60, got[n]
+    assert set(got["tee_sweep_components"].values()) == {1}, got["tee_sweep_components"]
+    assert got["tee_fan_dense_main.geojson"]["components"] == 1 and got["tee_fan_straight_main.geojson"]["components"] == 1
+    lp = got["loop_joined_through_feed.geojson"]
+    assert lp["loops_cut"] == 1 and lp["dropped_pieces"] == 0 and lp["pipes"] == 3, lp
+    kl = got["kml_line_in_street.kml"]
+    assert kl["diameter_field"] is None and kl["questions"] == ["default_diameter_in"], kl
+    assert got["esri_epoch_dates.json"]["years"] == {"read": 12, "first": 1931, "last": 2004}
+    assert got["zipped_gpkg.zip"]["pipes"] == 24 and got["zipped_geojson.zip"]["pipes"] == 24
+    assert "unzip it" in got["zipped_two_geojson.zip"]["refusal"]
+    so = got["size_overflow.geojson"]
+    assert not so["inf_written"] and so["diameters"]["read"] == 23, so
+    assert got["size_texts"]['8"x8"x6"'] == "reducer" and got["size_texts"]['8"x8"x8"'] == 8.0
+    assert all(v == "unreadable" for k, v in got["size_texts"].items() if k.startswith("9"))
+    assert got["strict_in_texts"]["Line 3 in Oak St"] == [None, "in"]
+    ih = got["inlet_headers"]
+    assert all(ih[h] == "read" for h in ("Cl", "FAC", "Free", "FCl", "Res", "Resid", "mg_l", "mg/L", "ppm")), ih
+    assert all(ih[h].startswith("refused") for h in ("value", "conc", "dose", "Total", "TRC", "NH2Cl")), ih
+    assert got["esri_odd_attributes.json"]["pipes"] == 23 and got["gpkg_bad_utf8.gpkg"]["pipes"] == 24
+    return {"time_bound_s": CLOUD_LIMIT_S, "timed_cases": sorted(secs), "cases": len(cases),
+            "tee_sweep_connected": len(got["tee_sweep_components"]), "kmz_bytes": sizes["kmz_long_whitespace.kmz"],
+            "prj_zip_bytes": sizes["prj_spaces_comma.zip"]}
+
+
+GIS_PAGE_SCRIPT = r"""
+import json, os, sys, time, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+import residualmap.chloramine as CA
+def _no_msx(*a, **k):
+    raise RuntimeError("EPANET-MSX not run by get_started_gis_import")
+CA.truth_in_subprocess = _no_msx
+from residualmap import gis_read as G
+from residualmap import cloud
+page, app, fx = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+res = {}
+LABEL = "GIS layer of your water mains"
+def page_run():
+    return AppTest.from_file(page, default_timeout=900).run()
+def gis_up(at, name):
+    [u for u in at.file_uploader if u.label == LABEL][0].set_value((name, open(fx[name], "rb").read(),
+                                                                    "application/octet-stream"))
+    at.run()
+    assert not at.exception, (name, [e.value for e in at.exception])
+    return at
+def state(at):
+    return {"markdown": [m.value for m in at.markdown], "warnings": [w.value for w in at.warning],
+            "info": [i.value for i in at.info], "errors": [e.value for e in at.error],
+            "success": [s.value for s in at.success], "downloads": [b.label for b in at.get("download_button")],
+            "buttons": [b.label for b in at.button], "selectboxes": [s.label for s in at.selectbox],
+            "uploaders": [u.label for u in at.file_uploader], "dataframes": len(at.dataframe),
+            "headers": [h.value for h in at.header]}
+def click(at, label):
+    [b for b in at.button if b.label == label][0].click()
+    at.run()
+    assert not at.exception, (label, [e.value for e in at.exception])
+    return at
+def prepared(at):
+    return at.session_state[G.PREPARED_KEY] if G.PREPARED_KEY in at.session_state else None
+at = page_run()
+res["page"] = state(at)
+at = gis_up(page_run(), "valves_normal_pos.geojson")
+res["valves"] = state(at)
+at = click(at, "Open it on the main page")
+skel = prepared(at)
+res["valves_after"] = state(at)
+res["valves_prepared"] = None if skel is None else {"name": skel["name"], "bytes": len(skel["data"]), "from": skel["from"]}
+at = gis_up(page_run(), "no_prj.zip")
+res["no_prj"] = state(at)
+[s for s in at.selectbox if s.label == "Unit of the coordinates"][0].set_value("feet")
+at.run()
+res["no_prj_feet"] = state(at)
+res["points"] = state(gis_up(page_run(), "points_only.geojson"))
+at = gis_up(page_run(), "wntr_schema_Net3.zip")
+res["wntr"] = state(at)
+at = click(at, "Open it on the main page")
+net3 = prepared(at)
+def main_with(entry):
+    a = AppTest.from_file(app, default_timeout=900)
+    if entry is not None:
+        a.session_state[G.PREPARED_KEY] = entry
+        a.session_state[G.PREPARED_OPEN] = True
+    a.run()
+    radio = [r for r in a.radio if r.label == "Model"][0]
+    return a, {"model_options": list(radio.options), "model_value": radio.value, "errors": [e.value for e in a.error],
+               "info": [i.value for i in a.info], "captions": [c.value for c in a.caption],
+               "metrics": [[m.label, m.value] for m in a.metric], "exception": [e.value for e in a.exception]}
+res["main_default"] = main_with(None)[1]
+res["main_skeleton"] = main_with(skel)[1]
+res["main_net3"] = main_with(net3)[1]
+# the review of task 17: layers that stopped the page, read on it
+res["bad_vertices"] = state(gis_up(page_run(), "bad_vertices.gpkg"))
+at = gis_up(page_run(), "lonlat_no_prj.zip")
+res["lonlat"] = state(at)
+for label, key in (("feet", "lonlat_feet"), ("degrees (longitude and latitude)", "lonlat_degrees")):
+    [s for s in at.selectbox if s.label == "Unit of the coordinates"][0].set_value(label)
+    at.run()
+    assert not at.exception, (key, [e.value for e in at.exception])
+    res[key] = state(at)
+# the final verification of task 17: a layer in longitude and latitude whose .prj names State Plane feet is offered
+# the unit (there was no control to change it), and a layer written latitude first asks the axes' order
+at = gis_up(page_run(), "lonlat_stateplane_prj.zip")
+res["prj_lonlat"] = state(at)
+res["prj_lonlat_unit_options"] = [list(x.options) for x in at.selectbox if x.label == "Unit of the coordinates"]
+[x for x in at.selectbox if x.label == "Unit of the coordinates"][0].set_value("degrees (longitude and latitude)")
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["prj_lonlat_degrees"] = state(at)
+at = gis_up(page_run(), "swapped_latlon_4326.geojson")
+res["swapped"] = state(at)
+[x for x in at.selectbox if x.label == "Order of the coordinates"][0].set_value("latitude first: swap them")
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["swapped_swap"] = state(at)
+# the real hand-off, through app.py's page list (the review: the page run on its own only ever took the fallback,
+# since st.switch_page needs the page list): app.py, then the Get started page, the upload, the button; then back to
+# app.py (AppTest's next run follows its own page, not the one st.switch_page moved to) and the example network
+nav = AppTest.from_file(app, default_timeout=900).run()
+nav.switch_page("pages/1_Get_started.py").run()
+assert not nav.exception, [e.value for e in nav.exception]
+gis_up(nav, "valves_normal_pos.geojson")
+click(nav, "Open it on the main page")
+radio = [r for r in nav.radio if r.label == "Model"]
+res["nav"] = {"titles": [t.value for t in nav.title], "model_value": radio[0].value if radio else None,
+              "model_options": list(radio[0].options) if radio else None,
+              "info": [i.value for i in nav.info], "success": [x.value for x in nav.success]}
+nav.switch_page("app.py").run()
+[r for r in nav.radio if r.label == "Model"][0].set_value("Example network")
+nav.run()
+assert not nav.exception, [e.value for e in nav.exception]
+res["nav_example"] = {"metrics": [[m.label, m.value] for m in nav.metric],
+                      "model_value": [r for r in nav.radio if r.label == "Model"][0].value}
+# cloud mode with uploads allowed: the same page writes nothing under outputs/
+def snap():
+    out = {}
+    for base, dirs, files in os.walk(os.path.join(os.path.dirname(os.path.dirname(page)), "outputs")):
+        dirs[:] = [d for d in dirs if d != "cache"]
+        for f in files:
+            q = os.path.join(base, f)
+            out[q] = os.stat(q).st_mtime_ns
+    return out
+s0 = snap()
+os.environ[cloud.MODE_ENV] = "cloud"
+os.environ[cloud.UPLOADS_ENV] = "true"
+at = gis_up(page_run(), "valves_normal_pos.geojson")
+res["cloud_valves"] = state(at)
+at = click(at, "Open it on the main page")
+c = prepared(at)
+res["cloud_prepared"] = None if c is None else {"name": c["name"], "bytes": len(c["data"])}
+res["cloud_big"] = state(gis_up(page_run(), "lonlat_no_prj.zip"))     # the review: over the demo's limit, refused
+t0 = time.time()        # the final verification: a KMZ of 5 KB whose coordinates hold 4.9 MB of spaces (hours before)
+res["cloud_kmz_spaces"] = state(gis_up(page_run(), "kmz_long_whitespace.kmz"))
+res["cloud_kmz_spaces_s"] = time.time() - t0
+s1 = snap()
+res["cloud_outputs_changed"] = sorted(k for k in set(s0) | set(s1) if s0.get(k) != s1.get(k))
+os.environ.pop(cloud.UPLOADS_ENV, None)
+res["cloud_no_uploads"] = state(page_run())
+os.environ.pop(cloud.MODE_ENV, None)
+print("GIS_PAGE_JSON " + json.dumps(res))
+"""
+
+
+@check("task17", quick=False)
+def get_started_gis_import():
+    """Headless AppTest of the Get started page's step 4 and the main page's third Model option (local mode unless
+    said).  The page, before any file, shows step 4's uploader after step 3's and still offers its five downloads.
+    valves_normal_pos.geojson gives the layer's sentence, the diagnostic table, the proposed closed valves, the
+    skeleton's readiness report (not ready: no source), 'Download the model (.inp)' and 'Open it on the main page',
+    whose click keeps the skeleton in the session; no_prj.zip asks for the coordinates' unit and builds once 'feet' is
+    chosen; points_only.geojson gets its plain message; wntr_schema_Net3.zip is read as its model, ready to run.  The
+    main page with no prepared model has the Model radio of before task 17; with the skeleton it offers 'Model
+    prepared on Get started', picked, and stops at the readiness report with the skeleton's sentence; with Net3 from
+    WNTR's GIS files it builds the map, 42 of 92 flagged as with the example Net3 (its grid and copy are removed
+    afterwards; the skeleton's copy that the hand-off wrote is removed by the main page's intake, as for any model that
+    cannot run).  In cloud mode with uploads allowed
+    the page builds the same skeleton and hands it off with nothing written under outputs/; with uploads off it has no
+    uploader at all.  The review of task 17: the page reads bad_vertices.gpkg (vertices of NaN, infinity and 1e300)
+    with no exception, building its 24 good lines; lonlat_no_prj.zip asks for the unit, is refused in plain words as
+    feet and builds in degrees; and the hand-off through app.py's page list (app.py, then the Get started page, the
+    upload, 'Open it on the main page') lands on the main page titled ResidualMap with 'Model prepared on Get started'
+    picked, and the example network afterwards still flags 42 of 92.  In cloud mode with uploads allowed, a layer over
+    the demo's size (lonlat_no_prj.zip, 1,740 lines) is refused before any line is joined, writing nothing.  The final
+    verification of task 17: lonlat_stateplane_prj.zip (longitude and latitude under a State Plane .prj) is refused as
+    crowded naming degrees, with the coordinates' unit offered, the file's own first, and builds once degrees are
+    chosen; swapped_latlon_4326.geojson asks the order of the coordinates and builds swapped; and in cloud mode with
+    uploads allowed, kmz_long_whitespace.kmz (5 KB, 4.9 MB of spaces once unpacked) builds its 8 pipes within
+    CLOUD_PAGE_LIMIT_S, AppTest's run included (it ran for hours before)."""
+    from . import fixtures as FX
+    names = ["valves_normal_pos.geojson", "no_prj.zip", "points_only.geojson", "wntr_schema_Net3.zip",
+             "bad_vertices.gpkg", "lonlat_no_prj.zip", "lonlat_stateplane_prj.zip", "swapped_latlon_4326.geojson",
+             "kmz_long_whitespace.kmz"]
+    watch = [os.path.join(REPO, "outputs", "app_uploads"), os.path.join(REPO, "outputs", "private")]
+    before = {d: sorted(os.listdir(d)) if os.path.isdir(d) else [] for d in watch}
+    cache0 = _cache_snapshot()
+    with _gis_fixtures(names) as paths:
+        res, built = _app_run(GIS_PAGE_SCRIPT, [GET_STARTED_PAGE, os.path.join(REPO, "app.py"), json.dumps(paths)],
+                              lambda f: "valves_normal_pos" in f or "wntr_schema_Net3" in f or "no_prj" in f
+                              or "bad_vertices" in f or "lonlat_no_prj" in f, "GIS_PAGE_JSON")
+    from .gis_read import NOT_READY, PREPARED_OPTION
+    pg = res["page"]
+    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains"] and len(pg["downloads"]) == 5, pg
+    assert "Step 4. Build a model from a GIS layer" in pg["headers"], pg["headers"]
+    v = res["valves"]
+    assert any(m.startswith("**The layer valves_normal_pos:** 4 lines become 4 pipes and 5 nodes") for m in v["markdown"]), v["markdown"]
+    assert any(m.startswith("**Normally closed valves**") for m in v["markdown"]) and v["dataframes"] >= 2, v
+    rep = [m for m in v["markdown"] if m.startswith("**Model readiness:")]
+    assert rep and NOT_READY in rep[0] and "| Built from | the GIS layer valves_normal_pos" in rep[0], rep
+    assert v["downloads"][-1] == "Download the model (.inp)" and "Open it on the main page" in v["buttons"], v
+    assert res["valves_prepared"] and res["valves_prepared"]["name"] == "valves_normal_pos_skeleton.inp", res
+    assert any("Unit of the coordinates" == s for s in res["no_prj"]["selectboxes"]), res["no_prj"]
+    assert any("In what unit are the coordinates?" in i for i in res["no_prj"]["info"]), res["no_prj"]["info"]
+    assert any(m.startswith("**The layer mains:** 6 lines become 6 pipes") for m in res["no_prj_feet"]["markdown"])
+    assert any("not lines" in w for w in res["points"]["warnings"]), res["points"]
+    w = res["wntr"]
+    assert any(m.startswith("**WNTR's own GIS files:**") for m in w["markdown"]), w["markdown"]
+    wrep = [m for m in w["markdown"] if m.startswith("**Model readiness:")]
+    assert wrep and "Problems that stop the run" not in wrep[0], wrep
+    md, ms, mn = res["main_default"], res["main_skeleton"], res["main_net3"]
+    assert md["model_options"] == ["Example network", "Upload my .inp"] and md["model_value"] == "Example network", md
+    assert ms["model_options"] == ["Example network", "Upload my .inp", PREPARED_OPTION], ms
+    assert ms["model_value"] == PREPARED_OPTION and not ms["exception"] and any(
+        e.startswith("This model cannot run yet.") for e in ms["errors"]), ms
+    assert any(i.startswith("This model was built on the Get started page.") for i in ms["info"]), ms["info"]
+    assert mn["model_value"] == PREPARED_OPTION and not mn["exception"], mn
+    flagged = [m for m in mn["metrics"] if m[0].startswith("Junctions likely below")]
+    assert flagged and flagged[0][1] == f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}", mn["metrics"]
+    cv = res["cloud_valves"]
+    assert any(m.startswith("**The layer valves_normal_pos:** 4 lines become 4 pipes") for m in cv["markdown"]), cv
+    assert res["cloud_prepared"] and res["cloud_prepared"]["bytes"] == res["valves_prepared"]["bytes"], res
+    assert res["cloud_outputs_changed"] == [], res["cloud_outputs_changed"]
+    from .cloud import MAX_GIS_LINES
+    assert any(e.startswith("This layer has 1,740 lines") and f"up to {MAX_GIS_LINES} lines" in e
+               for e in res["cloud_big"]["errors"]) and not res["cloud_big"]["dataframes"], res["cloud_big"]
+    assert res["cloud_no_uploads"]["uploaders"] == [], res["cloud_no_uploads"]["uploaders"]
+    bv = res["bad_vertices"]
+    assert any(m.startswith("**The layer mains:** 24 lines become 24 pipes") for m in bv["markdown"]), bv["markdown"]
+    assert any("no usable coordinates" in w for w in bv["warnings"]), bv["warnings"]
+    assert any("probably degrees" in i for i in res["lonlat"]["info"]), res["lonlat"]["info"]
+    assert any("crowded together" in w for w in res["lonlat_feet"]["warnings"]), res["lonlat_feet"]["warnings"]
+    assert any(m.startswith("**The layer mains:** 1,740 lines become 1,740 pipes") for m in
+               res["lonlat_degrees"]["markdown"]), res["lonlat_degrees"]["markdown"]
+    pl = res["prj_lonlat"]          # the final verification of task 17
+    assert any("crowded together" in w and "choose degrees" in w for w in pl["warnings"]), pl["warnings"]
+    opts = res["prj_lonlat_unit_options"]
+    assert len(opts) == 1 and opts[0][0] == "as the file says (US survey feet)" and (
+        "degrees (longitude and latitude)" in opts[0]), opts
+    assert any(m.startswith("**The layer mains:** 60 lines become 60 pipes") for m in
+               res["prj_lonlat_degrees"]["markdown"]), res["prj_lonlat_degrees"]["markdown"]
+    assert "Order of the coordinates" in res["swapped"]["selectboxes"], res["swapped"]["selectboxes"]
+    assert any("Swap them?" in i for i in res["swapped"]["info"]), res["swapped"]["info"]
+    assert any(m.startswith("**The layer swapped_latlon_4326:** 24 lines become 24 pipes") for m in
+               res["swapped_swap"]["markdown"]), res["swapped_swap"]["markdown"]
+    ck = res["cloud_kmz_spaces"]
+    assert any(m.startswith("**The layer doc:** 8 lines become 8 pipes") for m in ck["markdown"]), ck["markdown"]
+    assert res["cloud_kmz_spaces_s"] < CLOUD_PAGE_LIMIT_S, res["cloud_kmz_spaces_s"]
+    nv, ne = res["nav"], res["nav_example"]
+    assert "ResidualMap" in nv["titles"] and nv["model_value"] == PREPARED_OPTION and not nv["success"], nv
+    nflag = [m for m in ne["metrics"] if m[0].startswith("Junctions likely below")]
+    assert ne["model_value"] == "Example network" and nflag and nflag[0][1] == (
+        f"{APP_DEMO['flagged']} of {APP_DEMO['junctions']}"), ne
+    after = {d: sorted(os.listdir(d)) if os.path.isdir(d) else [] for d in watch}
+    assert after == before, (before, after)
+    assert _cache_snapshot() == cache0
+    return {"page_uploaders": pg["uploaders"], "downloads_before_a_file": len(pg["downloads"]),
+            "skeleton_handed_off": res["valves_prepared"]["name"], "main_options_with_prepared": ms["model_options"],
+            "skeleton_stops_at_readiness": True, "net3_from_wntr_gis_flagged": flagged[0][1],
+            "upload_copies_left_by_the_main_page": sorted(built["app_uploads"]),
+            "cloud_files_under_outputs": 0, "cloud_no_uploads_uploaders": 0,
+            "hand_off_through_page_list": nv["model_value"], "example_after_hand_off_flagged": nflag[0][1],
+            "bad_vertices_page_pipes": 24, "lonlat_page_pipes_in_degrees": 1740, "cloud_layer_over_the_limit_refused": True,
+            "lonlat_under_a_state_plane_prj_unit_offered": True, "swapped_axes_asked_and_built": True,
+            "cloud_kmz_of_4p9_mb_spaces_built_within_s": CLOUD_PAGE_LIMIT_S}
 
 
 def _counts(rs: list) -> dict:

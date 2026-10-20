@@ -138,6 +138,13 @@ _T20R = ("runs", "post_task20")                 # the rerun on task 20's tree
 T16C = "Task 16c"                                # task 16c's journal section (zone extracts)
 _Z = "outputs/intake/zone_extract_Net3.json"
 _ZS = ("superposition", "by_tolerance")
+T17 = "Task 17"                                  # task 17's journal section (the GIS importer)
+_G = "outputs/intake/gis_roundtrip.json"
+_GRF = lambda f, ft="6": ("rebuild", "fixtures", f, "by_tolerance_ft", ft)    # one scored fixture at one tolerance
+_G6 = _GRF("ky4_mains_stdlib_shp.zip")
+_GK = ("kml", "by_tolerance_m")
+_GW = ("wntr", "networks", "Net3", "without_pattern_workaround")
+_GI = ("invariance",)
 _ZH = ("holdout", "mean")
 _ZHS = ("holdout", "by_month", "held_out_sites")
 _T16CR = ("runs", "post_task16c")               # the rerun on task 16c's tree
@@ -156,6 +163,15 @@ def _pct_range(ratios) -> str:
     """'10 to 14%': the smallest and largest excess of a set of ratios over 1, in whole percent, as the text prints it."""
     lo, hi = (round(100 * (r - 1)) for r in (min(ratios), max(ratios)))
     return f"{lo} to {hi}%"
+
+
+PINS_AFTER_TASK20 = ("pyshp",)                  # requirements.txt lines added after task 20 (task 17)
+
+
+def _guide_swaps_after_task20() -> int:
+    """The hosted demo's guide swaps added after task 20: task 17's, one per GIS section."""
+    from .cloud import GIS_STEP_LOCAL, GUIDE_CLOUD
+    return sum(old == GIS_STEP_LOCAL for _, old, _, _ in GUIDE_CLOUD)
 
 
 def _check_detail(name: str) -> dict:
@@ -223,6 +239,11 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
         "bomb_limit_mb": (_MD, "shared_strings_bomb_refused", "limit_mb"),
         "bomb_app_s": (_UP, "shared_strings_bomb_refused_in_the_app", "time_bound_s"),
         "allowed": (_EX, "allowed_mentions"), "rewordings": (_EX, "rewordings_caught")}.items()},
+    # task 17 added a requirement line (pyshp) and three guide swaps (the GIS sections), so task 20's journal, which
+    # quotes 11 lines and 4 swaps as they were then, is traced to today's report less what task 17 added
+    "t20_req_lines": ((SELF_REPORT,), lambda: len([k for k in _cd("requirements_pinned", "pinned")
+                                                   if k not in PINS_AFTER_TASK20])),
+    "t20_guide_swaps": ((SELF_REPORT,), lambda: _cd(_MD, "guide_swaps") - _guide_swaps_after_task20()),
     # task 16c's checks, as its journal's numbers table and the README's bullet quote them
     **{f"t16c_{k}": ((SELF_REPORT,), (lambda keys: lambda: _cd(*keys))(keys)) for k, keys in {
         "committed_hos_rmse": ("holdout_sites_fixed_route", "committed_log_held_out_sites", "rmse"),
@@ -235,6 +256,8 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
         "pilot_inlet_tap_readings": ("pilot_inlet_residuals", "inlet_tap_readings"),
         "pilot_fitted_with_inlet_tap": ("pilot_inlet_residuals", "samples_in_log", "inlet_tap"),
         "pilot_fitted_without": ("pilot_inlet_residuals", "samples_in_log", "without_inlets")}.items()},
+    # task 17's checks, as its journal quotes them
+    "t17_net3_flagged": ((SELF_REPORT,), lambda: _cd("get_started_gis_import", "net3_from_wntr_gis_flagged")),
     # task 12, low-pH stress, random rule: model (c)'s RMSE over the uniform prior (b)'s at every n
     "ca_lowph_prior_cost": ((_C3,), lambda: _pct_range(
         [_json(_C3)["pooled"]["stress"]["c"]["random"][n]["rmse"] / _json(_C3)["pooled"]["stress"]["b"]["random"][n]["rmse"]
@@ -822,6 +845,66 @@ REGISTRY: list[tuple] = [
     ("journal", T16C, "readings out ({} of the 78 samples fitted)", "t16c_pilot_fitted_with_inlet_tap", "d"),
     ("journal", T16C, "readings out (72 of the {} samples fitted)", "t16c_pilot_fitted_without", "d"),
     ("README", L15, "against {} and 0.867 at the route's own taps", (_Z, _ZH + ("all", "rmse")), ".3f"),
+    # task 17: the GIS importer (its journal's outcome, findings and numbers table, and the README's bullet)
+    ("journal", T17, "Built, and the bar is met on every layer, with no miss to spare: {} of 1,156", (_G, _G6 + ("pipes_rebuilt",)), ",d"),
+    ("journal", T17, "with no miss to spare: 1,151 of {} ky4 pipes", (_G, _G6 + ("of_pipes",)), ",d"),
+    *[("journal", T17, "| {} of 1,156 pipes on each layer, 1 connected part", (_G, _GRF(f) + ("pipes_rebuilt",)), ",d")
+      for f in ("ky4_mains_stdlib_shp.zip", "ky4_mains_pyshp.zip", "ky4_mains_z.gpkg", "ky4_mains_lonlat.geojson")],
+    *[("journal", T17, "of 1,156 pipes on each layer, {} connected part", (_G, _GRF(f) + ("components",)), "d")
+      for f in ("ky4_mains_stdlib_shp.zip", "ky4_mains_pyshp.zip", "ky4_mains_z.gpkg", "ky4_mains_lonlat.geojson")],
+    ("journal", T17, "1 connected part, {} of 1,151 diameters within 1%", (_G, _G6 + ("diameters_matched",)), ",d"),
+    ("journal", T17, "{} pipes and 962 nodes built from 1,113 lines", (_G, _G6 + ("pipes_built",)), ",d"),
+    ("journal", T17, "1,159 pipes and {} nodes built from 1,113 lines", (_G, _G6 + ("nodes",)), ",d"),
+    ("journal", T17, "pipes and 962 nodes built from {} lines", (_G, ("rebuild", "fixtures", "ky4_mains_stdlib_shp.zip", "lines")), ",d"),
+    ("journal", T17, "built from 1,113 lines, {} cuts at a tee", (_G, _G6 + ("tees_split",)), "d"),
+    ("journal", T17, "cuts at a tee; {} extra pipes", (_G, _G6 + ("extra_pipes",)), "d"),
+    ("journal", T17, "(1,159 pipes and {} nodes), with two more extra pipes", (_G, _G6 + ("nodes",)), ",d"),
+    ("journal", T17, "({} pipes and 962 nodes), with two more extra pipes", (_G, _G6 + ("pipes_built",)), ",d"),
+    ("journal", T17, "with two more extra pipes ({}) and one piece dropped", (_G, _G6 + ("extra_pipes",)), "d"),
+    # the review of task 17: the three crossing misses' distances to the nearest node, now in the record
+    *[(doc, sec, "pass {}, 0.117 and 0.601 ft from a node", (_G, ("rebuild", "near_node_misses", "P-152", "distance_ft")), ".3f")
+      for doc, sec in (("journal", T17), ("README", L15))],
+    *[(doc, sec, "pass 0.104, {} and 0.601 ft from a node", (_G, ("rebuild", "near_node_misses", "P-1126", "distance_ft")), ".3f")
+      for doc, sec in (("journal", T17), ("README", L15))],
+    *[(doc, sec, "pass 0.104, 0.117 and {} ft from a node", (_G, ("rebuild", "near_node_misses", "P-9", "distance_ft")), ".3f")
+      for doc, sec in (("journal", T17), ("README", L15))],
+    ("journal", T17, "on the ground measures {} m, where its Web Mercator", (_G, ("quirks", "mercator_3857.geojson", "lengths_m", 1)), ",.1f"),
+    ("journal", T17, "where its Web Mercator metres give {} m", (_G, ("quirks", "mercator_3857.geojson", "as_mercator_metres_m", 1)), ",.2f"),
+    ("journal", T17, "`lonlat_no_prj.zip`, {} lines, is asked", (_G, ("refusals", "lonlat_no_prj.zip|unit=deg", "pipes")), ",d"),
+    ("journal", T17, "vertices of NaN, infinity and 1e300 leave {} pipes", (_G, ("refusals", "bad_vertices.gpkg", "pipes")), "d"),
+    ("journal", T17, "builds its {} good lines, on the page too", (_G, ("refusals", "bad_vertices.gpkg", "pipes")), "d"),
+    ("journal", T17, "| {} and 1,133 pipes, 7 connected parts", (_G, _GRF("ky4_mains_stdlib_shp.zip", "1") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T17, "| 1,135 and {} pipes, 7 connected parts", (_G, _GRF("ky4_mains_stdlib_shp.zip", "3") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T17, "1,135 and 1,133 pipes, {} connected parts", (_G, _GRF("ky4_mains_stdlib_shp.zip", "1") + ("components",)), "d"),
+    ("journal", T17, "rebuild {} pipes at the 10 m default and 1,071 at 15 m", (_G, _GK + ("10", "pipes_rebuilt")), ",d"),
+    ("journal", T17, "pipes at the 10 m default and {} at 15 m", (_G, _GK + ("15", "pipes_rebuilt")), ",d"),
+    ("journal", T17, "| {}, 1,060, 1,071 and 1,059 pipes at 5, 10", (_G, _GK + ("5", "pipes_rebuilt")), ",d"),
+    ("journal", T17, "and {} pipes at 5, 10, 15 and 20 m", (_G, _GK + ("20", "pipes_rebuilt")), ",d"),
+    ("journal", T17, "15 and 20 m; {}, 6, 1 and 1 connected parts", (_G, _GK + ("5", "components")), "d"),
+    ("journal", T17, "Net3's chlorine moves by up to {} mg/L, so the test can fail", (_G, _GW + ("chlorine_max_abs_diff_mgL",)), ".3f"),
+    ("journal", T17, "moves by up to {} mg/L (mean 0.249)", (_G, _GW + ("chlorine_max_abs_diff_mgL",)), ".3f"),
+    ("journal", T17, "(mean {}). That much is read", (_G, _GW + ("chlorine_mean_abs_diff_mgL",)), ".3f"),
+    ("journal", T17, "lengths within {} relative; the skeleton", (_G, _GI + ("metres_vs_feet_max_rel_length",)), ".2e"),
+    ("journal", T17, "lengths within {}, diameters within 4.00e-12", (_G, _GI + ("skeleton_max_rel_length",)), ".2e"),
+    ("journal", T17, "diameters within {} | 1e-9", (_G, _GI + ("skeleton_max_rel_diameter",)), ".2e"),
+    ("journal", T17, "the same {} node IDs, 1,159 pipes and skeleton", (_G, ("ids", "nodes")), "d"),
+    ("journal", T17, "the same 962 node IDs, {} pipes and skeleton", (_G, ("ids", "pipes")), ",d"),
+    ("journal", T17, "| {} of 28 cases", (_G, ("diameters", "right")), "d"),
+    ("journal", T17, "| 28 of {} cases", (_G, ("diameters", "cases")), "d"),
+    ("journal", T17, "runs on the main page and flags {}, as the example", "t17_net3_flagged", "s"),
+    # the review of task 17: the reproduction on the final tree (post_task17 ran before the first build's last edits)
+    ("journal", T17, "the first build's last edits) | {} of 50 files", (_BR, ("runs", "post_task17_review", "vs_committed", "n_byte_identical")), "d"),
+    ("journal", T17, "files byte-identical; default demo {} of 92 flagged", (_BR, ("runs", "post_task17_review", "app_default_demo", "flagged")), "d"),
+    ("journal", T17, "of 92 flagged, {} of 36 found, 1 false alarm | unchanged |", (_BR, ("runs", "post_task17_review", "app_default_demo", "found")), "d"),
+    # the final verification of task 17: the reruns again, on its final tree
+    ("journal", T17, "on its final tree) | {} of 50 files", (_BR, ("runs", "post_task17_final", "vs_committed", "n_byte_identical")), "d"),
+    ("journal", T17, "on its final tree) | 50 of 50 files byte-identical; default demo {} of 92", (_BR, ("runs", "post_task17_final", "app_default_demo", "flagged")), "d"),
+    ("journal", T17, "on its final tree) | 50 of 50 files byte-identical; default demo 42 of 92 flagged, {} of 36", (_BR, ("runs", "post_task17_final", "app_default_demo", "found")), "d"),
+    ("journal", T17, "swapped it measures {} to 222.0 m exactly", (_G, ("final", "swapped_latlon_4326.geojson|swap_axes=True", "lengths_m", 0)), ".1f"),
+    ("journal", T17, "(kept: {} to 223.3 m)", (_G, ("final", "swapped_latlon_4326.geojson|swap_axes=False", "lengths_m", 0)), ".1f"),
+    ("README", L15, "the pre-registered bar was met with no miss to spare: {} of 1,156 pipes", (_G, _G6 + ("pipes_rebuilt",)), ",d"),
+    ("README", L15, "rebuild {} pipes at the 10 m default and 1,071 at 15 m", (_G, _GK + ("10", "pipes_rebuilt")), ",d"),
+    ("README", L15, "pipes at the 10 m default and {} at 15 m", (_G, _GK + ("15", "pipes_rebuilt")), ",d"),
 ]
 
 

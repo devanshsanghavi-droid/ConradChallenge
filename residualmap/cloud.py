@@ -112,9 +112,12 @@ def notice(uploads: bool) -> str:
             f"grid it can build in about {MAX_RUN_MINUTES} minutes. {NOTICE_END}")
 
 
+# task 17's review: the page has a fourth step since task 17, for a system with no hydraulic model
+GIS_STEP_INTRO = ("A fourth step, for a system with no hydraulic model, builds a skeleton model from a GIS layer of its "
+                  "water mains.")
 GET_STARTED_LOCAL = ("Three steps: export the network from the software that holds it, put your grab samples in a log "
-                     "ResidualMap reads, and check any file before you use it on the main page. Everything runs on "
-                     "this laptop.")
+                     "ResidualMap reads, and check any file before you use it on the main page. " + GIS_STEP_INTRO
+                     + " Everything runs on this laptop.")
 
 
 def get_started_intro(cloud: bool, uploads: bool) -> str:
@@ -127,9 +130,9 @@ def get_started_intro(cloud: bool, uploads: bool) -> str:
                 "This public demo shows the steps and the templates; it runs on a server, not on your computer, so "
                 "checking a file is turned off here.")
     return ("Three steps: export the network from the software that holds it, put your grab samples in a log "
-            "ResidualMap reads, and check any file before you use it on the main page. This public demo runs on a "
-            "server, not on your computer: a file you check here leaves your computer, and nothing is kept after "
-            "your session.")
+            "ResidualMap reads, and check any file before you use it on the main page. " + GIS_STEP_INTRO + " This "
+            "public demo runs on a server, not on your computer: a file you check here leaves your computer, and "
+            "nothing is kept after your session.")
 
 
 CHECK_OFF = ("Checking a file is turned off in this public demo, so nothing of yours leaves your computer. The local "
@@ -254,6 +257,26 @@ def limit_refusal(rep) -> str | None:
     return too_many_junctions(rep.run_cost.get("junctions"))
 
 
+# task 17's review: a GIS layer is read and joined in the Streamlit process, so in the hosted demo a layer over these
+# is refused right after it is read, before any line is joined (a 2 MB zipped shapefile of 167,620 lines took 37 s and
+# 1.7 GB before it was refused for its junctions)
+MAX_GIS_LINES = MAX_LINKS               # cloud uploads: a GIS layer's lines
+MAX_GIS_POINTS = 50 * MAX_LINKS         # cloud uploads: a GIS layer's points (its lines' vertices)
+
+
+def gis_too_big(n_lines: int, n_points: int) -> str | None:
+    """None when a GIS layer is within the hosted demo's limits, else the plain refusal."""
+    if n_lines <= MAX_GIS_LINES and n_points <= MAX_GIS_POINTS:
+        return None
+    return (f"This layer has {n_lines:,} lines and {n_points:,} points. The public demo builds layers of up to "
+            f"{MAX_GIS_LINES} lines and {MAX_GIS_POINTS:,} points, since it runs models of up to {MAX_JUNCTIONS} "
+            f"junctions; build a larger layer with the local version, on your own computer.")
+
+
+# task 17: the GIS sections' last paragraph names the Get started page's step 4, which the hosted demo shows only with
+# uploads allowed
+GIS_STEP_LOCAL = "Step 4 of the Get started page builds a skeleton model from the layer:"
+GIS_STEP_CLOUD = "The local version of ResidualMap builds a skeleton model from the layer, on your own computer:"
 # The Get started page's guide (docs/how_to_export_your_model.md) in cloud mode: (section, the local words, the cloud
 # words, only when uploads are off).  The guide stays as it is for the local version; guide_section swaps the words
 # that tell a visitor to upload, or name the repository's folders, and the saved check asserts each one applies.
@@ -273,7 +296,8 @@ GUIDE_CLOUD = (
      'grab log, with your chlorine readings, and the tap map, which says which junction of the model each sampling tap '
      'is at. In this public demo, type a few samples into the main page\'s "Grab samples" table instead.', True),
     ("Your grab samples", " (in the repository they are in `docs/templates/`)", "", False),
-)
+) + tuple((head, GIS_STEP_LOCAL, GIS_STEP_CLOUD, True) for head in ("ArcGIS Pro or ArcGIS Online", "QGIS",
+                                                                    "Google Earth"))
 
 
 def guide_section(head: str, text: str, cloud: bool, uploads: bool) -> str:

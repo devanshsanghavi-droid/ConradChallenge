@@ -7,7 +7,7 @@ Two checks after any export, whatever the package:
 1. Open the `.inp` in a text editor and look at `[CONTROLS]` and `[RULES]`. Pump and valve rules are the part exports lose most often, and a pump with no control runs all week.
 2. Look at the `[TIMES]` section's `START CLOCKTIME`. ResidualMap converts your grab samples' times of day with it, so it must be the time of day your model's hour 0 stands for.
 
-The app's Get started page (`pages/1_Get_started.py`) shows the section for your package. Its third step, "Check a file", reads any file you have and says what it is, without building the map.
+The app's Get started page (`pages/1_Get_started.py`) shows the section for your package. Its third step, "Check a file", reads any file you have and says what it is, without building the map. Its fourth step builds a skeleton model from a GIS layer of the water mains, for a system that has no hydraulic model: the pipes and where they meet, with no source, tank, pump, valve, control or demand until they are added.
 
 Each section below starts with a line the Get started page shows as the choice.
 
@@ -57,20 +57,26 @@ A drawing holds lines, not a hydraulic model. If a hydraulic model of the system
 1. File > Export > DWG/DXF and choose DXF, or send the water mains as a GIS layer (next sections).
 2. A DGN V8 file needs MicroStation itself to convert. In a WaterGEMS for MicroStation project, the drawing is not the model: send the WaterGEMS EPANET export instead (first section).
 
-## ArcGIS Pro or ArcGIS Online (coming soon)
+## ArcGIS Pro or ArcGIS Online
 
-1. ArcGIS Pro: Export Features, to a shapefile (zip its `.shp`, `.shx`, `.dbf` and `.prj` together) or a GeoPackage.
+1. ArcGIS Pro: Export Features, to a GeoPackage or a shapefile (zip its `.shp`, `.shx`, `.dbf`, `.prj` and `.cpg` together: the `.prj` says the coordinates' unit and the `.cpg` the text encoding).
 2. ArcGIS Online: open the layer's item page and download it as a GeoPackage, a shapefile or GeoJSON.
 3. A File Geodatabase (`.gdb`) is not read: export the water mains layer as above.
 
-## QGIS (coming soon)
+Step 4 of the Get started page builds a skeleton model from the layer: pipes, their sizes and lengths, and nodes where they meet. It has no source, tank, pump, valve, control or demand, so it is not ready to run until those are added (in EPANET, on the downloaded file, until a form for them is built). If a hydraulic model exists, its EPANET export is always better.
+
+## QGIS
 
 1. Right-click the water mains layer > Export > Save Features As > GeoPackage.
 
-## Google Earth (coming soon)
+Step 4 of the Get started page builds a skeleton model from the layer: pipes, their sizes and lengths, and nodes where they meet. It has no source, tank, pump, valve, control or demand, so it is not ready to run until those are added (in EPANET, on the downloaded file, until a form for them is built). If a hydraulic model exists, its EPANET export is always better.
+
+## Google Earth
 
 1. Right-click the folder of lines > Save Place As > KMZ.
-2. Lines drawn by hand in Google Earth carry no pipe sizes: the GIS reader will ask for them.
+2. Lines drawn by hand in Google Earth are joined where their ends come within 10 m (about 33 ft) of each other, since hand-drawn ends often miss by several metres; check the table of what a smaller or larger distance does. Write each line's size in its name or description ("8 in", 8" or "200 mm", with no word after "in"), or the size of every pipe is asked.
+
+Step 4 of the Get started page builds a skeleton model from the layer: pipes, their sizes and lengths, and nodes where they meet. It has no source, tank, pump, valve, control or demand, so it is not ready to run until those are added (in EPANET, on the downloaded file, until a form for them is built). If a hydraulic model exists, its EPANET export is always better.
 
 ## Paper or PDF maps
 

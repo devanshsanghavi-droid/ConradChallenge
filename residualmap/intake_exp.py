@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import contextlib
 import functools
 import json
 import math
@@ -2112,10 +2113,686 @@ def zone_record(fresh_grid: bool = True) -> dict:
                 "holdout": part_zone_holdout(), "analyzer": part_zone_analyzer(paths)}
 
 
+# ----------------------------------------------------------------------------- task 17: gis_roundtrip.json
+RECORD_17 = os.path.join(OUT, "gis_roundtrip.json")
+GIS_BAR = {"tolerance_ft": 6.0, "pipes_at_least": 1151, "of_pipes": 1156, "components": 1,
+           "diameter_share_at_least": 0.99}                     # pre-registered (plan task 17), every scored fixture
+GIS_DIAG_FT = (1.0, 3.0, 6.0)          # the scored fixtures' tolerances (the bar at 6 ft; 1 and 3 ft recorded)
+DIAMETER_REL_TOL = 0.01                # a rebuilt pipe's diameter matches within 1% (a mm size rounds by under 0.7%)
+WNTR_MEMBER = (0.40, 0.70, 1.0)        # gis_wntr_schema_roundtrip's chlorine member: kb 1/day, kw m/day, gamma
+NEGATIVE_BAR_MGL = 0.5                 # its negative control (no pattern workaround) must exceed this on Net3
+
+
+def _gis(data: bytes, name: str, **kw):
+    from . import gis_read as G
+    return G.build_gis(data, name, G.GisOptions(**kw))
+
+
+def score_ky4(b, index_of=lambda j: j) -> dict:
+    """A rebuilt ky4 mains layer scored by endpoint-pair identity, not counts: each ky4 node stands for the rebuilt
+    node most of the line ends drawn at it fell into (so nodes the tolerance joins, the pump node pairs drawn at one
+    point and J-702 and J-703, stand for one another), and a ky4 pipe is rebuilt when a rebuilt pipe joins its two
+    nodes' rebuilt nodes (each rebuilt pipe used once; one whose two ends are one node is a miss).  Its diameter
+    matches within DIAMETER_REL_TOL.  index_of: a record's feature index in the file."""
+    from . import fixtures as FX
+    from collections import Counter
+    man = FX.ky4_manifest()
+    net = b.net
+    votes: dict = {}
+    for j, r in enumerate(man["records"]):
+        f = index_of(j)
+        for end in (0, 1):
+            n = net.end_node.get((f, 0, end))
+            if n is not None:
+                votes.setdefault(r["ends"][end], Counter())[n] += 1
+    rebuilt_of = {u: sorted(c.items(), key=lambda x: (-x[1], x[0]))[0][0] for u, c in votes.items()}
+    pool: dict = {}
+    for p in net.pipes:
+        pool.setdefault(frozenset((p["start"], p["end"])), []).append(b.diam_in[p["id"]])
+    matched, d_ok, misses, collapsed = 0, 0, [], []
+    for name, (s, e, d) in sorted(man["pipes"].items()):
+        a, c = rebuilt_of.get(s), rebuilt_of.get(e)
+        if a is None or c is None or a == c:
+            misses.append(name)
+            collapsed.append(name) if a is not None and a == c else None
+            continue
+        k = frozenset((a, c))
+        if not pool.get(k):
+            misses.append(name)
+            continue
+        ds = pool[k]
+        best = min(range(len(ds)), key=lambda i: abs(ds[i] - d))
+        got = ds.pop(best)
+        matched += 1
+        d_ok += abs(got - d) <= DIAMETER_REL_TOL * d
+    extra = sum(len(v) for v in pool.values())
+    r = net.report
+    return {"pipes_rebuilt": matched, "of_pipes": len(man["pipes"]), "missed": misses, "collapsed": collapsed,
+            "diameters_matched": d_ok, "diameter_share": d_ok / max(matched, 1), "extra_pipes": extra,
+            "components": r["components"], "nodes": r["nodes"], "dead_ends": r["dead_ends"],
+            "tees_split": r["tees_split"], "nodes_flagged_wide": r["nodes_flagged_wide"], "nodes_split": r["nodes_split"],
+            "dropped_pieces": r["dropped_pieces"], "pipes_built": r["pipes"]}
+
+
+def _bar_met(s: dict) -> bool:
+    return (s["pipes_rebuilt"] >= GIS_BAR["pipes_at_least"] and s["components"] == GIS_BAR["components"]
+            and s["diameter_share"] >= GIS_BAR["diameter_share_at_least"])
+
+
+def part_gis_rebuild(paths: dict) -> dict:
+    """gis_utility_style_rebuild: the four ky4 mains fixtures at 1, 3 and 6 ft, the bar at 6 ft."""
+    from . import fixtures as FX
+    from .topology import FT
+    out = {"bar": GIS_BAR, "fixtures": {}}
+    for name in FX.GIS_SCORED:
+        data = _read_bytes(paths[name])
+        idx = FX.ky4_pyshp_index if name == "ky4_mains_pyshp.zip" else (lambda j: j)
+        by = {}
+        for ft in GIS_DIAG_FT:
+            b = _gis(data, name, tolerance_m=ft * FT)
+            assert b.net is not None, (name, b.refusal, b.questions)
+            by[f"{ft:g}"] = score_ky4(b, idx)
+        b = _gis(data, name)
+        lay = b.layer
+        out["fixtures"][name] = {
+            "reader": {"ky4_mains_stdlib_shp.zip": "pyshp, on a file written by the fixtures' own shapefile writer",
+                       "ky4_mains_pyshp.zip": "pyshp, on a file pyshp wrote (same-library self-consistency)",
+                       "ky4_mains_z.gpkg": "sqlite3 and the WKB parser, on a GeoPackage written by the fixtures' WKB "
+                                           "writer",
+                       "ky4_mains_lonlat.geojson": "json and the east-north plane, on longitude and latitude from the "
+                                                   "fixtures' Lambert conformal conic inverse"}[name],
+            "default_tolerance_ft": b.tolerance_m / FT, "lines": lay.n_lines, "crs": {k: lay.crs.get(k) for k in
+                                                                                  ("kind", "unit", "how")},
+            "dropped": lay.dropped, "by_tolerance_ft": by, "bar_met": _bar_met(by["6"])}
+    out["bar_met_on_every_fixture"] = all(v["bar_met"] for v in out["fixtures"].values())
+    out["near_node_misses"] = _near_node_misses(out["fixtures"]["ky4_mains_stdlib_shp.zip"]["by_tolerance_ft"]["6"])
+    return out
+
+
+def _near_node_misses(s: dict) -> dict:
+    """For each ky4 pipe the 6 ft rebuild missed whose two nodes did not collapse into one: the nearest ky4 node that
+    is not on it, and its distance to the pipe in ky4.inp's own geometry, in feet (the review of task 17 asked that
+    the journal's 'under a foot' be traced to the record)."""
+    from . import fixtures as FX
+    pipes, xy, _, _ = FX._ky4_parts()
+    out = {}
+    for pn in s["missed"]:
+        if pn in s["collapsed"]:
+            continue
+        a, c, pts, _, _ = pipes[pn]
+        P = np.asarray(pts, float)
+        A, B = P[:-1], P[1:]
+        best = (math.inf, None)
+        for n, q in xy.items():
+            if n in (a, c):
+                continue
+            q = np.asarray(q, float)
+            AB = B - A
+            t = np.clip(((q - A) * AB).sum(1) / np.maximum((AB * AB).sum(1), 1e-300), 0.0, 1.0)
+            d = float(np.hypot(*(A + t[:, None] * AB - q).T).min())
+            if d < best[0]:
+                best = (d, n)
+        out[pn] = {"node": best[1], "distance_ft": round(best[0], 3)}
+    return out
+
+
+def part_gis_kml(paths: dict) -> dict:
+    """gis_kml_handdrawn: ky4 drawn by hand (each line end about 5 m off) at 5, 10, 15 and 20 m; no bar."""
+    from . import fixtures as FX
+    data = _read_bytes(paths["ky4_googleearth.kmz"])
+    out = {"endpoint_error_m": FX.KML_ERROR_M, "default_tolerance_m": None, "by_tolerance_m": {}}
+    man = FX.ky4_manifest()
+    for tol in FX.KML_TOLERANCES_M:
+        b = _gis(data, "ky4_googleearth.kmz", tolerance_m=tol)
+        out["default_tolerance_m"] = out["default_tolerance_m"] or _gis(data, "ky4_googleearth.kmz").tolerance_m
+        # each placemark is one ky4 pipe, in ky4's order: score with one record per pipe
+        names = list(man["pipes"])
+        s = _score_pipes(b, names)
+        out["by_tolerance_m"][f"{tol:g}"] = s
+    out["diagnostic_table_at_default"] = [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items()}
+                                          for row in _gis(data, "ky4_googleearth.kmz").diagnostics]
+    return out
+
+
+def _score_pipes(b, names: list) -> dict:
+    """score_ky4 for a layer with one feature per ky4 pipe, in names' order."""
+    from . import fixtures as FX
+    from collections import Counter
+    pipes = FX.ky4_manifest()["pipes"]
+    votes: dict = {}
+    for f, n in enumerate(names):
+        for end, node in ((0, pipes[n][0]), (1, pipes[n][1])):
+            r = b.net.end_node.get((f, 0, end))
+            if r is not None:
+                votes.setdefault(node, Counter())[r] += 1
+    of = {u: sorted(c.items(), key=lambda x: (-x[1], x[0]))[0][0] for u, c in votes.items()}
+    pool = Counter(frozenset((p["start"], p["end"])) for p in b.net.pipes)
+    ok = 0
+    for n in names:
+        a, c = of.get(pipes[n][0]), of.get(pipes[n][1])
+        if a is not None and c is not None and a != c and pool[frozenset((a, c))] > 0:
+            pool[frozenset((a, c))] -= 1
+            ok += 1
+    r = b.net.report
+    return {"pipes_rebuilt": ok, "of_pipes": len(names), "components": r["components"], "dead_ends": r["dead_ends"],
+            "nodes": r["nodes"], "tees_split": r["tees_split"], "nodes_flagged_wide": r["nodes_flagged_wide"],
+            "nodes_split": r["nodes_split"], "dropped_pieces": r["dropped_pieces"]}
+
+
+def part_gis_quirks(paths: dict) -> dict:
+    """gis_spec_quirks: the shapefile and GeoPackage quirks of critique 12 and the CRS and unit quirks of critique 14."""
+    from . import fixtures as FX
+    out = {}
+    for n in ("multipart_two_parts.gpkg", "multipart_two_parts.zip"):
+        b = _gis(_read_bytes(paths[n]), n)
+        r = b.net.report
+        out[n] = {"pipes": r["pipes"], "nodes": r["nodes"], "components": r["components"],
+                  "bridge": any(abs(p["xy"][0][0] - p["xy"][-1][0]) < 1e-9 for p in b.net.pipes) and False}
+        # a bridge would join the first part's last point (1100, 1000) to the second part's first (1300, 1000)
+        ends = {tuple(round(c / 0.3048006096012192 + o, 3) for c, o in zip(p["xy"][k], b.frame["origin"]))
+                for p in b.net.pipes for k in (0, -1)}
+        out[n]["bridge"] = any({(1100.0, 1000.0), (1300.0, 1000.0)} <= {
+            tuple(round(c / b.frame["unit_m"] + o, 3) for c, o in zip(p["xy"][k], b.frame["origin"])) for k in (0, -1)}
+            for p in b.net.pipes)
+        out[n]["end_points"] = len(ends)
+    for n in ("null_shape_mid.zip", "deleted_dbf_record.zip"):
+        b = _gis(_read_bytes(paths[n]), n)
+        # each rebuilt pipe's diameter against the line it was drawn from (lines in QUIRK_DIAMETERS' order by x)
+        got = []
+        for p in sorted(b.net.pipes, key=lambda p: min(v[0] for v in p["xy"])):
+            got.append(round(b.diam_in[p["id"]], 3))
+        out[n] = {"pipes": len(b.net.pipes), "diameters_in_line_order": got,
+                  "aligned": got == [float(d) for d in FX.QUIRK_DIAMETERS], "dropped": b.layer.dropped,
+                  "notes": b.layer.notes}
+    b = _gis(_read_bytes(paths["cpg_utf8.zip"]), "cpg_utf8.zip")
+    out["cpg_utf8.zip"] = {"streets": [f.props.get("STREET") for f in b.layer.features],
+                           "decoded": [f.props.get("STREET") for f in b.layer.features] == list(FX.CPG_NAMES),
+                           "encoding": b.layer.encoding}
+    b = _gis(_read_bytes(paths["wkb_z_m_zm.gpkg"]), "wkb_z_m_zm.gpkg")
+    out["wkb_z_m_zm.gpkg"] = {"features": len(b.layer.features),
+                              "flags": [{"z": f.has_z, "m": f.has_m} for f in b.layer.features],
+                              "read_in_2d": [f.parts[0].tolist() for f in b.layer.features] ==
+                                            [[list(p) for p in ln] for ln in FX.wkb_z_m_zm_expected()],
+                              "pipes": len(b.net.pipes)}
+    b = _gis(_read_bytes(paths["prj_stateplane_ftus.zip"]), "prj_stateplane_ftus.zip")
+    out["prj_stateplane_ftus.zip"] = {"unit": b.layer.crs["unit"], "unit_m": b.layer.crs["unit_m"],
+                                      "how": b.layer.crs["how"]}
+    b = _gis(_read_bytes(paths["gpkg_srs_undefined.gpkg"]), "gpkg_srs_undefined.gpkg")
+    out["gpkg_srs_undefined.gpkg"] = {"questions": [q["key"] for q in b.questions], "built": b.inp_text is not None,
+                                      "question": b.questions[0]["text"] if b.questions else None}
+    b2 = _gis(_read_bytes(paths["gpkg_srs_undefined.gpkg"]), "gpkg_srs_undefined.gpkg", unit="ft")
+    out["gpkg_srs_undefined.gpkg"]["with_unit_ft"] = {"built": b2.inp_text is not None, "pipes": len(b2.net.pipes)}
+    b = _gis(_read_bytes(paths["shape_length_mismatch.zip"]), "shape_length_mismatch.zip")
+    out["shape_length_mismatch.zip"] = {**{k: (round(v, 4) if isinstance(v, float) else v)
+                                           for k, v in b.length_check.items()}}
+    b = _gis(_read_bytes(paths["quantized_4dp.geojson"]), "quantized_4dp.geojson")
+    out["quantized_4dp.geojson"] = {"decimals": b.layer.crs.get("quantized_decimals"),
+                                    "warned": any("decimals of a degree" in w for w in b.warnings)}
+    out.update(_review_quirks(paths))
+    return out
+
+
+def _review_quirks(paths: dict) -> dict:
+    """The quirks the review of task 17 found: Web Mercator read as ground metres, Esri JSON's code-only
+    spatialReference, GeoJSON positions dropped without a word, a preview KML in a shapefile zip, two shapefiles of one
+    name, KML sizes guessed from names and attribute tables, and an empty install-year field."""
+    from . import fixtures as FX
+    from . import gis_read as G
+    from .importers import Readiness, sniff
+    out = {}
+    for n in ("mercator_3857.geojson", "mercator_esri_prj.zip"):
+        data = _read_bytes(paths[n])
+        b = _gis(data, n)
+        got = sorted(p["length_m"] for p in b.net.pipes)
+        want = sorted(FX.MERC_LENGTHS_M)
+        naive = sorted(math.hypot(ln[1][0] - ln[0][0], ln[1][1] - ln[0][1]) for ln in FX._mercator_lines())
+        out[n] = {"crs_kind": b.layer.crs["kind"], "from_web_mercator": bool(b.layer.crs.get("from_web_mercator")),
+                  "lengths_m": [round(x, 4) for x in got], "ground_lengths_m": want,
+                  "max_rel_error": max(abs(g - w) / w for g, w in zip(got, want)),
+                  "as_mercator_metres_m": [round(x, 2) for x in naive], "notes": b.notes}
+    b = _gis(_read_bytes(paths["esri_code_only.json"]), "esri_code_only.json")
+    out["esri_code_only.json"] = {"refusal": b.refusal, "epsg": b.layer.crs.get("epsg"), "unit": b.layer.crs.get("unit"),
+                                  "pipes": len(b.net.pipes)}
+    b = _gis(_read_bytes(paths["geojson_bad_positions.geojson"]), "geojson_bad_positions.geojson")
+    out["geojson_bad_positions.geojson"] = {"lines_read": b.layer.n_lines, "features": len(b.layer.features),
+                                            "warned": [w for w in b.warnings if "cannot be read" in w]}
+    data = _read_bytes(paths["shp_with_preview_kml.zip"])
+    b = _gis(data, "shp_with_preview_kml.zip")
+    out["shp_with_preview_kml.zip"] = {"sniffed": sniff(data, "shp_with_preview_kml.zip").kind, "layers": b.layers,
+                                       "pipes": len(b.net.pipes), "notes": [x for x in b.notes if ".kml" in x]}
+    layers, _ = G.read_layers(_read_bytes(paths["two_folders_same_name.zip"]), "two_folders_same_name.zip")
+    out["two_folders_same_name.zip"] = {"layers": [[x.name, x.n_lines] for x in layers]}
+    for n in ("kml_numbered_paths.kml", "kml_attribute_table.kml"):
+        b = _gis(_read_bytes(paths[n]), n)
+        out[n] = {"diameter_field": b.fields.get("diameter"), "year_field": b.fields.get("year"),
+                  "questions": [q["key"] for q in b.questions],
+                  "sizes_in": sorted({round(v, 3) for v in b.diam_in.values()}),
+                  "length_check_agrees": b.length_check.get("agrees")}
+    b = _gis(_read_bytes(paths["year_all_null.geojson"]), "year_all_null.geojson")
+    rows = G.readiness(b, Readiness(name="year_all_null.geojson")).rows
+    out["year_all_null.geojson"] = {"year_field": b.fields.get("year"), "years": b.years,
+                                    "row": [list(r) for r in rows if r[0] == "Install year"]}
+    return out
+
+
+def _canonical(net) -> set:
+    """A network's topology with no ID or coordinate in it: each node named by the smallest (feature, part, end) of
+    the line ends it holds, each pipe by its feature, part and piece and its two nodes."""
+    label: dict = {}
+    for key, n in sorted(net.end_node.items()):
+        label.setdefault(n, key)
+    # a node no line ends at (the middle of a closed line cut in two, since the review of task 17): the smallest
+    # (feature, part, piece, end) of the pieces that end there
+    for key, n in sorted(((p["feature"], p["part"], p["piece"], k), p[e]) for p in net.pipes
+                         for k, e in ((0, "start"), (1, "end"))):
+        label.setdefault(n, (-1,) + key)
+    return {(p["feature"], p["part"], p["piece"], tuple(sorted((label.get(p["start"]), label.get(p["end"])))))
+            for p in net.pipes}
+
+
+def part_gis_invariance() -> dict:
+    """gis_snapping_invariance: ky4's mains layer (feet) translated by 5e6 ft and rotated 37 degrees, in metres and in
+    feet, built at 6 ft through the same frame code as a layer read from a file; and a skeleton written in GPM and feet
+    and read back by WNTR."""
+    import wntr
+    from . import fixtures as FX
+    from . import gis_read as G
+    from . import topology as T
+    recs = FX.ky4_mains_records()
+
+    def layer(transform, unit):
+        feats = [G.Feature(index=k, kind="line", parts=[np.array([transform(p) for p in r["pts"]], float)],
+                           props={"PIPEDIAM": r["text"]}) for k, r in enumerate(recs)]
+        return G.Layer(name="ky4_mains", source="geojson", features=feats, fields=["PIPEDIAM"],
+                       crs={"kind": "projected", "unit": unit, "unit_m": T.UNIT_M[unit], "how": "the check"})
+    th = math.radians(37.0)
+    rot = lambda p: (5e6 + p[0] * math.cos(th) - p[1] * math.sin(th), 5e6 + p[0] * math.sin(th) + p[1] * math.cos(th))
+    base = G.build_from_layer(layer(lambda p: p, "ft"))
+    moved = G.build_from_layer(layer(rot, "ft"))
+    metres = G.build_from_layer(layer(lambda p: (p[0] * T.FT, p[1] * T.FT), "m"))
+    out = {"translated_rotated_same_topology": _canonical(base.net) == _canonical(moved.net),
+           "pipes": len(base.net.pipes), "metres_same_topology": _canonical(base.net) == _canonical(metres.net)}
+    lab_b = {(p["feature"], p["part"], p["piece"]): p for p in base.net.pipes}
+    lab_m = {(p["feature"], p["part"], p["piece"]): p for p in metres.net.pipes}
+    rel = [abs(lab_b[k]["length_m"] - lab_m[k]["length_m"]) / lab_b[k]["length_m"] for k in lab_b]
+    dia = [abs(base.diam_in[lab_b[k]["id"]] - metres.diam_in[lab_m[k]["id"]]) for k in lab_b]
+    out["metres_vs_feet_max_rel_length"] = max(rel)
+    out["metres_vs_feet_max_diameter_diff_in"] = max(dia)
+    with tempfile.TemporaryDirectory(prefix="rm_t17_inp_") as d:
+        p = os.path.join(d, "skeleton.inp")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(base.inp_text)
+        wn = wntr.network.WaterNetworkModel(p)
+    rl = max(abs(wn.get_link(q["id"]).length - q["length_m"]) / q["length_m"] for q in base.net.pipes)
+    rd = max(abs(wn.get_link(q["id"]).diameter - base.diam_in[q["id"]] * 0.0254) / (base.diam_in[q["id"]] * 0.0254)
+             for q in base.net.pipes)
+    out.update(skeleton_units=wn.options.hydraulic.inpfile_units, skeleton_max_rel_length=rl,
+               skeleton_max_rel_diameter=rd, skeleton_pipes=len(wn.pipe_name_list),
+               skeleton_junctions=len(wn.junction_name_list))
+    return out
+
+
+def part_gis_chain(paths: dict) -> dict:
+    """gis_snapping_chain: a 5 ft plus 5 ft chain, a valve cluster and a pump manifold at the 6 ft default."""
+    from . import fixtures as FX
+    b = _gis(_read_bytes(paths["chain_cluster.geojson"]), "chain_cluster.geojson")
+    r = b.net.report
+    # which group each node's ends come from
+    groups = {}
+    feats = {f.index: f.props["PIPEID"].rsplit("_", 1)[0] for f in b.layer.features}
+    for (f, _, end), n in b.net.end_node.items():
+        if end == 0:
+            groups.setdefault(feats[f], set()).add(n)
+    tees = {}
+    for n in FX.TEE_CASES:           # the review of task 17: tees on a main of dense vertices, an offset cross, a loop
+        t = _gis(_read_bytes(paths[n]), n).net.report
+        tees[n] = {k: t[k] for k in ("pipes", "nodes", "components", "dead_ends", "tees_split", "loops_cut",
+                                     "dropped_pieces", "nodes_flagged_wide")}
+    return {"nodes_flagged_wide": r["nodes_flagged_wide"], "flagged_detail": r["flagged_detail"],
+            "nodes_split": r["nodes_split"], "split_detail": r["split_detail"],
+            "nodes_per_group": {g: len(v) for g, v in sorted(groups.items())},
+            "ends_per_group": {g: len(v) for g, v in FX.CHAIN_ENDS.items()},
+            "warnings": [w for w in b.warnings if "tolerance" in w], "tees_and_loops": tees}
+
+
+def part_gis_ids(paths: dict) -> dict:
+    """gis_ids_deterministic: the lon/lat ky4 layer shuffled gives the same node and pipe IDs; dirty IDs go through
+    the mapping table."""
+    a = _gis(_read_bytes(paths["ky4_mains_lonlat.geojson"]), "ky4_mains_lonlat.geojson")
+    b = _gis(_read_bytes(paths["ky4_mains_shuffled.geojson"]), "ky4_mains_shuffled.geojson")
+    pa = {(p["id"], p["start"], p["end"]) for p in a.net.pipes}
+    pb = {(p["id"], p["start"], p["end"]) for p in b.net.pipes}
+    d = _gis(_read_bytes(paths["ids_dirty.geojson"]), "ids_dirty.geojson")
+    longest = max(len(p["id"].encode("utf-8")) for p in a.net.pipes + d.net.pipes)
+    longest_node = max(len(n.encode("utf-8")) for n in list(a.net.nodes) + list(d.net.nodes))
+    return {"shuffled_same_node_ids": set(a.net.nodes) == set(b.net.nodes),
+            "shuffled_same_pipes": pa == pb, "nodes": len(a.net.nodes), "pipes": len(pa),
+            "inp_identical": a.inp_text == b.inp_text, "dirty_mapping": d.id_table,
+            "dirty_model_ids": sorted(p["id"] for p in d.net.pipes), "longest_id_bytes": max(longest, longest_node)}
+
+
+def part_gis_diameters(paths: dict) -> dict:
+    """diameter_parsing: every row of diameter_cases.csv, and the layer-level bare-number ranges."""
+    import csv as _csv
+    from . import fixtures as FX
+    from . import topology as T
+    rows, wrong = [], []
+    with open(paths["diameter_cases.csv"], newline="", encoding="utf-8") as fh:
+        for r in _csv.DictReader(fh):
+            got = T.parse_diameter(r["text"])
+            want_v = float(r["value"]) if r["value"] else None
+            ok = (got["value"] == want_v and (got["unit"] or "") == r["unit"] and (got["flag"] or "") == r["flag"]
+                  if r["flag"] not in ("empty", "unreadable", "reducer", "two sizes") else
+                  got["value"] is None and got["flag"] == r["flag"])
+            rows.append({"text": r["text"], "value": got["value"], "unit": got["unit"], "flag": got["flag"], "ok": ok})
+            if not ok:
+                wrong.append(r["text"])
+    bare = [{"values": list(v), "unit": T.bare_unit(v), "ok": T.bare_unit(v) == u} for v, u in FX.BARE_CASES]
+    return {"cases": len(rows), "right": len(rows) - len(wrong), "wrong": wrong, "rows": rows, "bare": bare}
+
+
+# the review of task 17: (fixture, options, read with the feature cap at fixtures.REVIEW_MAX_FEATURES)
+REVIEW_REFUSAL_CASES = (("bad_vertices.gpkg", {}, False), ("empty_lines_4326.gpkg", {}, False),
+                        ("lonlat_no_prj.zip", {}, False), ("lonlat_no_prj.zip", {"unit": "ft"}, False),
+                        ("lonlat_no_prj.zip", {"unit": "deg"}, False), ("lonlat_as_3857.geojson", {}, False),
+                        ("stateplane_as_4326.geojson", {}, False), ("stateplane_as_4326.geojson", {"unit": "us_ft"}, False),
+                        ("world_mercator.zip", {}, False), ("many_shapefiles.zip", {}, False),
+                        ("esri_over_limit.json", {}, True), ("mains_and_many_points.gpkg", {}, True))
+
+
+@contextlib.contextmanager
+def _feature_cap(n: int | None):
+    """gis_read.MAX_FEATURES set to n for a while (the over-limit fixtures are small, read with a small cap)."""
+    from . import gis_read as G
+    old = G.MAX_FEATURES
+    G.MAX_FEATURES = n or old
+    try:
+        yield
+    finally:
+        G.MAX_FEATURES = old
+
+
+def _case_key(name: str, opts: dict, capped: bool) -> str:
+    from . import fixtures as FX
+    return name + "".join(f"|{k}={v}" for k, v in sorted(opts.items())) + (
+        f"|cap={FX.REVIEW_MAX_FEATURES}" if capped else "")
+
+
+def part_gis_refusals(paths: dict) -> dict:
+    """gis_readers_refuse_cleanly: each file gets a question or a plain message, and none raises; since the review of
+    task 17 also the layers that broke the reader then (REVIEW_REFUSAL_CASES), each read as build_gis reads it and as
+    the Get started page does (read_layers, then build_from_layer)."""
+    from . import fixtures as FX
+    from . import gis_read as G
+    out = {}
+    for n in ("no_prj.zip", "utility_gdb.zip", "points_only.geojson", "empty_layer.gpkg"):
+        try:
+            b = _gis(_read_bytes(paths[n]), n)
+            out[n] = {"raised": False, "refusal": b.refusal, "questions": [q["key"] for q in b.questions],
+                      "built": b.inp_text is not None}
+        except Exception as e:  # noqa: BLE001
+            out[n] = {"raised": True, "error": f"{type(e).__name__}: {e}"}
+    for n, opts, capped in REVIEW_REFUSAL_CASES:
+        key = _case_key(n, opts, capped)
+        data = _read_bytes(paths[n])
+        with _feature_cap(FX.REVIEW_MAX_FEATURES if capped else None):
+            try:
+                b = _gis(data, n, **opts)
+                r = b.net.report if b.net is not None else None
+                out[key] = {"raised": False, "refusal": b.refusal, "questions": [q["key"] for q in b.questions],
+                            "question_options": [q["options"] for q in b.questions],
+                            "question_text": [q["text"] for q in b.questions], "built": b.inp_text is not None,
+                            "pipes": r["pipes"] if r else None, "components": r["components"] if r else None,
+                            "layers": b.layers, "warnings": b.warnings, "notes": b.notes}
+            except Exception as e:  # noqa: BLE001
+                out[key] = {"raised": True, "error": f"{type(e).__name__}: {e}"}
+            try:                      # the Get started page's own path
+                layers, kind = G.read_layers(data, n)
+                lay = next((x for x in layers if x.n_lines), layers[0])
+                pb = G.build_from_layer(lay, G.GisOptions(layer=lay.name, **opts), n, kind, layers)
+                out[key]["page_path"] = {"raised": False, "refusal": pb.refusal, "built": pb.inp_text is not None}
+            except G.GisRefused as e:
+                out[key]["page_path"] = {"raised": False, "refusal": str(e), "built": False}
+            except Exception as e:  # noqa: BLE001
+                out[key]["page_path"] = {"raised": True, "error": f"{type(e).__name__}: {e}"}
+    return out
+
+
+# the final verification of task 17: the inlet residuals headers it listed, each read or refused (free chlorine)
+FINAL_INLET_HEADERS = ("Cl", "FAC", "Free", "FCl", "Res", "Resid", "mg_l", "mg/L", "ppm", "residual_mgL", "value",
+                       "reading", "conc", "concentration", "average", "median", "level", "measured", "dose", "setpoint",
+                       "target", "Total", "TRC", "monochloramine", "NH2Cl")
+FINAL_SIZE_TEXTS = ("9" * 400, "9" * 400 + " in", '8"x8"x6"', '8"x8"x8"', '6"x6"', "12x8 RED", "6x6x4", "12x12x8 TEE",
+                    "6x4x6", "8x8x8", '6" x 6" x 4"')
+FINAL_STRICT_TEXTS = ("Line 3 in Oak St", "8 in main", "8 in", "8 in.", '8"', "8 inch main", "200 mm")
+FINAL_TEE_SWEEP = {"branches": (2, 3, 4, 5), "spacing_ft": (3.0, 4.0, 5.0, 5.5)}
+
+
+def _final_case(data: bytes, n: str, opts: dict | None = None, capped: bool = False) -> dict:
+    """One fixture read as build_gis reads it (with the hosted demo's unpacked limit) and as the Get started page
+    does (read_layers, then build_from_layer): the plain outcome, and whether either path raised."""
+    from . import cloud
+    from . import fixtures as FX
+    from . import gis_read as G
+    opts = opts or {}
+    lim = cloud.UPLOAD_MB * 1_000_000
+    with _feature_cap(FX.REVIEW_MAX_FEATURES if capped else None):
+        try:
+            b = G.build_gis(data, n, G.GisOptions(**opts), max_unpacked=lim)
+            r = b.net.report if b.net is not None else None
+            out = {"raised": False, "refusal": b.refusal, "questions": [q["key"] for q in b.questions],
+                   "built": b.inp_text is not None, "pipes": r["pipes"] if r else None,
+                   "components": r["components"] if r else None, "offer_unit": b.offer_unit, "notes": b.notes,
+                   "warnings": b.warnings, "layers": b.layers}
+        except Exception as e:  # noqa: BLE001
+            return {"raised": True, "error": f"{type(e).__name__}: {e}"}
+        try:
+            layers, kind = G.read_layers(data, n, lim)
+            lay = next((x for x in layers if x.name == opts.get("layer")), None) or next(
+                (x for x in layers if x.n_lines), layers[0])        # the page offers only the layers it read
+            pb = G.build_from_layer(lay, G.GisOptions(**{**opts, "layer": lay.name}), n, kind, layers)
+            out["page_path"] = {"raised": False, "built": pb.inp_text is not None, "refusal": pb.refusal,
+                                "layer": lay.name}
+        except G.GisRefused as e:
+            out["page_path"] = {"raised": False, "built": False, "refusal": str(e)}
+        except Exception as e:  # noqa: BLE001
+            out["page_path"] = {"raised": True, "error": f"{type(e).__name__}: {e}"}
+    return out, b
+
+
+def _tee_sweep() -> dict:
+    """The verifier's sweep: n branches ending 4 ft short of one main, s ft apart along it, fanned out, on a straight
+    two-point main and on a main with a vertex every 2 ft, at 6 ft: the connected parts of each."""
+    from . import topology as T
+    from .fixtures import _branches
+    out = {}
+    for main_kind, main in (("straight", [(-300.0, 0.0), (300.0, 0.0)]),
+                            ("dense", [(float(-300 + 2 * k), 0.0) for k in range(301)])):
+        for n in FINAL_TEE_SWEEP["branches"]:
+            for sp in FINAL_TEE_SWEEP["spacing_ft"]:
+                lines = [main] + _branches(n, sp)
+                L = [T.Line(k, 0, np.array(ln, float) * T.FT, np.array(ln, float)) for k, ln in enumerate(lines)]
+                r = T.build_network(L, 6 * T.FT).report
+                out[f"{main_kind}|n={n}|s={sp:g}"] = r["components"]
+    return out
+
+
+def part_gis_final(paths: dict) -> dict:
+    """gis_final_verification: each issue the final verification of task 17 confirmed, as a fixture or a case, read
+    as build_gis reads it (with the hosted demo's unpacked limit) and as the page does.  Times are measured by the
+    check, not recorded."""
+    from . import fixtures as FX
+    from . import gis_read as G
+    from . import importers as I
+    from . import topology as T
+    out = {}
+
+    def case(n, opts=None, capped=False, key=None):
+        res, b = (lambda r: (r, None) if isinstance(r, dict) else r)(_final_case(_read_bytes(paths[n]), n, opts, capped))
+        out[key or _case_key(n, opts or {}, capped)] = res
+        return b
+    for n in ("kmz_long_whitespace.kmz", "kmz_long_lt.kmz", "kmz_open_rows.kmz", "kmz_doctype_after_blank_lines.kmz",
+              "kmz_doctype_after_comment.kmz", "prj_spaces_comma.zip", "prj_spaces_comma_20kb.zip",
+              "esri_wkt_spaces_comma.json", "world_mercator_3395.geojson", "esri_wkid_3395.json",
+              "kml_line_in_street.kml", "zipped_gpkg.zip", "zipped_geojson.zip", "zipped_two_geojson.zip",
+              "geojson_crs_props_string.geojson", "esri_odd_attributes.json", "tee_fan_dense_main.geojson",
+              "tee_fan_straight_main.geojson"):
+        case(n)
+    for n in ("mains_and_service_lines.gpkg", "mains_and_service_lines.zip"):
+        case(n, capped=True)
+        case(n, {"layer": "mains"}, capped=True)
+        case(n, {"layer": "service_lines"}, capped=True)
+    for n in ("lonlat_stateplane_prj.zip", "lonlat_as_2263.geojson"):
+        case(n)
+        case(n, {"unit": "deg"})
+    # swapped axes: asked; swapped, the lengths of the same grid written longitude first; kept, the lengths near the pole
+    truth = _gis(FX._fc(FX._grid_lines(*FX.FINAL_SWAP_GRID), [{"PIPEDIAM": "8 in"}] * 24,
+                        "urn:ogc:def:crs:EPSG::4326"), "truth.geojson")
+    want = sorted(p["length_m"] for p in truth.net.pipes)
+    for n in ("swapped_latlon_4326.geojson", "swapped_latlon_nocrs.geojson"):
+        case(n)
+        for sw in (True, False):
+            b = case(n, {"swap_axes": sw})
+            got = sorted(p["length_m"] for p in b.net.pipes)
+            out[_case_key(n, {"swap_axes": sw}, False)].update(
+                lengths_m=[round(min(got), 1), round(max(got), 1)], true_lengths_m=[round(min(want), 1),
+                                                                                    round(max(want), 1)],
+                max_rel_error=max(abs(g - w) / w for g, w in zip(got, want)))
+    b = case("loop_joined_through_feed.geojson")
+    out["loop_joined_through_feed.geojson"].update({k: b.net.report[k] for k in ("loops_cut", "dropped_pieces")})
+    b = case("esri_epoch_dates.json")
+    out["esri_epoch_dates.json"]["years"] = b.years
+    b = case("gpkg_bad_utf8.gpkg")
+    out["gpkg_bad_utf8.gpkg"]["first_size_text"] = str(b.layer.features[0].props.get("PIPEDIAM"))
+    b = case("size_overflow.geojson")
+    out["size_overflow.geojson"].update(diameters=b.diam_counts, inf_written="inf" in b.inp_text.lower())
+    out["kml_line_in_street.kml"]["diameter_field"] = _gis(_read_bytes(paths["kml_line_in_street.kml"]),
+                                                           "kml_line_in_street.kml").fields.get("diameter")
+    out["wkt_unit_of_the_20kb_run"] = G.wkt_unit(FX._prj_run(FX.FINAL_PRJ_RUN[1]))
+    out["size_texts"] = {t[:12] + (f"...({len(t)} characters)" if len(t) > 12 else ""): T.parse_diameter(t)["flag"]
+                         or T.parse_diameter(t)["value"] for t in FINAL_SIZE_TEXTS}
+    out["strict_in_texts"] = {t: [T.parse_diameter(t, strict_in=True)["unit"], T.parse_diameter(t)["unit"]]
+                              for t in FINAL_STRICT_TEXTS}
+    out["tee_sweep_components"] = _tee_sweep()
+    inlet = {}
+    for h in FINAL_INLET_HEADERS:
+        try:
+            I.read_inlet_residuals(f"inlet,{h}\nRiver,1.20\nLake,0.85\n".encode())
+            inlet[h] = "read"
+        except I.LogRefused as e:
+            inlet[h] = "refused: " + str(e)[:90]
+    out["inlet_headers"] = inlet
+    return out
+
+
+def part_gis_valves(paths: dict) -> dict:
+    """gis_valve_status: a valve layer's NORMAL_POS gives proposed closed_valve rows, each at its node when one is
+    within the tolerance."""
+    from . import gis_read as G
+    b = _gis(_read_bytes(paths["valves_normal_pos.geojson"]), "valves_normal_pos.geojson")
+    v = G.proposed_closed_valves(b.layer, b.net, frame=b.frame)
+    rows = lambda v: [{"valve": r["valve"], "status": r["status"], "node": r["node"],
+                       "distance_m": None if r["distance_m"] is None else round(r["distance_m"], 4)} for r in v["rows"]]
+    # the same mains and valves as two layers of one GeoPackage, the valve layer found beside the line layer
+    layers, _ = G.read_layers(_read_bytes(paths["mains_and_valves.gpkg"]), "mains_and_valves.gpkg")
+    b2 = _gis(_read_bytes(paths["mains_and_valves.gpkg"]), "mains_and_valves.gpkg")
+    vl = G.valve_layer(layers, b2.layer)
+    v2 = G.proposed_closed_valves(vl, b2.net, frame=b2.frame)
+    return {"status_field": v["status_field"], "id_field": v["id_field"], "proposed": rows(v),
+            "open": v["open"], "unread": v["unread"],
+            "separate_layer": {"line_layer": b2.layer.name, "valve_layer": vl.name, "proposed": rows(v2)}}
+
+
+def _wntr_runs(path: str) -> dict:
+    """Pressure, flow, tank head and water age (7 days, as every run is set up) and chlorine at WNTR_MEMBER."""
+    import wntr
+    from .simulate import load, simulate_nominal_chlorine
+    with tempfile.TemporaryDirectory(prefix="rm_t17_wntr_") as d:
+        wn = load(path)
+        wn.options.quality.parameter = "AGE"
+        res = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "h"))
+        c = simulate_nominal_chlorine(path, *WNTR_MEMBER, file_prefix=os.path.join(d, "c"))
+    tanks = wn.tank_name_list
+    return {"pressure": res.node["pressure"], "flow": res.link["flowrate"],
+            "head": res.node["head"][tanks] if tanks else None, "age": res.node["quality"], "chlorine": c}
+
+
+def _max_diff(a: dict, b: dict) -> dict:
+    out = {}
+    for k in a:
+        if a[k] is None:
+            out[k] = None
+            continue
+        x, y = a[k], b[k][a[k].columns]
+        out[k] = float(np.nanmax(np.abs(x.values - y.values))) if x.size else 0.0
+    return out
+
+
+def part_gis_wntr(paths: dict) -> dict:
+    """gis_wntr_schema_roundtrip: Net3, Net2 and ky4 in WNTR's GIS schema with WNTR's JSON rebuild with 0.0 difference
+    against the bundled file as WNTR reads it and writes it again (the same writer), and the negative control: without
+    copying demand_pattern into pattern_name, Net3's chlorine moves by more than NEGATIVE_BAR_MGL."""
+    import wntr
+    from . import fixtures as FX
+    from . import gis_read as G
+    from .simulate import LIB
+    out = {"member": {"kb_per_day": WNTR_MEMBER[0], "kw_m_per_day": WNTR_MEMBER[1], "gamma": WNTR_MEMBER[2]},
+           "networks": {}}
+    with tempfile.TemporaryDirectory(prefix="rm_t17_schema_") as d:
+        for net in FX.WNTR_SCHEMA_NETS:
+            data = _read_bytes(paths[f"wntr_schema_{net}.zip"])
+            ref = os.path.join(d, f"{net}_ref.inp")
+            wntr.network.write_inpfile(wntr.network.WaterNetworkModel(os.path.join(LIB, f"{net}.inp")), ref)
+            got = os.path.join(d, f"{net}_gis.inp")
+            with open(got, "w", encoding="utf-8") as fh:
+                fh.write(G.wntr_schema_inp(data, fix_patterns=True))
+            a, b = _wntr_runs(ref), _wntr_runs(got)
+            entry = {"max_abs_diff": _max_diff(a, b)}
+            if net == "Net3":
+                bad = os.path.join(d, f"{net}_nofix.inp")
+                with open(bad, "w", encoding="utf-8") as fh:
+                    fh.write(G.wntr_schema_inp(data, fix_patterns=False))
+                c = _wntr_runs(bad)
+                diff = np.abs(a["chlorine"].values - c["chlorine"][a["chlorine"].columns].values)
+                entry["without_pattern_workaround"] = {"chlorine_max_abs_diff_mgL": float(diff.max()),
+                                                       "chlorine_mean_abs_diff_mgL": float(diff.mean()),
+                                                       "above_bar": float(diff.max()) > NEGATIVE_BAR_MGL}
+            out["networks"][net] = entry
+    return out
+
+
+def part_gis_external() -> dict:
+    """gis_external_file: the public open-data mains layer was not used (lead decision 8: fixtures are generated
+    locally), so the check is skipped and says so."""
+    return {"skipped": True, "why": "no external file: the lead's decision for this iteration is that fixtures are "
+                                    "generated locally, so no public layer was downloaded"}
+
+
+def gis_record() -> dict:
+    from . import fixtures as FX
+    _quiet()
+    with tempfile.TemporaryDirectory(prefix="rm_t17_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.GIS_FIXTURES)
+        return {"about": "Task 17's GIS importer, converter self-consistency on public models converted to GIS by our "
+                         "own writers (residualmap/fixtures.py), never a test on a utility's own layer (R6): ky4's mains "
+                         "rebuilt from four utility-style layers against the pre-registered bar (part 'rebuild'), ky4 "
+                         "drawn by hand in Google Earth (part 'kml', no bar), the file-format quirks, snapping "
+                         "invariance and chains, deterministic IDs, diameter text, clean refusals, a valve layer's "
+                         "status, WNTR's own GIS schema with its JSON (part 'wntr'), and the cases of the task's final verification "
+                         "(part 'final'). Written by python -m "
+                         "residualmap.intake_exp gis; the task17 checks in residualmap/checks.py rerun every part and "
+                         "compare.",
+                "rebuild": part_gis_rebuild(paths), "kml": part_gis_kml(paths), "quirks": part_gis_quirks(paths),
+                "invariance": part_gis_invariance(), "chain": part_gis_chain(paths), "ids": part_gis_ids(paths),
+                "diameters": part_gis_diameters(paths), "refusals": part_gis_refusals(paths),
+                "valves": part_gis_valves(paths), "wntr": part_gis_wntr(paths), "external": part_gis_external(),
+                "final": part_gis_final(paths)}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples",
-                                                "snapping", "zone"),
+                                                "snapping", "zone", "gis"),
                     default="all")
     ap.add_argument("--ky10", action="store_true", help="timing: also time ky10's grid (about 4 minutes)")
     ap.add_argument("--fixed-only", action="store_true", help="timing: rewrite only the records copied from logs "
@@ -2136,6 +2813,9 @@ def main(argv=None) -> int:
         return 0
     if a.what == "zone":                 # task 16c (not part of 'all'); a fresh 675-run Net3 grid, about 15 s
         _write(RECORD_16C, zone_record())
+        return 0
+    if a.what == "gis":                  # task 17 (not part of 'all'); about a minute
+        _write(RECORD_17, gis_record())
         return 0
     if a.what in ("all", "elevation"):      # first: the readiness text quotes it
         _write(ELEVATION_PRV, elevation_prv())

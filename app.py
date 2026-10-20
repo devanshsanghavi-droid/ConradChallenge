@@ -99,6 +99,12 @@ Its review: a tap the tap map marks as a zone inlet with no usable reading in th
 (it was left out without a word), its readings outside the window are listed as not used, the inlet file's notes
 (decimal commas, µg/L) are shown, the chloramine mode does not offer inlet residuals yet (its dose range is the
 plant's), and every stop between the sidebar and the inlets draws the plain dose input first (stop_page).
+
+Iteration 5, task 17: while a model prepared on the Get started page (a skeleton from a GIS layer, or WNTR's own GIS
+files) is kept in this browser session, the Model radio offers a third option, 'Model prepared on Get started', and the
+page's 'Open it on the main page' picks it; the model goes through the same intake as an upload (its readiness report;
+a skeleton stops there, as its report says).  Without one the radio is the one before task 17, so every older check's
+widget order holds; with uploads off (the hosted demo) it never appears.
 """
 from __future__ import annotations
 
@@ -131,6 +137,7 @@ from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_ZONE_NOTE, 
                                    distinct_values, dropped_lines, guess_columns, inlet_ratios_from, inlet_tap_residuals,
                                    mgl_text, prepare_inp, read_grab_log, read_inlet_residuals, read_table, shows_clock,
                                    size_gate)
+from residualmap.gis_read import MODEL_RADIO_KEY, PREPARED_KEY, PREPARED_OPEN, PREPARED_OPTION
 from residualmap.route import plan_route
 from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path,
                                grid_edge_mass, simulator_grid_24h)
@@ -197,6 +204,11 @@ INLET_HELP = ("Two columns: each inlet's node ID in your model and its measured 
               "means the highest residual entering the zone. A tap map can mark a tap as a zone inlet instead, with a "
               "'role' column that says inlet: the median of that tap's readings in the grab log's window sets the "
               "inlet's residual, and its readings are not fitted.")
+# task 17: a model prepared on the Get started page that cannot run yet (a skeleton from a GIS layer)
+PREPARED_NOT_READY = ("This model was built on the Get started page. A model built from a GIS layer is a skeleton: pipes "
+                      "and nodes only, with no source, tank, pump or demand, so it cannot run until those are added: "
+                      "download it on the Get started page and add them in EPANET (a form for them here is not built "
+                      "yet).")
 # the review of task 16c: inlet residuals are not offered in the chloramine mode until a check covers them
 INLET_NOT_CA_WHY = ("Inlet residuals are not available in the chloramine mode yet: its dose range is made for the total "
                     "chlorine leaving a plant, which the plant's fast organic demand lowers, and a residual measured "
@@ -344,15 +356,42 @@ def old_pipe_text(g: float, uniform_c: bool) -> str:
     return "old-pipe factor: not identifiable from one C value" if uniform_c else f"old-pipe factor γ={g:.1f}"
 
 
+class PreparedModel:
+    """A model prepared on the Get started page (task 17: a skeleton from a GIS layer, or WNTR's own GIS files), read
+    through the same intake as an upload: name, size and getvalue(), as Streamlit's uploaded file has them."""
+
+    def __init__(self, entry: dict):
+        self.name, self._data, self.source = entry["name"], entry["data"], entry.get("from", "the Get started page")
+        self.size = len(self._data)
+
+    def getvalue(self) -> bytes:
+        return self._data
+
+
 # ----------------------------------------------------------------------------- inputs
 with st.sidebar:
     st.header("1. Your network")
-    src = st.radio("Model", ["Example network"] + (["Upload my .inp"] if UPLOADS else []), horizontal=True)
+    # task 17: a third option, only while a model prepared on the Get started page is kept in this session; without one
+    # the radio is the one before task 17, unkeyed
+    prepared = st.session_state.get(PREPARED_KEY) if UPLOADS else None
+    model_options = ["Example network"] + (["Upload my .inp"] if UPLOADS else [])
+    if prepared:
+        model_options.append(PREPARED_OPTION)
+        if st.session_state.pop(PREPARED_OPEN, False):
+            st.session_state[MODEL_RADIO_KEY] = PREPARED_OPTION
+        if st.session_state.get(MODEL_RADIO_KEY) not in model_options:
+            st.session_state.pop(MODEL_RADIO_KEY, None)
+        src = st.radio("Model", model_options, horizontal=True, key=MODEL_RADIO_KEY)
+    else:
+        src = st.radio("Model", model_options, horizontal=True)
     up = None
     if src == "Upload my .inp":
         up = st.file_uploader("EPANET .inp file", type=None, help=UPLOAD_HELP, max_upload_size=UPLOAD_MB)
         if up is None:
             st.stop()
+    elif src == PREPARED_OPTION:
+        up = PreparedModel(prepared)
+        st.caption(f"{up.name}, built on the Get started page from {up.source}.")
     else:
         net_path = EXAMPLES[st.selectbox("Example", list(EXAMPLES))]
     ca = st.radio("Disinfectant", DISINFECTANTS, index=0,
@@ -383,6 +422,8 @@ with st.sidebar:
             st.stop()
         confirmed = show_intake(intake_box, readiness) if readiness is not None else False
         if net_path is None:
+            if src == PREPARED_OPTION:         # task 17: a skeleton from a GIS layer stops here, as its report said
+                intake_box.info(PREPARED_NOT_READY)
             st.stop()
         if not confirmed:
             intake_box.info("A large model: tick 'Build the grid anyway' in the readiness report to start its runs.")

@@ -1,0 +1,2634 @@
+{
+ "about": "Task 17's GIS importer, converter self-consistency on public models converted to GIS by our own writers (residualmap/fixtures.py), never a test on a utility's own layer (R6): ky4's mains rebuilt from four utility-style layers against the pre-registered bar (part 'rebuild'), ky4 drawn by hand in Google Earth (part 'kml', no bar), the file-format quirks, snapping invariance and chains, deterministic IDs, diameter text, clean refusals, a valve layer's status, WNTR's own GIS schema with its JSON (part 'wntr'), and the cases of the task's final verification (part 'final'). Written by python -m residualmap.intake_exp gis; the task17 checks in residualmap/checks.py rerun every part and compare.",
+ "rebuild": {
+  "bar": {
+   "tolerance_ft": 6.0,
+   "pipes_at_least": 1151,
+   "of_pipes": 1156,
+   "components": 1,
+   "diameter_share_at_least": 0.99
+  },
+  "fixtures": {
+   "ky4_mains_stdlib_shp.zip": {
+    "reader": "pyshp, on a file written by the fixtures' own shapefile writer",
+    "default_tolerance_ft": 6.0,
+    "lines": 1113,
+    "crs": {
+     "kind": "projected",
+     "unit": "us_ft",
+     "how": "the layer's .prj (Foot_US)"
+    },
+    "dropped": {
+     "null_shapes": 0,
+     "deleted_records": 0
+    },
+    "by_tolerance_ft": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-689",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [],
+      "diameters_matched": 1135,
+      "diameter_share": 1.0,
+      "extra_pipes": 25,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 0,
+      "pipes_built": 1160
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-625",
+       "P-689",
+       "P-696",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1133,
+      "diameter_share": 1.0,
+      "extra_pipes": 27,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1160
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1126",
+       "P-152",
+       "P-625",
+       "P-696",
+       "P-9"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1151,
+      "diameter_share": 1.0,
+      "extra_pipes": 8,
+      "components": 1,
+      "nodes": 962,
+      "dead_ends": 256,
+      "tees_split": 46,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1159
+     }
+    },
+    "bar_met": true
+   },
+   "ky4_mains_pyshp.zip": {
+    "reader": "pyshp, on a file pyshp wrote (same-library self-consistency)",
+    "default_tolerance_ft": 6.0,
+    "lines": 1113,
+    "crs": {
+     "kind": "projected",
+     "unit": "us_ft",
+     "how": "the layer's .prj (Foot_US)"
+    },
+    "dropped": {
+     "null_shapes": 3,
+     "deleted_records": 1
+    },
+    "by_tolerance_ft": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-689",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [],
+      "diameters_matched": 1135,
+      "diameter_share": 1.0,
+      "extra_pipes": 25,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 0,
+      "pipes_built": 1160
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-625",
+       "P-689",
+       "P-696",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1133,
+      "diameter_share": 1.0,
+      "extra_pipes": 27,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1160
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1126",
+       "P-152",
+       "P-625",
+       "P-696",
+       "P-9"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1151,
+      "diameter_share": 1.0,
+      "extra_pipes": 8,
+      "components": 1,
+      "nodes": 962,
+      "dead_ends": 256,
+      "tees_split": 46,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1159
+     }
+    },
+    "bar_met": true
+   },
+   "ky4_mains_z.gpkg": {
+    "reader": "sqlite3 and the WKB parser, on a GeoPackage written by the fixtures' WKB writer",
+    "default_tolerance_ft": 6.0,
+    "lines": 1113,
+    "crs": {
+     "kind": "projected",
+     "unit": "us_ft",
+     "how": "the GeoPackage's coordinate system (Foot_US)"
+    },
+    "dropped": {},
+    "by_tolerance_ft": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-689",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [],
+      "diameters_matched": 1135,
+      "diameter_share": 1.0,
+      "extra_pipes": 25,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 0,
+      "pipes_built": 1160
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-625",
+       "P-689",
+       "P-696",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1133,
+      "diameter_share": 1.0,
+      "extra_pipes": 27,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1160
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1126",
+       "P-152",
+       "P-625",
+       "P-696",
+       "P-9"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1151,
+      "diameter_share": 1.0,
+      "extra_pipes": 8,
+      "components": 1,
+      "nodes": 962,
+      "dead_ends": 256,
+      "tees_split": 46,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1159
+     }
+    },
+    "bar_met": true
+   },
+   "ky4_mains_lonlat.geojson": {
+    "reader": "json and the east-north plane, on longitude and latitude from the fixtures' Lambert conformal conic inverse",
+    "default_tolerance_ft": 6.0,
+    "lines": 1113,
+    "crs": {
+     "kind": "geographic",
+     "unit": "deg",
+     "how": "GeoJSON's default (RFC 7946: longitude and latitude, WGS84), since the file names no other and its coordinates are in range"
+    },
+    "dropped": {},
+    "by_tolerance_ft": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-689",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [],
+      "diameters_matched": 1135,
+      "diameter_share": 1.0,
+      "extra_pipes": 25,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 0,
+      "pipes_built": 1160
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1023",
+       "P-1126",
+       "P-152",
+       "P-208",
+       "P-251",
+       "P-40",
+       "P-44",
+       "P-455",
+       "P-482",
+       "P-512",
+       "P-57",
+       "P-592",
+       "P-596",
+       "P-598",
+       "P-625",
+       "P-689",
+       "P-696",
+       "P-774",
+       "P-9",
+       "P-916",
+       "P-957",
+       "P-958",
+       "P-992"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1133,
+      "diameter_share": 1.0,
+      "extra_pipes": 27,
+      "components": 7,
+      "nodes": 981,
+      "dead_ends": 276,
+      "tees_split": 47,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1160
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "of_pipes": 1156,
+      "missed": [
+       "P-1126",
+       "P-152",
+       "P-625",
+       "P-696",
+       "P-9"
+      ],
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "diameters_matched": 1151,
+      "diameter_share": 1.0,
+      "extra_pipes": 8,
+      "components": 1,
+      "nodes": 962,
+      "dead_ends": 256,
+      "tees_split": 46,
+      "nodes_flagged_wide": 0,
+      "nodes_split": 0,
+      "dropped_pieces": 1,
+      "pipes_built": 1159
+     }
+    },
+    "bar_met": true
+   }
+  },
+  "bar_met_on_every_fixture": true,
+  "near_node_misses": {
+   "P-1126": {
+    "node": "J-86",
+    "distance_ft": 0.117
+   },
+   "P-152": {
+    "node": "J-198",
+    "distance_ft": 0.104
+   },
+   "P-9": {
+    "node": "J-836",
+    "distance_ft": 0.601
+   }
+  }
+ },
+ "kml": {
+  "endpoint_error_m": 5.0,
+  "default_tolerance_m": 10.0,
+  "by_tolerance_m": {
+   "5": {
+    "pipes_rebuilt": 658,
+    "of_pipes": 1156,
+    "components": 138,
+    "dead_ends": 703,
+    "nodes": 1476,
+    "tees_split": 628,
+    "nodes_flagged_wide": 246,
+    "nodes_split": 18,
+    "dropped_pieces": 300
+   },
+   "10": {
+    "pipes_rebuilt": 1060,
+    "of_pipes": 1156,
+    "components": 6,
+    "dead_ends": 290,
+    "nodes": 969,
+    "tees_split": 239,
+    "nodes_flagged_wide": 194,
+    "nodes_split": 10,
+    "dropped_pieces": 225
+   },
+   "15": {
+    "pipes_rebuilt": 1071,
+    "of_pipes": 1156,
+    "components": 1,
+    "dead_ends": 253,
+    "nodes": 909,
+    "tees_split": 57,
+    "nodes_flagged_wide": 57,
+    "nodes_split": 5,
+    "dropped_pieces": 85
+   },
+   "20": {
+    "pipes_rebuilt": 1059,
+    "of_pipes": 1156,
+    "components": 1,
+    "dead_ends": 248,
+    "nodes": 889,
+    "tees_split": 43,
+    "nodes_flagged_wide": 35,
+    "nodes_split": 1,
+    "dropped_pieces": 88
+   }
+  },
+  "diagnostic_table_at_default": [
+   {
+    "tolerance_m": 5.0,
+    "tolerance_ft": 16.4042,
+    "pipes": 1485,
+    "nodes": 1476,
+    "components": 138,
+    "dead_ends": 703,
+    "ends_joined": 2876,
+    "tees_split": 628,
+    "nodes_flagged_wide": 246,
+    "nodes_split": 18,
+    "dropped_pieces": 300
+   },
+   {
+    "tolerance_m": 10.0,
+    "tolerance_ft": 32.8084,
+    "pipes": 1171,
+    "nodes": 969,
+    "components": 6,
+    "dead_ends": 290,
+    "ends_joined": 2503,
+    "tees_split": 239,
+    "nodes_flagged_wide": 194,
+    "nodes_split": 10,
+    "dropped_pieces": 225
+   },
+   {
+    "tolerance_m": 20.0,
+    "tolerance_ft": 65.6168,
+    "pipes": 1112,
+    "nodes": 889,
+    "components": 1,
+    "dead_ends": 248,
+    "ends_joined": 2152,
+    "tees_split": 43,
+    "nodes_flagged_wide": 35,
+    "nodes_split": 1,
+    "dropped_pieces": 88
+   }
+  ]
+ },
+ "quirks": {
+  "multipart_two_parts.gpkg": {
+   "pipes": 2,
+   "nodes": 4,
+   "components": 2,
+   "bridge": false,
+   "end_points": 4
+  },
+  "multipart_two_parts.zip": {
+   "pipes": 2,
+   "nodes": 4,
+   "components": 2,
+   "bridge": false,
+   "end_points": 4
+  },
+  "null_shape_mid.zip": {
+   "pipes": 6,
+   "diameters_in_line_order": [
+    4.0,
+    6.0,
+    8.0,
+    10.0,
+    12.0,
+    16.0
+   ],
+   "aligned": true,
+   "dropped": {
+    "null_shapes": 1,
+    "deleted_records": 0
+   },
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says.",
+    "1 record has no shape (a null shape) and is left out with its attributes; the others keep theirs."
+   ]
+  },
+  "deleted_dbf_record.zip": {
+   "pipes": 6,
+   "diameters_in_line_order": [
+    4.0,
+    6.0,
+    8.0,
+    10.0,
+    12.0,
+    16.0
+   ],
+   "aligned": true,
+   "dropped": {
+    "null_shapes": 0,
+    "deleted_records": 1
+   },
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says.",
+    "1 record is marked deleted in the .dbf and is left out with its shape."
+   ]
+  },
+  "cpg_utf8.zip": {
+   "streets": [
+    "Calle Se\u00f1ora \u00c1vila",
+    "Rue du Ch\u00e2teau",
+    "Stra\u00dfe Nord"
+   ],
+   "decoded": true,
+   "encoding": "utf-8"
+  },
+  "wkb_z_m_zm.gpkg": {
+   "features": 3,
+   "flags": [
+    {
+     "z": true,
+     "m": false
+    },
+    {
+     "z": false,
+     "m": true
+    },
+    {
+     "z": true,
+     "m": true
+    }
+   ],
+   "read_in_2d": true,
+   "pipes": 3
+  },
+  "prj_stateplane_ftus.zip": {
+   "unit": "us_ft",
+   "unit_m": 0.3048006096012192,
+   "how": "the layer's .prj (Foot_US)"
+  },
+  "gpkg_srs_undefined.gpkg": {
+   "questions": [
+    "unit"
+   ],
+   "built": false,
+   "question": "In what unit are the coordinates? (the GeoPackage's coordinate system is 'undefined'.) Lines cannot be joined at a tolerance until the unit is known.",
+   "with_unit_ft": {
+    "built": true,
+    "pipes": 6
+   }
+  },
+  "shape_length_mismatch.zip": {
+   "field": "Shape_Leng",
+   "pipes": 6,
+   "median_ratio": 3.28,
+   "agrees": false,
+   "flag": "are about 3.28 times the geometry's: the field is in feet and the coordinates in metres, or the coordinates' unit is wrong"
+  },
+  "quantized_4dp.geojson": {
+   "decimals": 4,
+   "warned": true
+  },
+  "mercator_3857.geojson": {
+   "crs_kind": "geographic",
+   "from_web_mercator": true,
+   "lengths_m": [
+    500.0002,
+    1000.0
+   ],
+   "ground_lengths_m": [
+    500.0,
+    1000.0
+   ],
+   "max_rel_error": 3.945553119137912e-07,
+   "as_mercator_metres_m": [
+    708.33,
+    1411.84
+   ],
+   "notes": [
+    "The layer is in Web Mercator (EPSG 3857), whose metres are not ground metres: it was converted to longitude and latitude, and its lengths are measured on the ground."
+   ]
+  },
+  "mercator_esri_prj.zip": {
+   "crs_kind": "geographic",
+   "from_web_mercator": true,
+   "lengths_m": [
+    500.0002,
+    1000.0
+   ],
+   "ground_lengths_m": [
+    500.0,
+    1000.0
+   ],
+   "max_rel_error": 3.945553119137912e-07,
+   "as_mercator_metres_m": [
+    708.33,
+    1411.84
+   ],
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says.",
+    "The layer is in Web Mercator (EPSG 3857), whose metres are not ground metres: it was converted to longitude and latitude, and its lengths are measured on the ground."
+   ]
+  },
+  "esri_code_only.json": {
+   "refusal": null,
+   "epsg": 2263,
+   "unit": "us_ft",
+   "pipes": 24
+  },
+  "geojson_bad_positions.geojson": {
+   "lines_read": 22,
+   "features": 24,
+   "warned": [
+    "2 lines or points of the layer have positions that cannot be read (a missing coordinate, or 2D and 3D positions mixed in one line) and are left out."
+   ]
+  },
+  "shp_with_preview_kml.zip": {
+   "sniffed": "shapefile_zip",
+   "layers": [
+    "mains"
+   ],
+   "pipes": 24,
+   "notes": [
+    "The zip also holds preview.kml, which was not read: the shapefile was."
+   ]
+  },
+  "two_folders_same_name.zip": {
+   "layers": [
+    [
+     "north/mains",
+     24
+    ],
+    [
+     "south/mains",
+     4
+    ]
+   ]
+  },
+  "kml_numbered_paths.kml": {
+   "diameter_field": null,
+   "year_field": null,
+   "questions": [
+    "default_diameter_in"
+   ],
+   "sizes_in": [],
+   "length_check_agrees": null
+  },
+  "kml_attribute_table.kml": {
+   "diameter_field": "DIAMETER",
+   "year_field": "INSTALLYEAR",
+   "questions": [],
+   "sizes_in": [
+    8.0
+   ],
+   "length_check_agrees": true
+  },
+  "year_all_null.geojson": {
+   "year_field": "INSTALLDATE",
+   "years": {
+    "read": 0,
+    "first": null,
+    "last": null
+   },
+   "row": [
+    [
+     "Install year",
+     "no year could be read from 'INSTALLDATE'",
+     "from your file"
+    ]
+   ]
+  }
+ },
+ "invariance": {
+  "translated_rotated_same_topology": true,
+  "pipes": 1159,
+  "metres_same_topology": true,
+  "metres_vs_feet_max_rel_length": 6.035331633725166e-11,
+  "metres_vs_feet_max_diameter_diff_in": 0.0,
+  "skeleton_units": "GPM",
+  "skeleton_max_rel_length": 4.8996870771035324e-12,
+  "skeleton_max_rel_diameter": 3.999896952817552e-12,
+  "skeleton_pipes": 1159,
+  "skeleton_junctions": 962
+ },
+ "chain": {
+  "nodes_flagged_wide": 1,
+  "flagged_detail": [
+   {
+    "ends": 3,
+    "span_m": 3.048
+   }
+  ],
+  "nodes_split": 2,
+  "split_detail": [
+   {
+    "ends": 5,
+    "span_m": 4.877,
+    "parts": 3
+   },
+   {
+    "ends": 4,
+    "span_m": 4.572,
+    "parts": 2
+   }
+  ],
+  "nodes_per_group": {
+   "chain": 1,
+   "pump_manifold": 2,
+   "valve_cluster": 3
+  },
+  "ends_per_group": {
+   "chain": 3,
+   "valve_cluster": 5,
+   "pump_manifold": 4
+  },
+  "warnings": [
+   "2 places where line ends spread wider than 2 times the tolerance (a valve cluster or a pump manifold drawn as short lines, most likely) were split into nodes whose ends are within the tolerance of each other, not joined into one node. Check them on a map.",
+   "1 node joined line ends that are farther apart than the tolerance (6.0 ft), through ends in between: check that they really meet."
+  ],
+  "tees_and_loops": {
+   "tee_dense_vertex_main.geojson": {
+    "pipes": 3,
+    "nodes": 4,
+    "components": 1,
+    "dead_ends": 3,
+    "tees_split": 1,
+    "loops_cut": 0,
+    "dropped_pieces": 0,
+    "nodes_flagged_wide": 0
+   },
+   "tee_offset_cross.geojson": {
+    "pipes": 4,
+    "nodes": 5,
+    "components": 1,
+    "dead_ends": 4,
+    "tees_split": 1,
+    "loops_cut": 0,
+    "dropped_pieces": 0,
+    "nodes_flagged_wide": 1
+   },
+   "loop_main_closed.geojson": {
+    "pipes": 3,
+    "nodes": 3,
+    "components": 1,
+    "dead_ends": 1,
+    "tees_split": 0,
+    "loops_cut": 1,
+    "dropped_pieces": 0,
+    "nodes_flagged_wide": 0
+   }
+  }
+ },
+ "ids": {
+  "shuffled_same_node_ids": true,
+  "shuffled_same_pipes": true,
+  "nodes": 962,
+  "pipes": 1159,
+  "inp_identical": true,
+  "dirty_mapping": [
+   {
+    "layer_id": "MAIN 12",
+    "model_id": "MAIN_12",
+    "why": "a space, ';', a quote or another character EPANET IDs do not take"
+   },
+   {
+    "layer_id": "VLV;7",
+    "model_id": "VLV_7",
+    "why": "a space, ';', a quote or another character EPANET IDs do not take"
+   },
+   {
+    "layer_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "model_id": "AAAAAAAAAAAAAAAAAAAAAA_5cdbb642",
+    "why": "longer than 31 characters"
+   },
+   {
+    "layer_id": "\"QUOTED\"",
+    "model_id": "QUOTED",
+    "why": "a space, ';', a quote or another character EPANET IDs do not take"
+   }
+  ],
+  "dirty_model_ids": [
+   "AAAAAAAAAAAAAAAAAAAAAA_5cdbb642",
+   "MAIN_12",
+   "QUOTED",
+   "VLV_7",
+   "W-17",
+   "\u00dcn\u00efcode_9"
+  ],
+  "longest_id_bytes": 31
+ },
+ "diameters": {
+  "cases": 28,
+  "right": 28,
+  "wrong": [],
+  "rows": [
+   {
+    "text": "8\"",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "8 in",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "8in",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "200 mm",
+    "value": 200.0,
+    "unit": "mm",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "200mm PVC",
+    "value": 200.0,
+    "unit": "mm",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "DN150",
+    "value": 150.0,
+    "unit": "mm",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "1965 8\" CI",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "L=350' 8\"",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "12x8 RED",
+    "value": null,
+    "unit": null,
+    "flag": "reducer",
+    "ok": true
+   },
+   {
+    "text": "24\" x 16\" reducer",
+    "value": null,
+    "unit": null,
+    "flag": "reducer",
+    "ok": true
+   },
+   {
+    "text": "8 & 6",
+    "value": null,
+    "unit": null,
+    "flag": "two sizes",
+    "ok": true
+   },
+   {
+    "text": "3/4\"",
+    "value": 0.75,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "1-1/2\"",
+    "value": 1.5,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "2 1/2 in",
+    "value": 2.5,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "0.2 m",
+    "value": 0.2,
+    "unit": "m",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "1,200 mm",
+    "value": 1200.0,
+    "unit": "mm",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "8'' DIP",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "NPS 8",
+    "value": 8.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "6",
+    "value": 6.0,
+    "unit": null,
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "6.0",
+    "value": 6.0,
+    "unit": null,
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "\u00d8200",
+    "value": 200.0,
+    "unit": null,
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "unknown",
+    "value": null,
+    "unit": null,
+    "flag": "unreadable",
+    "ok": true
+   },
+   {
+    "text": "",
+    "value": null,
+    "unit": null,
+    "flag": "empty",
+    "ok": true
+   },
+   {
+    "text": "12\" DI 1972",
+    "value": 12.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "6\" (150mm)",
+    "value": 6.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "150 mm (6\")",
+    "value": 6.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "DN 150 (6\")",
+    "value": 6.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   },
+   {
+    "text": "6\"x6\"",
+    "value": 6.0,
+    "unit": "in",
+    "flag": null,
+    "ok": true
+   }
+  ],
+  "bare": [
+   {
+    "values": [
+     4,
+     6,
+     8,
+     12
+    ],
+    "unit": "in",
+    "ok": true
+   },
+   {
+    "values": [
+     100,
+     150,
+     200,
+     300
+    ],
+    "unit": "mm",
+    "ok": true
+   },
+   {
+    "values": [
+     0.1,
+     0.15,
+     0.3
+    ],
+    "unit": "m",
+    "ok": true
+   },
+   {
+    "values": [
+     1,
+     8,
+     100
+    ],
+    "unit": null,
+    "ok": true
+   },
+   {
+    "values": [
+     1.5,
+     6,
+     8
+    ],
+    "unit": null,
+    "ok": true
+   }
+  ]
+ },
+ "refusals": {
+  "no_prj.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "built": false
+  },
+  "utility_gdb.zip": {
+   "raised": false,
+   "refusal": "This is a zipped Esri file geodatabase (.gdb), which cannot be read here. In ArcGIS Pro, export the water mains layer as a shapefile (zip its .shp, .shx, .dbf and .prj together) or a GeoPackage, and use that.",
+   "questions": [],
+   "built": false
+  },
+  "points_only.geojson": {
+   "raised": false,
+   "refusal": "The layer points_only holds points, not lines, so it has no pipes. A water mains layer is made of lines; a layer of valves or hydrants can be given beside it.",
+   "questions": [],
+   "built": false
+  },
+  "empty_layer.gpkg": {
+   "raised": false,
+   "refusal": "The layer mains has no features: it is empty. Export the water mains layer with its lines.",
+   "questions": [],
+   "built": false
+  },
+  "bad_vertices.gpkg": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [
+    "3 parts of the layer's features have no usable coordinates (a value that is not a number or beyond any map's range, or a line of fewer than two points) and are left out."
+   ],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": true
+   }
+  },
+  "empty_lines_4326.gpkg": {
+   "raised": false,
+   "refusal": "The layer mains holds no geometry, not lines, so it has no pipes. A water mains layer is made of lines; a layer of valves or hydrants can be given beside it.",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [
+    "3 parts of the layer's features have no usable coordinates (a value that is not a number or beyond any map's range, or a line of fewer than two points) and are left out."
+   ],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": "The layer mains holds no geometry, not lines, so it has no pipes. A water mains layer is made of lines; a layer of valves or hydrants can be given beside it.",
+    "built": false
+   }
+  },
+  "lonlat_no_prj.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "question_options": [
+    [
+     "ft",
+     "us_ft",
+     "m",
+     "deg"
+    ]
+   ],
+   "question_text": [
+    "In what unit are the coordinates? (the layer has no .prj, so its coordinates' unit is not known.) They all lie within longitude and latitude ranges, so they are probably degrees (WGS84). Lines cannot be joined at a tolerance until the unit is known."
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [],
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": false
+   }
+  },
+  "lonlat_no_prj.zip|unit=ft": {
+   "raised": false,
+   "refusal": "The layer's line ends are crowded together far more than in any water network: 3,480 of its 3,480 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 3,480 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [
+    "Every coordinate lies within longitude and latitude ranges, so the layer is probably in degrees, not feet: if the network below is wrong, choose degrees."
+   ],
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": "The layer's line ends are crowded together far more than in any water network: 3,480 of its 3,480 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 3,480 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+    "built": false
+   }
+  },
+  "lonlat_no_prj.zip|unit=deg": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": true,
+   "pipes": 1740,
+   "components": 1,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [],
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": true
+   }
+  },
+  "lonlat_as_3857.geojson": {
+   "raised": false,
+   "refusal": "The layer's line ends are crowded together far more than in any water network: 224 of its 224 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 224 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names.",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "lonlat_as_3857"
+   ],
+   "warnings": [],
+   "notes": [
+    "The layer is in Web Mercator (EPSG 3857), whose metres are not ground metres: it was converted to longitude and latitude, and its lengths are measured on the ground."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": "The layer's line ends are crowded together far more than in any water network: 224 of its 224 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 224 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names.",
+    "built": false
+   }
+  },
+  "stateplane_as_4326.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "question_options": [
+    [
+     "ft",
+     "us_ft",
+     "m",
+     "deg"
+    ]
+   ],
+   "question_text": [
+    "In what unit are the coordinates? (the file's crs member says longitude and latitude, but its coordinates run to 1,502,800, outside -180 to 180 and -90 to 90: the coordinate system is probably mislabelled.) Lines cannot be joined at a tolerance until the unit is known."
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "stateplane_as_4326"
+   ],
+   "warnings": [],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": false
+   }
+  },
+  "stateplane_as_4326.geojson|unit=us_ft": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "to_scale"
+   ],
+   "question_options": [
+    [
+     "yes",
+     "no"
+    ]
+   ],
+   "question_text": [
+    "The layer has no length field and its unit was chosen by you: is it drawn to scale (true lengths)? A map traced from a sketch is often not. Give two or three pipes whose true length you know to check."
+   ],
+   "built": true,
+   "pipes": 112,
+   "components": 1,
+   "layers": [
+    "stateplane_as_4326"
+   ],
+   "warnings": [],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": true
+   }
+  },
+  "world_mercator.zip": {
+   "raised": false,
+   "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [],
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+    "built": false
+   }
+  },
+  "many_shapefiles.zip": {
+   "raised": false,
+   "refusal": "The zip holds 101 shapefiles, and at most 100 are read. Zip the water mains layer alone (its .shp, .shx, .dbf, .prj and .cpg).",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [],
+   "warnings": [],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": "The zip holds 101 shapefiles, and at most 100 are read. Zip the water mains layer alone (its .shp, .shx, .dbf, .prj and .cpg).",
+    "built": false
+   }
+  },
+  "esri_over_limit.json|cap=50": {
+   "raised": false,
+   "refusal": "The layer has more than 50 features.",
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "layers": [],
+   "warnings": [],
+   "notes": [],
+   "page_path": {
+    "raised": false,
+    "refusal": "The layer has more than 50 features.",
+    "built": false
+   }
+  },
+  "mains_and_many_points.gpkg|cap=50": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "question_options": [],
+   "question_text": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "layers": [
+    "mains"
+   ],
+   "warnings": [],
+   "notes": [
+    "Not read, as larger than 50 features: the GeoPackage's layer meters (60 features, POINT). If the water mains are one of them, export the mains layer alone."
+   ],
+   "page_path": {
+    "raised": false,
+    "refusal": null,
+    "built": true
+   }
+  }
+ },
+ "valves": {
+  "status_field": "NORMAL_POS",
+  "id_field": "VALVEID",
+  "proposed": [
+   {
+    "valve": "V2",
+    "status": "CLOSED",
+    "node": "N6300_6000",
+    "distance_m": 0.3408
+   },
+   {
+    "valve": "V3",
+    "status": "Normally Closed",
+    "node": "N6600_6000",
+    "distance_m": 0.0
+   },
+   {
+    "valve": "V4",
+    "status": "C",
+    "node": "N6900_6000",
+    "distance_m": 0.0
+   },
+   {
+    "valve": "V7",
+    "status": "closed",
+    "node": null,
+    "distance_m": null
+   }
+  ],
+  "open": 2,
+  "unread": 1,
+  "separate_layer": {
+   "line_layer": "mains",
+   "valve_layer": "valves",
+   "proposed": [
+    {
+     "valve": "V2",
+     "status": "CLOSED",
+     "node": "N6300_6000",
+     "distance_m": 0.3408
+    },
+    {
+     "valve": "V3",
+     "status": "Normally Closed",
+     "node": "N6600_6000",
+     "distance_m": 0.0
+    },
+    {
+     "valve": "V4",
+     "status": "C",
+     "node": "N6900_6000",
+     "distance_m": 0.0
+    },
+    {
+     "valve": "V7",
+     "status": "closed",
+     "node": null,
+     "distance_m": null
+    }
+   ]
+  }
+ },
+ "wntr": {
+  "member": {
+   "kb_per_day": 0.4,
+   "kw_m_per_day": 0.7,
+   "gamma": 1.0
+  },
+  "networks": {
+   "Net3": {
+    "max_abs_diff": {
+     "pressure": 0.0,
+     "flow": 0.0,
+     "head": 0.0,
+     "age": 0.0,
+     "chlorine": 0.0
+    },
+    "without_pattern_workaround": {
+     "chlorine_max_abs_diff_mgL": 0.7623943090438843,
+     "chlorine_mean_abs_diff_mgL": 0.24870245158672333,
+     "above_bar": true
+    }
+   },
+   "Net2": {
+    "max_abs_diff": {
+     "pressure": 0.0,
+     "flow": 0.0,
+     "head": 0.0,
+     "age": 0.0,
+     "chlorine": 0.0
+    }
+   },
+   "ky4": {
+    "max_abs_diff": {
+     "pressure": 0.0,
+     "flow": 0.0,
+     "head": 0.0,
+     "age": 0.0,
+     "chlorine": 0.0
+    }
+   }
+  }
+ },
+ "external": {
+  "skipped": true,
+  "why": "no external file: the lead's decision for this iteration is that fixtures are generated locally, so no public layer was downloaded"
+ },
+ "final": {
+  "kmz_long_whitespace.kmz": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 8,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "doc"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "doc"
+   }
+  },
+  "kmz_long_lt.kmz": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 8,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "doc"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "doc"
+   }
+  },
+  "kmz_open_rows.kmz": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 8,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "doc"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "doc"
+   }
+  },
+  "kmz_doctype_after_blank_lines.kmz": {
+   "raised": false,
+   "refusal": "The KML declares a document type (<!DOCTYPE>), which is not read: it can hide entity expansion. Save it again from Google Earth (Save Place As, KMZ).",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The KML declares a document type (<!DOCTYPE>), which is not read: it can hide entity expansion. Save it again from Google Earth (Save Place As, KMZ)."
+   }
+  },
+  "kmz_doctype_after_comment.kmz": {
+   "raised": false,
+   "refusal": "The KML declares a document type (<!DOCTYPE>), which is not read: it can hide entity expansion. Save it again from Google Earth (Save Place As, KMZ).",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The KML declares a document type (<!DOCTYPE>), which is not read: it can hide entity expansion. Save it again from Google Earth (Save Place As, KMZ)."
+   }
+  },
+  "prj_spaces_comma.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "The layer has no .cpg file naming its text encoding: its text is read as latin-1. Check accented names, or export the layer with its .cpg."
+   ],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "prj_spaces_comma_20kb.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "The layer has no .cpg file naming its text encoding: its text is read as latin-1. Check accented names, or export the layer with its .cpg."
+   ],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "esri_wkt_spaces_comma.json": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "esri_wkt_spaces_comma"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "esri_wkt_spaces_comma"
+   }
+  },
+  "world_mercator_3395.geojson": {
+   "raised": false,
+   "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "world_mercator_3395"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+    "layer": "world_mercator_3395"
+   }
+  },
+  "esri_wkid_3395.json": {
+   "raised": false,
+   "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "esri_wkid_3395"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The layer is in a Mercator projection, whose metres are not ground metres (they stretch with latitude), so its lengths cannot be read from it. Export it in your State Plane, UTM or other local projected system, or as longitude and latitude (WGS84).",
+    "layer": "esri_wkid_3395"
+   }
+  },
+  "kml_line_in_street.kml": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "default_diameter_in"
+   ],
+   "built": false,
+   "pipes": 20,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "kml_line_in_street"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "kml_line_in_street"
+   },
+   "diameter_field": null
+  },
+  "zipped_gpkg.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Read from mains.gpkg, the one GIS file in the zip."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "zipped_geojson.zip": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m).",
+    "Read from mains.geojson, the one GIS file in the zip."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "zipped_two_geojson.zip": {
+   "raised": false,
+   "refusal": "The zip holds 2 GIS files (north.geojson, south.geojson), and this tool reads one layer: unzip it and give the water mains file itself.",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The zip holds 2 GIS files (north.geojson, south.geojson), and this tool reads one layer: unzip it and give the water mains file itself."
+   }
+  },
+  "geojson_crs_props_string.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "unit"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "geojson_crs_props_string"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "geojson_crs_props_string"
+   }
+  },
+  "esri_odd_attributes.json": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 23,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m)."
+   ],
+   "warnings": [
+    "1 line or point of the layer has positions that cannot be read (a missing coordinate, or 2D and 3D positions mixed in one line) and is left out.",
+    "2 pipes of 23 have no size that can be read (0 reducers, 0 with two sizes, 0 unreadable, 2 empty), and are given 8 in, the commonest size. Give the real sizes in the layer."
+   ],
+   "layers": [
+    "esri_odd_attributes"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "esri_odd_attributes"
+   }
+  },
+  "tee_fan_dense_main.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 9,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m)."
+   ],
+   "warnings": [
+    "1 place where line ends spread wider than 2 times the tolerance (a valve cluster or a pump manifold drawn as short lines, most likely) was split into nodes whose ends are within the tolerance of each other, not joined into one node. Check them on a map."
+   ],
+   "layers": [
+    "tee_fan_dense_main"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "tee_fan_dense_main"
+   }
+  },
+  "tee_fan_straight_main.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 10,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m)."
+   ],
+   "warnings": [
+    "1 place where line ends spread wider than 2 times the tolerance (a valve cluster or a pump manifold drawn as short lines, most likely) was split into nodes whose ends are within the tolerance of each other, not joined into one node. Check them on a map.",
+    "2 pieces of line had both ends at one node (a piece not much longer than the joining distance, whose two ends it joins, most often) and were left out: EPANET cannot run a pipe from a node to itself."
+   ],
+   "layers": [
+    "tee_fan_straight_main"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "tee_fan_straight_main"
+   }
+  },
+  "mains_and_service_lines.gpkg|cap=50": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Not read, as larger than 50 features: the GeoPackage's layers service_lines (60 features, MULTILINESTRING), hydrants (60 features, GEOMETRY). If the water mains are one of them, export the mains layer alone."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "mains_and_service_lines.gpkg|layer=mains|cap=50": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Not read, as larger than 50 features: the GeoPackage's layers service_lines (60 features, MULTILINESTRING), hydrants (60 features, GEOMETRY). If the water mains are one of them, export the mains layer alone."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "mains_and_service_lines.gpkg|layer=service_lines|cap=50": {
+   "raised": false,
+   "refusal": "The layer service_lines is larger than 50 features, the most this tool reads from one layer, so it was not read. Export the water mains layer alone (as a GeoPackage or a zipped shapefile), and use that.",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "mains_and_service_lines.zip|cap=50": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says.",
+    "Not read, as larger than 50 features: the zip's layer service_lines (60 features). If the water mains are one of them, export the mains layer alone."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "mains_and_service_lines.zip|layer=mains|cap=50": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says.",
+    "Not read, as larger than 50 features: the zip's layer service_lines (60 features). If the water mains are one of them, export the mains layer alone."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "mains_and_service_lines.zip|layer=service_lines|cap=50": {
+   "raised": false,
+   "refusal": "The layer service_lines is larger than 50 features, the most this tool reads from one layer, so it was not read. Export the water mains layer alone (as a GeoPackage or a zipped shapefile), and use that.",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "lonlat_stateplane_prj.zip": {
+   "raised": false,
+   "refusal": "The layer's line ends are crowded together far more than in any water network: 120 of its 120 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 120 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": true,
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The layer's line ends are crowded together far more than in any water network: 120 of its 120 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 120 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+    "layer": "mains"
+   }
+  },
+  "lonlat_stateplane_prj.zip|unit=deg": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 60,
+   "components": 1,
+   "offer_unit": true,
+   "notes": [
+    "Text read as utf-8, as the layer's .cpg says."
+   ],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   }
+  },
+  "lonlat_as_2263.geojson": {
+   "raised": false,
+   "refusal": "The layer's line ends are crowded together far more than in any water network: 120 of its 120 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 120 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+   "questions": [],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": true,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "lonlat_as_2263"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": "The layer's line ends are crowded together far more than in any water network: 120 of its 120 line ends fall in one square 6.0 ft across (the joining distance), and an end's square holds 120 ends on average. Its coordinates' unit or coordinate system is probably wrong (longitude and latitude read as feet or metres, for example), so nothing was joined. Check the unit, or the coordinate system the file names. Every coordinate lies within longitude and latitude ranges: choose degrees (longitude and latitude) as the unit of the coordinates.",
+    "layer": "lonlat_as_2263"
+   }
+  },
+  "lonlat_as_2263.geojson|unit=deg": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 60,
+   "components": 1,
+   "offer_unit": true,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "lonlat_as_2263"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "lonlat_as_2263"
+   }
+  },
+  "swapped_latlon_4326.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "axes"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "swapped_latlon_4326"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "swapped_latlon_4326"
+   }
+  },
+  "swapped_latlon_4326.geojson|swap_axes=True": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Each coordinate's two numbers were swapped, as you chose: the file writes latitude first."
+   ],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "swapped_latlon_4326"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "swapped_latlon_4326"
+   },
+   "lengths_m": [
+    173.5,
+    222.0
+   ],
+   "true_lengths_m": [
+    173.5,
+    222.0
+   ],
+   "max_rel_error": 0.0
+  },
+  "swapped_latlon_4326.geojson|swap_axes=False": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result.",
+    "The coordinates are read as written, longitude first, as you chose, though the layer's median latitude is beyond any but a few water networks: check the map."
+   ],
+   "layers": [
+    "swapped_latlon_4326"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "swapped_latlon_4326"
+   },
+   "lengths_m": [
+    50.1,
+    223.3
+   ],
+   "true_lengths_m": [
+    173.5,
+    222.0
+   ],
+   "max_rel_error": 0.7110830125932412
+  },
+  "swapped_latlon_nocrs.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [
+    "axes"
+   ],
+   "built": false,
+   "pipes": null,
+   "components": null,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "swapped_latlon_nocrs"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": false,
+    "refusal": null,
+    "layer": "swapped_latlon_nocrs"
+   }
+  },
+  "swapped_latlon_nocrs.geojson|swap_axes=True": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Each coordinate's two numbers were swapped, as you chose: the file writes latitude first."
+   ],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result."
+   ],
+   "layers": [
+    "swapped_latlon_nocrs"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "swapped_latlon_nocrs"
+   },
+   "lengths_m": [
+    173.5,
+    222.0
+   ],
+   "true_lengths_m": [
+    173.5,
+    222.0
+   ],
+   "max_rel_error": 0.0
+  },
+  "swapped_latlon_nocrs.geojson|swap_axes=False": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "Every coordinate is written with 3 decimals of a degree or fewer, about 111 m apart at most: line ends that meet may be rounded apart by that much. Export the layer with more decimals (6 or more), or raise the snapping tolerance and check the result.",
+    "The coordinates are read as written, longitude first, as you chose, though the layer's median latitude is beyond any but a few water networks: check the map."
+   ],
+   "layers": [
+    "swapped_latlon_nocrs"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "swapped_latlon_nocrs"
+   },
+   "lengths_m": [
+    50.1,
+    223.3
+   ],
+   "true_lengths_m": [
+    173.5,
+    222.0
+   ],
+   "max_rel_error": 0.7110830125932412
+  },
+  "loop_joined_through_feed.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 3,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [
+    "1 node joined line ends that are farther apart than the tolerance (6.0 ft), through ends in between: check that they really meet.",
+    "1 closed line (a loop main drawn as one line that ends where it starts, or a loop between two ends the joining distance puts in one node) was cut in two at the middle of its length, through a new node: EPANET cannot run a pipe from a node to itself."
+   ],
+   "layers": [
+    "loop_joined_through_feed"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "loop_joined_through_feed"
+   },
+   "loops_cut": 1,
+   "dropped_pieces": 0
+  },
+  "esri_epoch_dates.json": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 12,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m)."
+   ],
+   "warnings": [],
+   "layers": [
+    "esri_epoch_dates"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "esri_epoch_dates"
+   },
+   "years": {
+    "read": 12,
+    "first": 1931,
+    "last": 2004
+   }
+  },
+  "gpkg_bad_utf8.gpkg": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [],
+   "warnings": [],
+   "layers": [
+    "mains"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "mains"
+   },
+   "first_size_text": "8\"\ufffd"
+  },
+  "size_overflow.geojson": {
+   "raised": false,
+   "refusal": null,
+   "questions": [],
+   "built": true,
+   "pipes": 24,
+   "components": 1,
+   "offer_unit": false,
+   "notes": [
+    "Every coordinate is a whole number of US survey feet (rounded to 0.30 m)."
+   ],
+   "warnings": [
+    "1 pipe of 24 has no size that can be read ('9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999': 0 reducers, 0 with two sizes, 1 unreadable, 0 empty), and is given 8 in, the commonest size. Give the real sizes in the layer."
+   ],
+   "layers": [
+    "size_overflow"
+   ],
+   "page_path": {
+    "raised": false,
+    "built": true,
+    "refusal": null,
+    "layer": "size_overflow"
+   },
+   "diameters": {
+    "read": 23,
+    "bare": 23,
+    "bare_unit": "in",
+    "reducer": 0,
+    "two sizes": 0,
+    "unreadable": 1,
+    "empty": 0,
+    "filled_in": 8.0
+   },
+   "inf_written": false
+  },
+  "wkt_unit_of_the_20kb_run": {
+   "kind": "projected",
+   "unit": null,
+   "unit_m": null,
+   "name": null,
+   "mercator": null
+  },
+  "size_texts": {
+   "999999999999...(400 characters)": "unreadable",
+   "999999999999...(403 characters)": "unreadable",
+   "8\"x8\"x6\"": "reducer",
+   "8\"x8\"x8\"": 8.0,
+   "6\"x6\"": 6.0,
+   "12x8 RED": "reducer",
+   "6x6x4": "reducer",
+   "12x12x8 TEE": "reducer",
+   "6x4x6": "reducer",
+   "8x8x8": 8.0,
+   "6\" x 6\" x 4\"": "reducer"
+  },
+  "strict_in_texts": {
+   "Line 3 in Oak St": [
+    null,
+    "in"
+   ],
+   "8 in main": [
+    null,
+    "in"
+   ],
+   "8 in": [
+    "in",
+    "in"
+   ],
+   "8 in.": [
+    "in",
+    "in"
+   ],
+   "8\"": [
+    "in",
+    "in"
+   ],
+   "8 inch main": [
+    "in",
+    "in"
+   ],
+   "200 mm": [
+    "mm",
+    "mm"
+   ]
+  },
+  "tee_sweep_components": {
+   "straight|n=2|s=3": 1,
+   "straight|n=2|s=4": 1,
+   "straight|n=2|s=5": 1,
+   "straight|n=2|s=5.5": 1,
+   "straight|n=3|s=3": 1,
+   "straight|n=3|s=4": 1,
+   "straight|n=3|s=5": 1,
+   "straight|n=3|s=5.5": 1,
+   "straight|n=4|s=3": 1,
+   "straight|n=4|s=4": 1,
+   "straight|n=4|s=5": 1,
+   "straight|n=4|s=5.5": 1,
+   "straight|n=5|s=3": 1,
+   "straight|n=5|s=4": 1,
+   "straight|n=5|s=5": 1,
+   "straight|n=5|s=5.5": 1,
+   "dense|n=2|s=3": 1,
+   "dense|n=2|s=4": 1,
+   "dense|n=2|s=5": 1,
+   "dense|n=2|s=5.5": 1,
+   "dense|n=3|s=3": 1,
+   "dense|n=3|s=4": 1,
+   "dense|n=3|s=5": 1,
+   "dense|n=3|s=5.5": 1,
+   "dense|n=4|s=3": 1,
+   "dense|n=4|s=4": 1,
+   "dense|n=4|s=5": 1,
+   "dense|n=4|s=5.5": 1,
+   "dense|n=5|s=3": 1,
+   "dense|n=5|s=4": 1,
+   "dense|n=5|s=5": 1,
+   "dense|n=5|s=5.5": 1
+  },
+  "inlet_headers": {
+   "Cl": "read",
+   "FAC": "read",
+   "Free": "read",
+   "FCl": "read",
+   "Res": "read",
+   "Resid": "read",
+   "mg_l": "read",
+   "mg/L": "read",
+   "ppm": "read",
+   "residual_mgL": "read",
+   "value": "refused: The inlet residuals file's column 'value' does not say it holds chlorine residuals: name i",
+   "reading": "refused: The inlet residuals file's column 'reading' does not say it holds chlorine residuals: name",
+   "conc": "refused: The inlet residuals file's column 'conc' does not say it holds chlorine residuals: name it",
+   "concentration": "refused: The inlet residuals file's column 'concentration' does not say it holds chlorine residuals",
+   "average": "refused: The inlet residuals file's column 'average' does not say it holds chlorine residuals: name",
+   "median": "refused: The inlet residuals file's column 'median' does not say it holds chlorine residuals: name ",
+   "level": "refused: The inlet residuals file's column 'level' does not say it holds chlorine residuals: name i",
+   "measured": "refused: The inlet residuals file's column 'measured' does not say it holds chlorine residuals: nam",
+   "dose": "refused: The inlet residuals file's column 'dose' does not say it holds chlorine residuals: name it",
+   "setpoint": "refused: The inlet residuals file's column 'setpoint' does not say it holds chlorine residuals: nam",
+   "target": "refused: The inlet residuals file's column 'target' does not say it holds chlorine residuals: name ",
+   "Total": "refused: The inlet residuals file's residual column, 'Total', is total chlorine, and the free-chlor",
+   "TRC": "refused: The inlet residuals file's residual column, 'TRC', is total chlorine, and the free-chlorin",
+   "monochloramine": "refused: The inlet residuals file's column 'monochloramine' does not hold chlorine residuals (it na",
+   "NH2Cl": "refused: The inlet residuals file's column 'NH2Cl' does not hold chlorine residuals (it names monoc"
+  }
+ }
+}

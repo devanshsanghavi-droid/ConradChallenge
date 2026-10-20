@@ -98,6 +98,17 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   r_i = residual_i / the largest for every entry point of the model (an entry point without a residual, or a name
   that is none, is refused), and simulate.simulate_nominal_chlorine doses each at r_i times the dose.  The readiness
   report's warning for more than one entry point says so, and that water age starts at 0 at every entry point.
+- Task 17 (residualmap/gis_read.py builds a skeleton model from a GIS layer): a GIS file's advice names the Get
+  started page's step 4.  Task 16c's final verification, fixed here: a tap marked as a zone inlet with an empty
+  junction cell is refused (inlet_taps_of's no_node); an inlet tap's reading is read before the date and time tests, so
+  a daily value with no time of day is kept and an unreadable date is listed as the inlet's, a µg/L reading under
+  INLET_UGL_MIN_MGL is refused, and inlet rows count in the decimal-comma and µg/L notes; an inlet file's residual
+  column must name chlorine or a residual when it was taken as the second of two columns, and never names pH, NH2Cl,
+  monochloramine or another analyte (_inlet_residual_header); the readiness warning's app route is INLET_APP_ROUTE, so
+  the pilot can say its own (INLET_PILOT_ROUTE).  Its review: a second column that is only a unit ('mg/L', 'ppm') or
+  names a residual ('flow-paced residual') is read again, and one that names nothing ('value') is refused asking for
+  residual_mgL; read_zip_members reads several members of a zip with one opening of it (read_zip_member unchanged);
+  a zip holding a shapefile and a .kml is the shapefile, not a KMZ.
   Its review: a role cell marks a zone inlet only when it reads as one (is_inlet_role: 'inlet', 'zone inlet', 'inlet
   analyzer', never 'not inlet'); every tap marked so is kept on the log (GrabLog.inlet_taps), and inlet_tap_residuals
   refuses one with no usable reading in the months used, or at a node that is no entry point, where it was left out
@@ -154,6 +165,11 @@ MAX_NAME_BYTES = 160                   # a prepared file's name, in UTF-8 bytes 
 TEST_RUN_ROW = "Test run"              # the readiness row of the EPANET run of the first hour
 RUN_COST_ROW = "Run cost"              # the readiness row of the grid's size and time (task 15b)
 LARGE_WARNING_START = "Large model:"   # the start of the warning for more than LARGE_JUNCTIONS junctions
+# the readiness warning for more than one entry point names where to give inlet residuals: the app's route here, and
+# the pilot swaps in its own (task 17's fix of task 16c's leftovers: the pilot pointed its users at an app checkbox)
+INLET_APP_ROUTE = ("on the main page, with the demo off, tick 'My zone's inlets carry different residuals' under '2. "
+                   "Your samples' and upload it there")
+INLET_PILOT_ROUTE = "in the pilot, give it with --inlets FILE, or mark each inlet's tap with the role inlet in the tap map"
 FLOAT32_BYTES = 4                      # the grid cache stores ln C as float32: runs x 24 hours x junctions
 CP1252_UNDEFINED = b"\x81\x8d\x8f\x90\x9d"   # the five bytes cp1252 leaves undefined
 
@@ -234,8 +250,11 @@ SHP_FILE_CODE = 9994
 _EPANET_EXPORT = ("If a hydraulic model of this system exists, send its EPANET export instead: in WaterCAD or WaterGEMS, "
                   "make the scenario you want active and use File, Export, EPANET, with IDs rather than labels; in "
                   "InfoWater, use its EPANET export; most modelling packages can write an EPANET .inp.")
-_SKELETON_LATER = ("Building a skeleton model from a drawing or a GIS layer is planned, not built yet, and even then it "
-                   "carries no demands, tanks, pumps or controls.")
+_SKELETON_LATER = ("Building a skeleton model from a drawing is planned, not built yet, and even then it carries no "
+                   "demands, tanks, pumps or controls.")
+# task 17: a GIS layer can be built into a skeleton on the Get started page
+_SKELETON_GIS = ("Without one, step 4 of the Get started page builds a skeleton model from the layer: pipes, sizes and "
+                 "where they meet, with no demands, tanks, pumps or controls until you add them.")
 
 # kind -> (category, plain label, advice).  Categories: model, other_model (a model of something else, or part of
 # one), results, drawing, bim, vendor_model, gis, table, document, text, archive, refused, unknown.
@@ -288,22 +307,24 @@ KINDS: dict[str, tuple[str, str, str]] = {
                          ".inp."),
     "geopackage": ("gis", "a GIS layer (GeoPackage)",
                    "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " "
-                   + _SKELETON_LATER),
+                   + _SKELETON_GIS),
     "geojson": ("gis", "a GIS layer (GeoJSON)",
                 "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " "
-                + _SKELETON_LATER),
+                + _SKELETON_GIS),
     "esri_json": ("gis", "a GIS layer (Esri JSON)",
                   "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " "
-                  + _SKELETON_LATER),
+                  + _SKELETON_GIS),
     "gml": ("gis", "a GIS layer (GML)",
-            "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_LATER),
+            "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " GML is not read "
+            "here: export the layer as a GeoPackage, a zipped shapefile or GeoJSON, and step 4 of the Get started page "
+            "builds a skeleton model from it."),
     "kml": ("gis", "a Google Earth file (KML)",
-            "Lines drawn in Google Earth are not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_LATER),
+            "Lines drawn in Google Earth are not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_GIS),
     "kmz": ("gis", "a Google Earth file (KMZ)",
-            "Lines drawn in Google Earth are not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_LATER),
+            "Lines drawn in Google Earth are not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_GIS),
     "shapefile_zip": ("gis", "a zipped shapefile",
                       "A GIS layer holds pipes and their sizes, not a hydraulic model. " + _EPANET_EXPORT + " "
-                      + _SKELETON_LATER),
+                      + _SKELETON_GIS),
     "shp": ("gis", "a shapefile's geometry file (.shp)",
             "A .shp alone has no attributes: send it zipped with its .shx, .dbf and .prj. A GIS layer is not a hydraulic "
             "model. " + _EPANET_EXPORT),
@@ -614,6 +635,39 @@ def read_zip_member(data: bytes, member: str, limit: int = ZIP_MAX_TOTAL, ratio_
     return out
 
 
+def read_zip_members(data: bytes, members: list[str], limit: int = ZIP_MAX_TOTAL, ratio_max: float = ZIP_RATIO_MAX,
+                     ratio_min_size: int = ZIP_RATIO_MIN_SIZE, max_total: int = ZIP_MAX_TOTAL) -> dict[str, bytes]:
+    """Several members of a zip held in memory, under read_zip_member's rules for each (the ratio rule, the cap, a
+    member larger than its directory says refused), with the zip listed and opened once (task 17's review: a GIS zip
+    of many layers listed and reopened the zip for every member, quadratic in its members).  read_zip_member itself
+    is unchanged."""
+    infos = {i.filename: i for i in zip_listing(data, max_total)}
+    out = {}
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except Exception as e:  # noqa: BLE001
+        raise ZipRefused(f"it is not a readable zip ({type(e).__name__}: {e})") from None
+    with zf:
+        for member in members:
+            if member not in infos:
+                raise ZipRefused(f"no member {member}")
+            i = infos[member]
+            if i.file_size > ratio_min_size and i.file_size > ratio_max * max(i.compress_size, 1):
+                raise ZipRefused(f"member {member} would unpack to {i.file_size / 1e6:.0f} MB, "
+                                 f"{i.file_size / max(i.compress_size, 1):.0f} times its packed size (more than "
+                                 f"{ratio_max:g} to 1)")
+            cap = min(i.file_size, limit)
+            try:
+                with zf.open(i) as fh:
+                    b = fh.read(cap + 1)
+            except Exception as e:  # noqa: BLE001
+                raise ZipRefused(f"member {member} cannot be read ({type(e).__name__}: {e})") from None
+            if len(b) > cap:
+                raise ZipRefused(f"member {member} is larger than its zip directory says")
+            out[member] = b
+    return out
+
+
 def _sniff_zip(data: bytes) -> Sniff:
     try:
         infos = zip_listing(data)
@@ -681,7 +735,8 @@ def _sniff_zip_names(names: list[str], low: list[str]) -> Sniff:
         return Sniff("epanet_inp_zip", detail="it holds " + ", ".join(inp[:5]) + (" and more" if len(inp) > 5 else ""),
                      members=inp)
     kml = [n for n, l in zip(names, low) if l.endswith(".kml")]
-    if kml:
+    # task 17's review: a zipped shapefile that also carries a .kml (a preview) is the shapefile, not a KMZ
+    if kml and not any(l.endswith(".shp") for l in low):
         return Sniff("kmz", detail="it holds " + ", ".join(kml[:3]), members=kml)
     gdb = sorted({re.sub(r"(?i)(\.gdb)/.*$", r"\1", n) for n in names if re.search(r"(?i)\.gdb/", n)})
     if gdb and any(l.endswith((".gdbtable", ".gdbtablx")) for l in low):
@@ -2284,9 +2339,8 @@ def _physics_report(rep: Readiness, wn, ctl: dict, have_xy: set, src_nodes: list
         rep.warnings.append(f"{len(src_nodes)} entry points ({_ids_list(list(src_nodes))}): unless you give each "
                             f"inlet's residual, every one is dosed at the same value, the dose you set, and if they "
                             f"carry different residuals the map is off near them. An inlet residuals file (each inlet's "
-                            f"node ID and its measured residual in mg/L) doses each one in proportion: on the main page, "
-                            f"with the demo off, tick 'My zone's inlets carry different residuals' under '2. Your "
-                            f"samples' and upload it there (free chlorine only, for now). Water age starts "
+                            f"node ID and its measured residual in mg/L) doses each one in proportion: "
+                            f"{INLET_APP_ROUTE} (free chlorine only, for now). Water age starts "
                             f"at 0 at every entry point, so in a zone cut from a larger system, whose water is already "
                             f"old when it enters, the water is older than the age map shows.")
     # 8. structure: pumps and controls, demand and patterns, connected parts, export connectors
@@ -3697,7 +3751,12 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
         taps, t_taps, tmap_cols = read_tap_map(taps_data, taps_name, tap_mapping, max_unpacked)
         # task 16c: taps whose role is 'inlet' (a zone inlet's analyzer or grab tap) set that inlet's residual and are
         # never fitted; a tap map without a role column reads exactly as before
-        inlet_taps, role_col, inlet_roles, near_misses = inlet_taps_of(t_taps, tmap_cols, tap_mapping)
+        no_node: list = []
+        inlet_taps, role_col, inlet_roles, near_misses = inlet_taps_of(t_taps, tmap_cols, tap_mapping, no_node)
+        if no_node:          # task 17's fix of task 16c's leftovers: a declared inlet with no node ID was dropped silently
+            raise LogRefused(" ".join(f"The tap map marks tap {tp} (role {cell!r}) as a zone inlet but gives no node ID: "
+                                      f"write the inlet's node ID in its junction column." for tp, cell in no_node[:6])
+                             + (f" So do {len(no_node) - 6} more taps." if len(no_node) > 6 else ""))
         if role_col is not None:
             tmap_cols = {**tmap_cols, "role": role_col}
         if near_misses:      # the review of task 16c: 'not inlet', 'downstream of inlet' are no zone inlet
@@ -3715,6 +3774,7 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
             if k.isascii() and k.isdigit():         # '1²' passes isdigit() and fails int() (the final verification)
                 by_number.setdefault(int(k), []).append(k)
     rows, dropped, cens, matched_by_number, commas, micro, n_other = [], [], [], {}, 0, 0, 0
+    inlet_small = []        # task 17's fix of task 16c's leftovers: inlet readings under 10 µg/L (a unit slip)
     for i_row, (r, row_no, dt_) in enumerate(zip(t.rows, t.row_numbers, dates)):
         tap = _cell_text(r[ix["tap"]])
         raw = r[ix["reading"]]
@@ -3741,6 +3801,38 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
         if junction is None:
             dropped.append({"row": row_no, "tap_id": tap, "reason": f"tap {tap} is not in the tap map"})
             continue
+        tap_id_ = matched_by_number.get(tap, tap)
+        if tap_id_ in inlet_taps:   # task 16c: a zone inlet's reading is a boundary condition, never fitted.  Task 17's
+            # fix of its leftovers: read before the date and time tests, since an inlet's median needs no hour (a
+            # daily inlet value with no time is kept, a date that cannot be read is listed as the inlet's), with the
+            # µg/L unit-slip guard, and counted in the decimal-comma and µg/L notes
+            if dt_ is None:
+                dropped.append({"row": row_no, "tap_id": tap_id_, "reason": f"zone inlet {junction}: date not read",
+                                "example": _cell_text(r[ix["date"]])})
+                continue
+            factor = head_factor
+            if ix["unit"] is not None and _cell_text(r[ix["unit"]]):
+                u = _cell_text(r[ix["unit"]])
+                factor = header_unit(u)
+                if factor is None:
+                    dropped.append({"row": row_no, "tap_id": tap_id_,
+                                    "reason": f"zone inlet {junction}: the unit is {u!r}, not mg/L"})
+                    continue
+            y, why = parse_reading(raw)
+            v = None if y is None else (y * factor if factor != 1.0 else y)
+            if v is None or v > READING_MAX_MGL:
+                dropped.append({"row": row_no, "tap_id": tap_id_,
+                                "reason": f"zone inlet {junction}: not a reading its residual can use",
+                                "example": _cell_text(raw)})
+            elif factor != 1.0 and 0 < v < INLET_UGL_MIN_MGL:
+                inlet_small.append(f"row {row_no} ({tap_id_}: {_cell_text(raw)!r}, {mgl_text(v)} mg/L)")
+            else:
+                day = dt_[0]
+                inlet_rows.append({"row": row_no, "tap_id": tap_id_, "inlet": str(junction), "date": day.isoformat(),
+                                   "month": day.isoformat()[:7], "y": float(v)})
+                commas += isinstance(raw, str) and "," in raw
+                micro += factor != 1.0
+            continue
         if dt_ is None:
             dropped.append({"row": row_no, "tap_id": tap, "reason": "date not read",
                             "example": _cell_text(r[ix["date"]])})
@@ -3766,16 +3858,6 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
                "hour": model_hour(minute, start_clock_h)}
         if ix["time"] is None and i_row in midnight:     # an Excel 00:00 that may be a date typed with no time
             rec.update(midnight=True, date_text=_cell_text(r[ix["date"]]))
-        if rec["tap_id"] in inlet_taps:      # task 16c: a zone inlet's reading is a boundary condition, never fitted
-            v = None if y is None else (y * factor if factor != 1.0 else y)
-            if v is None or v > READING_MAX_MGL:
-                dropped.append({"row": row_no, "tap_id": rec["tap_id"],
-                                "reason": f"zone inlet {junction}: not a reading its residual can use",
-                                "example": _cell_text(raw)})
-            else:
-                inlet_rows.append({"row": row_no, "tap_id": rec["tap_id"], "inlet": str(junction),
-                                   "date": rec["date"], "month": rec["month"], "y": float(v)})
-            continue
         if y is None and why.startswith(("censored", "above")):
             cens.append({**rec, "raw": _cell_text(raw), "reason": why,
                          "kind": "above" if why.startswith("above") else "below"})
@@ -3789,6 +3871,12 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
             rows.append({**rec, "y": y * factor if factor != 1.0 else y})
             commas += isinstance(raw, str) and "," in raw
             micro += factor != 1.0
+    if inlet_small:
+        raise LogRefused(f"The grab log's reading column, '{cols['reading']}', is in µg/L, and {len(inlet_small)} "
+                         f"reading{'s' if len(inlet_small) != 1 else ''} at a tap the tap map marks as a zone inlet "
+                         f"{'are' if len(inlet_small) != 1 else 'is'} under {INLET_UGL_MIN_MGL * 1000:g} µg/L: "
+                         f"{'; '.join(inlet_small[:6])}. Check the unit, and that a thousands separator ('1,180') was "
+                         f"not read as a decimal comma: write readings without one.")
     if commas:
         notes.append(f"{commas} reading{'s' if commas != 1 else ''} written with a decimal comma (0,45) "
                      f"{'were' if commas != 1 else 'was'} read as decimals (0.45).")
@@ -3913,9 +4001,15 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
         names = ", ".join(f"{t} at {inlet_taps[t]}" for t in sorted(inlet_taps)[:6]) + (
             f" and {len(inlet_taps) - 6} more" if len(inlet_taps) > 6 else "")
         one, n_in = len(inlet_taps) == 1, len(inlet_rows)
-        n_bad = sum(d["reason"].startswith("zone inlet ") for d in dropped)
+        n_bad = sum(d["reason"].startswith("zone inlet ") and d["reason"].endswith(": not a reading its residual can use")
+                    for d in dropped)
+        n_other_bad = sum(d["reason"].startswith("zone inlet ") for d in dropped) - n_bad   # a date or unit not read
+        other = (f"{n_other_bad:,} reading{'s' if n_other_bad != 1 else ''} whose date or unit cannot be read"
+                 if n_other_bad else "")
         bad = (f"; {n_bad:,} more cannot set it (below detection, not a number or above {READING_MAX_MGL:g} mg/L) and "
                f"{'are' if n_bad != 1 else 'is'} listed as not used" if n_bad else "")
+        bad += (f"; {n_other_bad:,} more whose date or unit cannot be read {'are' if n_other_bad != 1 else 'is'} "
+                f"listed as not used" if n_other_bad else "")
         if n_in:
             notes.append(f"{len(inlet_taps)} tap{'' if one else 's'} the tap map marks as a zone inlet ({names}): "
                          f"{'its' if one else 'their'} {n_in:,} usable reading{'s' if n_in != 1 else ''} "
@@ -3924,7 +4018,9 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
             notes.append(f"{len(inlet_taps)} tap{'' if one else 's'} the tap map marks as a zone inlet ({names}): no "
                          f"reading of {'it' if one else 'them'} can set the inlet's residual"
                          + (f" ({n_bad:,} cannot: below detection, not a number or above {READING_MAX_MGL:g} mg/L, listed "
-                            f"as not used)" if n_bad else " (the grab log has none)") + ", and none is fitted.")
+                            f"as not used)" if n_bad else "")
+                         + (f" ({other}, listed as not used)" if other else "")
+                         + ("" if n_bad or other else " (the grab log has none)") + ", and none is fitted.")
     cols_out = ["junction", "hour", "y", "month", "date", "tap_id"]
     frame = pd.DataFrame({"junction": [x["junction"] for x in rows], "hour": [int(x["hour"]) for x in rows],
                           "y": [float(x["y"]) for x in rows], "month": [x["month"] for x in rows],
@@ -4050,9 +4146,16 @@ def dropped_lines(dropped: list[dict], max_runs: int = DROPPED_MAX_RUNS) -> list
     return out
 
 
+XLSX_FIXED_TIME = (2026, 1, 1, 0, 0, 0)     # the template's time stamps (task 17's final verification)
+
+
 def xlsx_bytes(rows: list[list], sheet: str = "grab log") -> bytes:
     """A one-sheet workbook of these rows, written by openpyxl (the Get started page's .xlsx template; nothing binary
-    is committed).  Read back by read_table, this is same-library self-consistency."""
+    is committed).  Read back by read_table, this is same-library self-consistency.  Since the final verification of
+    task 17 its time stamps are fixed (XLSX_FIXED_TIME, in the workbook's properties and its zip entries), so the same
+    rows give the same bytes: openpyxl stamps the time of saving, to the second, so the page's download changed
+    between reruns, and the hosted demo check's count of distinct strings on the page depended on the machine's
+    load."""
     import openpyxl
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -4061,7 +4164,18 @@ def xlsx_bytes(rows: list[list], sheet: str = "grab log") -> bytes:
         ws.append(r)
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    stamp = "%04d-%02d-%02dT%02d:%02d:%02dZ" % XLSX_FIXED_TIME
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as src, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            body = src.read(info)
+            if info.filename == "docProps/core.xml":
+                body = re.sub(rb"(<dcterms:(?:created|modified)[^>]*>)[^<]*(</dcterms:)",
+                              rb"\g<1>" + stamp.encode() + rb"\g<2>", body)
+            zi = zipfile.ZipInfo(info.filename, date_time=XLSX_FIXED_TIME)
+            zi.compress_type, zi.external_attr = zipfile.ZIP_DEFLATED, info.external_attr
+            dst.writestr(zi, body)
+    return out.getvalue()
 
 
 # ----------------------------------------------------------------------------- zone inlets (task 16c)
@@ -4106,12 +4220,15 @@ def is_inlet_role(cell) -> bool:
             and all(x in _INLET_ROLE_AFTER or x.isdigit() for x in w[at[0] + 1:]))
 
 
-def inlet_taps_of(t: LogTable, cols: dict, mapping: dict | None = None) -> tuple[dict, str | None, dict, list]:
+def inlet_taps_of(t: LogTable, cols: dict, mapping: dict | None = None,
+                  no_node: list | None = None) -> tuple[dict, str | None, dict, list]:
     """({tap ID: inlet node ID}, the role column, {tap ID: its role cell}, [(tap ID, role cell)]) for the taps a tap
     map gives a zone inlet's role (task 16c; is_inlet_role), the last list the roles that mention an inlet but mark
     none ('not inlet'), for a warning.  The role column is mapping's 'role', else a header named role, tap role, site
     role ...; no role column gives ({}, None, {}, []), and the tap map reads exactly as before.  The tap's junction
-    column holds the inlet's node ID."""
+    column holds the inlet's node ID.  no_node (task 17's fix of task 16c's leftovers): a list that receives (tap ID,
+    role cell) for each tap marked as a zone inlet whose junction cell is empty, which read_grab_log refuses (such a
+    tap was dropped as an inlet without a word)."""
     role = (mapping or {}).get("role") or _guess(t.header, _ROLE_EXACT)
     if role is None or role not in t.header:
         return {}, None, {}, []
@@ -4124,6 +4241,8 @@ def inlet_taps_of(t: LogTable, cols: dict, mapping: dict | None = None) -> tuple
         if is_inlet_role(cell):
             if node:
                 out[tap], roles[tap] = node, cell
+            elif no_node is not None:
+                no_node.append((tap, cell))
         elif any(x.startswith(INLET_ROLE_WORD) for x in _words(cell, True)):
             near.append((tap, cell))
     return out, role, roles, near
@@ -4146,9 +4265,23 @@ def read_inlet_residuals(data: bytes, name: str = "inlet_residuals.csv", mapping
     node = (mapping or {}).get("inlet") or _guess(t.header, _INLET_NODE_EXACT)
     res = (mapping or {}).get("residual") or _guess(t.header, _INLET_RESIDUAL_EXACT) or next(
         (h for h in t.header if "residual" in _norm_header(h).split() and h != node), None)
+    fallback = False
     if (node is None or res is None) and len(t.header) == 2:
+        fallback = res is None
         node = node or next(h for h in t.header if h != res)
         res = res or next(h for h in t.header if h != node)
+    why = None if res is None or (mapping or {}).get("residual") else _inlet_residual_header(res, fallback)
+    if why == "other":
+        # task 17's fix of task 16c's leftovers: the two-column fallback read any second column (pH, turbidity,
+        # NH2Cl) as free chlorine residuals, and a guessed 'residual' column could name another analyte
+        raise LogRefused(f"The inlet residuals file's column '{res}' does not hold chlorine residuals"
+                         + (" (it names monochloramine, which is neither free nor total chlorine)"
+                            if _MONO_WORDS & set(_norm_header(res).split()) else "")
+                         + ". Give each inlet's measured residual in a column named residual_mgL, beside its node ID "
+                           "(inlet_node_id).")
+    if why == "unnamed":      # task 17's review: a second column that names nothing ('value', 'reading') is asked to
+        raise LogRefused(f"The inlet residuals file's column '{res}' does not say it holds chlorine residuals: name it "
+                         f"residual_mgL (each inlet's measured residual in mg/L), beside its node ID (inlet_node_id).")
     if node is None or res is None or node == res or node not in t.header or res not in t.header:
         raise LogRefused(f"The inlet residuals file needs two columns, each inlet's node ID in the model and its "
                          f"residual in mg/L; its header is {', '.join(t.header[:8])}. Name them inlet_node_id and "
@@ -4205,6 +4338,38 @@ def read_inlet_residuals(data: bytes, name: str = "inlet_residuals.csv", mapping
                                        "micrograms": factor != 1.0, "notes": notes}
 
 
+_MONO_WORDS = {"monochloramine", "monochloramines", "nh2cl", "mono"}
+_OTHER_ANALYTES = {"ph", "turbidity", "ntu", "flow", "temp", "temperature", "pressure", "conductivity", "cond", "tds",
+                   "hardness", "alkalinity", "nitrite", "nitrate", "ammonia", "nh3", "toc", "doc", "uv254", "orp",
+                   "fluoride", "iron", "manganese", "gpm", "mgd", "psi"}
+
+
+_UNIT_ONLY = re.compile(r"\s*\(?\s*(?:(?:mg|µg|ug|mcg)\s*(?:/|per)?\s*(?:l|litre|liter)|ppm|ppb)\s*\)?\s*", re.I)
+# the final verification of task 17: an inlet residuals file's second column named by a chlorine abbreviation or a
+# residual's ('Cl', 'FAC', 'Free', 'Res') is read, as before task 17; a species it names is then checked as any other
+_INLET_CHLORINE_WORDS = {"cl", "fac", "free", "fcl", "frc", "total", "trc", "tcl", "res", "resid"}
+
+
+def _inlet_residual_header(h: str, fallback: bool) -> str | None:
+    """Why an inlet residuals file's residual cannot be read from a column, or None when it can (task 17's fix of
+    task 16c's leftovers, as its review left it): 'other' for a column that names chloride, chlorate,
+    monochloramine, or another analyte (pH, turbidity ...) and neither chlorine nor a residual; and, when it was taken
+    only because the file has two columns, 'unnamed' for one that names neither chlorine nor a residual nor is only a
+    unit ('mg/L', 'ppm' are read, as before the fix; 'value', 'reading' are not)."""
+    words = set(_norm_header(h).split())
+    if (_NOT_CHLORINE & words or _MONO_WORDS & words
+            or any(x.startswith(("chlorid", "chlorat", "chlorit")) for x in words)):
+        return "other"
+    if "residual" in words or names_chlorine(h):      # 'flow-paced residual' names a residual first
+        return None
+    if _OTHER_ANALYTES & words:
+        return "other"
+    if (not fallback or is_reading_header(h) or _INLET_CHLORINE_WORDS & words
+            or _UNIT_ONLY.fullmatch(_unit_text(h).replace("_", " "))):     # 'mg_l' is a unit too (the final
+        return None                                                          # verification of task 17)
+    return "unnamed"
+
+
 def combine_inlet_residuals(from_file: dict | None, from_taps: dict | None) -> dict[str, dict]:
     """{inlet: {'residual_mgL', 'source'}} from an inlet residuals file ({inlet: mg/L}) and the inlet taps of a grab log
     (GrabLog.inlet_residuals), sorted by node ID.  An inlet given by both is refused: keep one."""
@@ -4252,7 +4417,9 @@ def inlet_tap_residuals(g: GrabLog, entry_points, months=None, from_file: dict |
         if n in res:
             continue
         rows = f[f.inlet == n] if f is not None and len(f) else None
-        bad = [d for d in g.dropped if d["reason"].startswith(f"zone inlet {n}:")]
+        bad = [d for d in g.dropped if d["reason"].startswith(f"zone inlet {n}:")
+               and d["reason"].endswith(": not a reading its residual can use")]
+        unread = [d for d in g.dropped if d["reason"].startswith(f"zone inlet {n}:") and d not in bad]
         parts = []
         if rows is not None and len(rows):
             parts.append(f"its {len(rows):,} reading{'s are' if len(rows) != 1 else ' is'} dated {rows.date.min()}"
@@ -4261,6 +4428,11 @@ def inlet_tap_residuals(g: GrabLog, entry_points, months=None, from_file: dict |
             ex = ", ".join(f"row {d['row']}: {d.get('example', '')!r}" for d in bad[:3])
             parts.append(f"{len(bad):,} {'more ' if parts else ''}reading{'s' if len(bad) != 1 else ''} cannot be used "
                          f"(below detection, not a number or above {READING_MAX_MGL:g} mg/L; {ex})")
+        if unread:           # task 17's fix of task 16c's leftovers: say why, never 'the grab log has no reading of it'
+            ex = ", ".join(f"row {d['row']}: {d['reason'].split(': ', 1)[1]}"
+                           + (f" ({d['example']!r})" if d.get("example") else "") for d in unread[:3])
+            parts.append(f"{len(unread):,} {'more ' if parts else ''}reading{'s' if len(unread) != 1 else ''} cannot be "
+                         f"read ({ex})")
         if not parts:
             parts.append("the grab log has no reading of it")
         where = f" in the months the map is fitted on ({', '.join(months)})" if months else ""

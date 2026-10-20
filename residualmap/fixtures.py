@@ -2916,6 +2916,83 @@ def zone_tap_map_wrong_node() -> bytes:
                      + [("INL", "20", "Zone inlet")]).encode()
 
 
+# task 17's fix of task 16c's leftovers (its final verification): a tap marked as an inlet with no node ID; a µg/L grab
+# log whose inlet tap's values are 1,000 µg/L or more, written without and with a thousands separator; inlet files
+# whose second column is no residual (pH, NH2Cl, a monochloramine residual); an inlet tap read once a day with a date
+# and no time of day, beside one row whose date cannot be read, and the same inlet with only unreadable dates; and a
+# fixed route of ten taps for the pilot's leave-sites-out refusal
+ZONE_UGL_INLET = (1180, 1200, 1190)    # INL's readings in µg/L, April to June (median 1.19 mg/L)
+ZONE_DAILY_INLET_MGL = (0.84, 0.86, 0.85, 0.83, 0.87)   # INL's daily values with no time of day (median 0.85)
+FIXED_ROUTE_TAPS = 10
+
+
+def zone_tap_map_inlet_no_node() -> bytes:
+    return _csv_text("tap_id,junction_id,role", [(t, j, "route") for t, j in ZONE_WINDOW_TAPS]
+                     + [(ZONE_WINDOW_INLET[0], "", "inlet")]).encode()
+
+
+def _ugl_rows(inlet_cells) -> list:
+    rows = [(f"2026-{m:02d}-1{k}", "09:00", t, f"{500 + 50 * k}") for m in (4, 5, 6)
+            for k, (t, _) in enumerate(ZONE_WINDOW_TAPS)]
+    rows += [(f"2026-{m:02d}-10", "08:00", ZONE_WINDOW_INLET[0], v) for m, v in zip((4, 5, 6), inlet_cells)]
+    return sorted(rows)
+
+
+def zone_inlet_ugl_log() -> bytes:
+    return _csv_text("date,time,tap_id,Free Chlorine (ug/L)", _ugl_rows([str(v) for v in ZONE_UGL_INLET])).encode()
+
+
+def zone_inlet_ugl_thousands_log() -> bytes:
+    """The same, with the inlet's values written with a thousands separator ('1,180', as Excel's #,##0 writes them),
+    quoted so the separator stays in the cell."""
+    rows = _ugl_rows([f"{v:,}" for v in ZONE_UGL_INLET])
+    text = "date,time,tap_id,Free Chlorine (ug/L)\n" + "".join(
+        ",".join(f'"{c}"' if "," in c else c for c in r) + "\n" for r in rows)
+    return text.encode()
+
+
+def _daily_rows(inlet_dates) -> list:
+    rows = [(f"2026-{m:02d}-1{k}", "09:00", t, f"{0.50 + 0.05 * k:.2f}")
+            for m in (4, 5, 6) for k, (t, _) in enumerate(ZONE_WINDOW_TAPS)]
+    rows += [(d, "", ZONE_WINDOW_INLET[0], f"{v:.2f}") for d, v in zip(inlet_dates, ZONE_DAILY_INLET_MGL)]
+    return rows
+
+
+def zone_inlet_daily_log() -> bytes:
+    dates = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"]
+    rows = _daily_rows(dates) + [("2026-06-31", "", ZONE_WINDOW_INLET[0], "0.90")]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def zone_inlet_bad_dates_log() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL",
+                     _daily_rows(["2026-06-31", "2026-13-02", "June", "2026-02-30", "?"])).encode()
+
+
+def fixed_route_log() -> bytes:
+    """Ten taps sampled once a month for six months (January to June 2026), invented readings: a fixed compliance
+    route with no rotating taps, for the pilot's --holdout-sites refusal."""
+    rows = [(f"2026-{m:02d}-{5 + k:02d}", "09:30", f"F{k + 1}", f"{0.40 + 0.03 * k + 0.01 * m:.2f}")
+            for m in range(1, 7) for k in range(FIXED_ROUTE_TAPS)]
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", rows).encode()
+
+
+def fixed_route_tap_map() -> bytes:
+    js = _wn("Net3").junction_name_list[:FIXED_ROUTE_TAPS]
+    return _csv_text("tap_id,junction_id", [(f"F{k + 1}", j) for k, j in enumerate(js)]).encode()
+
+
+LEFTOVER_16C_FIXTURES = {
+    "zone_tap_map_inlet_no_node.csv": zone_tap_map_inlet_no_node, "zone_inlet_ugl_log.csv": zone_inlet_ugl_log,
+    "zone_inlet_ugl_thousands_log.csv": zone_inlet_ugl_thousands_log,
+    "zone_inlets_ph.csv": lambda: _csv_text("inlet,pH", [("River", "7.8"), ("Lake", "7.6")]).encode(),
+    "zone_inlets_nh2cl.csv": lambda: _csv_text("inlet_node_id,NH2Cl", [("River", "1.20"), ("Lake", "0.60")]).encode(),
+    "zone_inlets_mono_residual.csv": lambda: _csv_text("inlet_node_id,Monochloramine residual",
+                                                       [("River", "1.20"), ("Lake", "0.60")]).encode(),
+    "zone_inlet_daily_log.csv": zone_inlet_daily_log, "zone_inlet_bad_dates_log.csv": zone_inlet_bad_dates_log,
+    "fixed_route_log.csv": fixed_route_log, "fixed_route_tap_map.csv": fixed_route_tap_map}
+
+
 ZONE_FIXTURES = ("analyzer_15min.csv", "task16_tap_map.csv", "zone_tap_map.csv", "zone_inlet_residuals.csv",
                  "zone_inlets_net3.csv", "zone_inlets_ugl.csv", "zone_inlets_missing.csv", "zone_inlets_unknown.csv",
                  "zone_inlets_censored.csv", "example_tap_map_inlet.csv",
@@ -2939,6 +3016,1155 @@ FIXTURES.update({"example_tap_map_inlet.csv": example_tap_map_inlet,
                                                [("River", "1.20"), ("Lake", "0.60")]).encode(),
     "zone_inlets_tiny.csv": lambda: _csv_text("inlet_node_id,residual_mgL",
                                               [("River", "1.20"), ("Lake", "0.005")]).encode()})
+FIXTURES.update(LEFTOVER_16C_FIXTURES)
+ZONE_FIXTURES = ZONE_FIXTURES + tuple(LEFTOVER_16C_FIXTURES)
+
+
+# ----------------------------------------------------------------------------- task 17: GIS layers
+# Every GIS fixture is written here by hand (the shapefile and dBASE writers above and below, a WKB writer, the
+# GeoPackage tables, GeoJSON and KML text), except ky4_mains_pyshp.zip, which pyshp writes and pyshp reads (same-library
+# self-consistency, labelled so).  The ky4 mains layer is ky4.inp's 1,156 pipes as lines only (no pump, valve, tank or
+# reservoir), each pipe's PIPEDIAM in one of three styles, every line end moved by up to +-0.3 ft on each axis, 19 ends
+# pulled back 4 ft short of their node, and 43 pairs of pipes of one size drawn as one line through the tee where a
+# third pipe ends (GIS_RUNS, GIS_UNDERSHOOTS, GIS_JITTER_FT; seeded, chosen before any scored run).  Longitude and
+# latitude come from the ellipsoidal Lambert conformal conic inverse above (task 16b's), with ky4's feet laid out
+# around LCC_CENTRE: the reader's east-north plane shares no code with it.  No fixture is a real place's map.
+GIS_JITTER_FT = 0.3                    # every line end: uniform in +-0.3 ft on each axis
+GIS_UNDERSHOOTS, GIS_UNDERSHOOT_FT = 19, 4.0
+GIS_RUNS = 43
+GIS_SEED = 17
+GIS_DIAMETER_STYLES = ('{d:g}"', "{d:g} in", "{mm} mm")    # record k uses style k % 3
+KML_ERROR_M = 5.0                      # ky4_googleearth.kmz: radial RMS error of each line end (per axis r / sqrt(2))
+KML_SEED = 18
+KML_TOLERANCES_M = (5.0, 10.0, 15.0, 20.0)
+PRJ_M = ('PROJCS["NAD_1983_UTM_Example_Zone",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",'
+         'SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],'
+         'PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["Central_Meridian",-99.0],'
+         'PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]')
+GPKG_SRS_ID = 100001                   # the GeoPackage fixtures' coordinate system, defined by PRJ_FT's text
+
+
+@functools.lru_cache(maxsize=1)
+def _ky4_parts():
+    """ky4's pipes as polylines in its own feet: {pipe: (start node, end node, [(x, y), ...], diameter in, length ft)},
+    its node positions and elevations (ft), and each node's pipes."""
+    wn = _wn("ky4")
+    xy = {n: tuple(map(float, wn.get_node(n).coordinates)) for n in wn.node_name_list}
+    elev = {}
+    for n in wn.node_name_list:
+        nd = wn.get_node(n)
+        elev[n] = float(getattr(nd, "elevation", None) or getattr(nd, "base_head", 0.0) or 0.0) / 0.3048
+    pipes, inc = {}, {}
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        pts = [xy[p.start_node_name]] + [tuple(map(float, v)) for v in p.vertices] + [xy[p.end_node_name]]
+        pipes[pn] = (p.start_node_name, p.end_node_name, pts, round(p.diameter / 0.0254, 3), p.length / 0.3048)
+        inc.setdefault(p.start_node_name, []).append(pn)
+        inc.setdefault(p.end_node_name, []).append(pn)
+    return pipes, xy, elev, inc
+
+
+def _seg_len(pts) -> list[float]:
+    return [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:])]
+
+
+@functools.lru_cache(maxsize=1)
+def ky4_mains_records() -> tuple:
+    """The ky4 mains layer: a tuple of records, each {'pts': [(x, y) ft], 'pipes': (pipe, ...), 'diameter_in',
+    'ends': (node at the first point, node at the last), 'undershoot': end index or None}, in ky4's pipe order (a run at
+    its first pipe's place).  Seeded (GIS_SEED); the runs, undershoots and jitter are chosen without looking at what
+    the importer does with them."""
+    import numpy as np
+    pipes, xy, _, inc = _ky4_parts()
+    rng = np.random.default_rng(GIS_SEED)
+    tees = sorted(n for n, ps in inc.items() if len(ps) == 3)
+    rng.shuffle(tees)
+    used, runs = set(), {}
+    for t in tees:
+        if sum(v is not None for v in runs.values()) >= GIS_RUNS:
+            break
+        ps = sorted(inc[t])
+        pairs = [(a, b) for i, a in enumerate(ps) for b in ps[i + 1:]
+                 if pipes[a][3] == pipes[b][3] and a not in used and b not in used]
+        pairs = [(a, b) for a, b in pairs if ({pipes[a][0], pipes[a][1]} - {t}) != ({pipes[b][0], pipes[b][1]} - {t})
+                 and len({pipes[a][0], pipes[a][1]}) == 2 and len({pipes[b][0], pipes[b][1]}) == 2]
+        if not pairs:
+            continue
+        a, b = pairs[int(rng.integers(len(pairs)))]
+        used |= {a, b}
+        runs[a] = (a, b, t)
+        runs[b] = None
+    recs = []
+    for pn, (s, e, pts, d, _) in pipes.items():
+        if pn in runs:
+            if runs[pn] is None:
+                continue
+            a, b, t = runs[pn]
+            pa = pipes[a][2] if pipes[a][1] == t else pipes[a][2][::-1]
+            pb = pipes[b][2] if pipes[b][0] == t else pipes[b][2][::-1]
+            ea = pipes[a][0] if pipes[a][1] == t else pipes[a][1]
+            eb = pipes[b][1] if pipes[b][0] == t else pipes[b][0]
+            recs.append({"pts": list(pa) + list(pb[1:]), "pipes": (a, b), "diameter_in": d, "ends": (ea, eb),
+                         "tee": t, "undershoot": None})
+        else:
+            recs.append({"pts": list(pts), "pipes": (pn,), "diameter_in": d, "ends": (s, e), "tee": None,
+                         "undershoot": None})
+    # undershoots: single pipes, an end at a node of 2 or more pipes, the end's segment longer than twice the pullback
+    cand = []
+    for k, r in enumerate(recs):
+        if len(r["pipes"]) != 1:
+            continue
+        for end in (0, 1):
+            node = r["ends"][end]
+            seg = _seg_len(r["pts"])[0 if end == 0 else -1]
+            if len(inc[node]) >= 2 and seg > 2 * GIS_UNDERSHOOT_FT:
+                cand.append((k, end))
+    pick = rng.choice(len(cand), size=GIS_UNDERSHOOTS, replace=False)
+    taken = set()
+    for i in sorted(pick):
+        k, end = cand[i]
+        if k in taken:
+            continue
+        taken.add(k)
+        pts = recs[k]["pts"]
+        a, b = (pts[0], pts[1]) if end == 0 else (pts[-1], pts[-2])
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        moved = (a[0] + (b[0] - a[0]) * GIS_UNDERSHOOT_FT / L, a[1] + (b[1] - a[1]) * GIS_UNDERSHOOT_FT / L)
+        if end == 0:
+            pts[0] = moved
+        else:
+            pts[-1] = moved
+        recs[k]["undershoot"] = end
+    # jitter every line end
+    for r in recs:
+        for end in (0, -1):
+            dx, dy = rng.uniform(-GIS_JITTER_FT, GIS_JITTER_FT, 2)
+            x, y = r["pts"][end]
+            r["pts"][end] = (x + float(dx), y + float(dy))
+    for k, r in enumerate(recs):
+        d = r["diameter_in"]
+        r["text"] = GIS_DIAMETER_STYLES[k % 3].format(d=d, mm=round(d * 25.4))
+    return tuple(recs)
+
+
+def ky4_manifest() -> dict:
+    """What the scorer needs: the original pipes (start, end, diameter in), and for every record its pipes and end
+    nodes, in the layer's order (records with no ky4 pipe, the pyshp fixture's extras, are not listed)."""
+    pipes = _ky4_parts()[0]
+    return {"pipes": {p: (v[0], v[1], v[3]) for p, v in pipes.items()},
+            "records": [{"pipes": r["pipes"], "ends": r["ends"], "tee": r["tee"]} for r in ky4_mains_records()]}
+
+
+def _shp_lines(records, shape_type: int = 3) -> tuple[bytes, bytes]:
+    """.shp and .shx of polylines with several parts (records of [part, ...], each part [(x, y), ...]; None for a
+    null shape), from the ESRI shapefile specification, written by hand."""
+    recs = []
+    xs, ys = [], []
+    for parts in records:
+        if parts is None:
+            recs.append(struct.pack("<i", 0))
+            continue
+        pts = [p for part in parts for p in part]
+        px, py = [p[0] for p in pts], [p[1] for p in pts]
+        xs += px
+        ys += py
+        starts, k = [], 0
+        for part in parts:
+            starts.append(k)
+            k += len(part)
+        recs.append(struct.pack("<i", shape_type) + struct.pack("<4d", min(px), min(py), max(px), max(py))
+                    + struct.pack("<ii", len(parts), len(pts)) + struct.pack(f"<{len(parts)}i", *starts)
+                    + b"".join(struct.pack("<2d", p[0], p[1]) for p in pts))
+
+    def header(length_words):
+        return (struct.pack(">7i", 9994, 0, 0, 0, 0, 0, length_words) + struct.pack("<ii", 1000, shape_type)
+                + struct.pack("<8d", min(xs), min(ys), max(xs), max(ys), 0, 0, 0, 0))
+
+    body, index, offset = [], [], 50
+    for i, r in enumerate(recs):
+        body.append(struct.pack(">ii", i + 1, len(r) // 2) + r)
+        index.append(struct.pack(">ii", offset, len(r) // 2))
+        offset += 4 + len(r) // 2
+    body, index = b"".join(body), b"".join(index)
+    return header(50 + len(body) // 2) + body, header(50 + len(index) // 2) + index
+
+
+def _dbf_text(fields: list[tuple[str, str, int]], rows: list[list], encoding: str = "latin-1",
+              deleted: tuple = ()) -> bytes:
+    """A dBASE III table whose text is in encoding, rows in `deleted` marked deleted ('*')."""
+    rec_len = 1 + sum(w for _, _, w in fields)
+    head = struct.pack("<BBBBIHH20x", 3, 126, 1, 1, len(rows), 32 + 32 * len(fields) + 1, rec_len)
+    for name, typ, w in fields:
+        head += name.encode("ascii")[:10].ljust(11, b"\x00") + typ.encode() + b"\x00" * 4 + bytes([w, 0]) + b"\x00" * 14
+    head += b"\r"
+    out = []
+    for i, r in enumerate(rows):
+        cells = b"".join((str(v).encode(encoding)[:w].ljust(w) if t == "C" else str(v).encode()[:w].rjust(w))
+                         for v, (_, t, w) in zip(r, fields))
+        out.append((b"*" if i in deleted else b" ") + cells)
+    return head + b"".join(out) + b"\x1a"
+
+
+def _shp_zip(stem: str, records, rows, fields, prj: str | None = PRJ_FT, cpg: str | None = "UTF-8",
+             encoding: str = "utf-8", deleted: tuple = ()) -> bytes:
+    shp, shx = _shp_lines(records)
+    members = [(f"{stem}.shp", shp), (f"{stem}.shx", shx), (f"{stem}.dbf", _dbf_text(fields, rows, encoding, deleted))]
+    if prj is not None:
+        members.append((f"{stem}.prj", prj.encode("ascii")))
+    if cpg is not None:
+        members.append((f"{stem}.cpg", cpg.encode("ascii")))
+    return _zip(members)
+
+
+def ky4_mains_stdlib_shp_zip() -> bytes:
+    recs = ky4_mains_records()
+    return _shp_zip("ky4_mains", [[r["pts"]] for r in recs], [[r["text"]] for r in recs], [("PIPEDIAM", "C", 12)])
+
+
+KY4_PYSHP_NULLS = (100, 500, 900)       # ky4_mains_pyshp.zip: null shapes written before these records
+KY4_PYSHP_DELETED_AT = 700              # ... and a deleted record (a stray line between two far ends) before this one
+
+
+def ky4_pyshp_index(j: int) -> int:
+    """The position in ky4_mains_pyshp.zip's .shp of the layer's record j (the extra records come before it)."""
+    return j + sum(1 for n in KY4_PYSHP_NULLS if n <= j) + (1 if j >= KY4_PYSHP_DELETED_AT else 0)
+
+
+def ky4_mains_pyshp_zip() -> bytes:
+    """The ky4 mains layer written by pyshp (the library that reads it: same-library self-consistency), with 3 null
+    shapes and 1 record whose DBF deletion flag is set after writing, between ky4's records."""
+    import shapefile
+    recs = ky4_mains_records()
+    shp, shx, dbf = io.BytesIO(), io.BytesIO(), io.BytesIO()
+    w = shapefile.Writer(shp=shp, shx=shx, dbf=dbf, shapeType=shapefile.POLYLINE)
+    w.field("PIPEDIAM", "C", size=12)
+    n, deleted_index = 0, None
+    far = (recs[0]["pts"][0], recs[-1]["pts"][-1])
+    for k, r in enumerate(recs):
+        if k in KY4_PYSHP_NULLS:
+            w.null()
+            w.record('8"')
+            n += 1
+        if k == KY4_PYSHP_DELETED_AT:
+            w.line([[list(far[0]), list(far[1])]])
+            w.record('12"')
+            deleted_index = n
+            n += 1
+        w.line([[list(p) for p in r["pts"]]])
+        w.record(r["text"])
+        n += 1
+    w.close()
+    d = bytearray(dbf.getvalue())
+    head_len, rec_len = struct.unpack("<HH", bytes(d[8:12]))
+    d[head_len + deleted_index * rec_len] = ord("*")
+    return _zip([("ky4_mains.shp", shp.getvalue()), ("ky4_mains.shx", shx.getvalue()), ("ky4_mains.dbf", bytes(d)),
+                 ("ky4_mains.prj", PRJ_FT.encode()), ("ky4_mains.cpg", b"UTF-8")])
+
+
+def _wkb_line(parts, dims: str = "", multi: bool = False) -> bytes:
+    """ISO WKB: a LineString (one part) or a MultiLineString; dims '', 'Z', 'M' or 'ZM' (Z and M filled from the
+    third and fourth value of each point, or 0)."""
+    off = {"": 0, "Z": 1000, "M": 2000, "ZM": 3000}[dims]
+    nd = 2 + len(dims)
+
+    def one(pts):
+        body = struct.pack("<BII", 1, 2 + off, len(pts))
+        for p in pts:
+            v = list(p[:2]) + [float(p[2]) if len(p) > 2 else 0.0, float(p[3]) if len(p) > 3 else 0.0][:nd - 2]
+            body += struct.pack(f"<{nd}d", *v)
+        return body
+    if not multi:
+        return one(parts[0])
+    return struct.pack("<BII", 1, 5 + off, len(parts)) + b"".join(one(p) for p in parts)
+
+
+def _gpkg_blob(wkb: bytes, srs_id: int) -> bytes:
+    return b"GP" + bytes([0, 0b00000001]) + struct.pack("<i", srs_id) + wkb
+
+
+def _gpkg_file(layers: list[tuple[str, str, list[tuple[bytes, list]]]], cols: list[tuple[str, str]],
+               srs: tuple = (GPKG_SRS_ID, "NONE", GPKG_SRS_ID, PRJ_FT), z: int = 0, m: int = 0) -> bytes:
+    """A GeoPackage of feature tables: layers [(table, geometry type, [(blob, [values]), ...])], every table with the
+    columns cols [(name, type)], in the coordinate system srs (srs_id, organization, id, definition)."""
+    sid, org, oid, defn = srs
+    st = [("PRAGMA application_id = 1196444487", ()), ("PRAGMA user_version = 10300", ()),
+          ("create table gpkg_spatial_ref_sys (srs_name text, srs_id integer primary key, organization text, "
+           "organization_coordsys_id integer, definition text, description text)", ()),
+          ("insert into gpkg_spatial_ref_sys values ('Undefined cartesian', -1, 'NONE', -1, 'undefined', '')", ()),
+          ("insert into gpkg_spatial_ref_sys values ('Undefined geographic', 0, 'NONE', 0, 'undefined', '')", ())]
+    if sid not in (-1, 0):
+        st.append(("insert into gpkg_spatial_ref_sys values (?, ?, ?, ?, ?, '')", ("fixture system", sid, org, oid,
+                                                                                    defn)))
+    st += [("create table gpkg_contents (table_name text primary key, data_type text, identifier text, description "
+            "text, last_change text, min_x real, min_y real, max_x real, max_y real, srs_id integer)", ()),
+           ("create table gpkg_geometry_columns (table_name text, column_name text, geometry_type_name text, srs_id "
+            "integer, z integer, m integer)", ())]
+    for layer in layers:
+        table, gtype, rows = layer[:3]
+        lcols = layer[3] if len(layer) > 3 else cols         # a layer may name its own columns
+        extra = "".join(f", {c} {t}" for c, t in lcols)
+        st.append(("insert into gpkg_contents values (?, 'features', ?, '', '2026-10-20T00:00:00Z', null, null, null, "
+                   "null, ?)", (table, table, sid)))
+        st.append(("insert into gpkg_geometry_columns values (?, 'geom', ?, ?, ?, ?)", (table, gtype, sid, z, m)))
+        st.append((f"create table {table} (fid integer primary key, geom blob{extra})", ()))
+        for k, (blob, vals) in enumerate(rows):
+            st.append((f"insert into {table} values (?, ?{', ?' * len(lcols)})", (k + 1, blob, *vals)))
+    return _sqlite(st)
+
+
+def ky4_mains_z_gpkg() -> bytes:
+    """The ky4 mains layer as a GeoPackage written by the WKB writer here, with Z (each end at its node's elevation,
+    each vertex between them by distance)."""
+    _, xy, elev, _ = _ky4_parts()
+    rows = []
+    for r in ky4_mains_records():
+        za, zb = elev[r["ends"][0]], elev[r["ends"][1]]
+        L = _seg_len(r["pts"])
+        tot = sum(L) or 1.0
+        acc, pts = 0.0, []
+        for i, p in enumerate(r["pts"]):
+            pts.append((p[0], p[1], za + (zb - za) * acc / tot))
+            if i < len(L):
+                acc += L[i]
+        rows.append((_gpkg_blob(_wkb_line([pts], "Z"), GPKG_SRS_ID), [r["text"]]))
+    return _gpkg_file([("ky4_mains", "LINESTRING", rows)], [("PIPEDIAM", "text")], z=1)
+
+
+@functools.lru_cache(maxsize=1)
+def _ky4_frame() -> tuple:
+    """ky4's feet laid out around LCC_CENTRE: (x0, y0) ky4 feet at the centre, (E0, N0) metres in the LCC zone."""
+    _, xy, _, _ = _ky4_parts()
+    xs, ys = [p[0] for p in xy.values()], [p[1] for p in xy.values()]
+    x0, y0 = round((min(xs) + max(xs)) / 2), round((min(ys) + max(ys)) / 2)
+    return (x0, y0), lcc_forward(*LCC_CENTRE)
+
+
+def ky4_lonlat(p) -> tuple[float, float]:
+    """(lon, lat) of a ky4 position in feet: metres in the invented LCC zone around LCC_CENTRE, then lcc_inverse."""
+    (x0, y0), (E0, N0) = _ky4_frame()
+    lat, lon = lcc_inverse(E0 + (p[0] - x0) * 0.3048, N0 + (p[1] - y0) * 0.3048)
+    return lon, lat
+
+
+def _ky4_lonlat_features() -> list[dict]:
+    feats = []
+    for r in ky4_mains_records():
+        coords = [[round(c, 10) for c in ky4_lonlat(p)] for p in r["pts"]]
+        feats.append({"type": "Feature", "properties": {"PIPEDIAM": r["text"]},
+                      "geometry": {"type": "LineString", "coordinates": coords}})
+    return feats
+
+
+def ky4_mains_lonlat_geojson() -> bytes:
+    return json.dumps({"type": "FeatureCollection", "name": "ky4_mains", "features": _ky4_lonlat_features()}).encode()
+
+
+KY4_SHUFFLE_SEED = 19
+
+
+def ky4_mains_shuffled_geojson() -> bytes:
+    import numpy as np
+    feats = _ky4_lonlat_features()
+    order = np.random.default_rng(KY4_SHUFFLE_SEED).permutation(len(feats))
+    return json.dumps({"type": "FeatureCollection", "name": "ky4_mains",
+                       "features": [feats[i] for i in order]}).encode()
+
+
+def ky4_googleearth_kmz() -> bytes:
+    """ky4's pipes drawn by hand in Google Earth: one placemark per pipe, its size as the name ('8 in'), each line
+    end about KML_ERROR_M off (radial RMS), interior vertices as drawn."""
+    import numpy as np
+    pipes = _ky4_parts()[0]
+    rng = np.random.default_rng(KML_SEED)
+    marks = []
+    for k, (pn, (s, e, pts, d, _)) in enumerate(pipes.items()):
+        ll = [list(ky4_lonlat(p)) for p in pts]
+        (x0, y0), (E0, N0) = _ky4_frame()
+        for end in (0, -1):
+            dx, dy = rng.normal(0.0, KML_ERROR_M / math.sqrt(2), 2) / 0.3048
+            p = pts[end]
+            ll[end] = list(ky4_lonlat((p[0] + dx, p[1] + dy)))
+        coords = " ".join(f"{lon:.7f},{lat:.7f},0" for lon, lat in ll)
+        marks.append(f"<Placemark><name>{d:g} in</name><LineString><tessellate>1</tessellate><coordinates>{coords}"
+                     f"</coordinates></LineString></Placemark>")
+    kml = ('<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+           f"<name>water mains</name><Folder><name>mains</name>{''.join(marks)}</Folder></Document></kml>\n")
+    return _zip([("doc.kml", kml.encode("utf-8"))])
+
+
+def ky4_layer_feet() -> list:
+    """The ky4 mains records as plain lines in feet (for the invariance checks, which build a layer in memory)."""
+    return [[tuple(p) for p in r["pts"]] for r in ky4_mains_records()]
+
+
+# the spec quirks (critique 12)
+_TWO_PARTS = [[(1000.0, 1000.0), (1100.0, 1000.0)], [(1300.0, 1000.0), (1400.0, 1050.0)]]
+QUIRK_DIAMETERS = (4, 6, 8, 10, 12, 16)
+
+
+def _quirk_lines() -> list:
+    return [[(2000.0 + 300 * k, 2000.0), (2000.0 + 300 * k + 200, 2150.0)] for k in range(len(QUIRK_DIAMETERS))]
+
+
+def multipart_two_parts_gpkg() -> bytes:
+    return _gpkg_file([("mains", "MULTILINESTRING", [(_gpkg_blob(_wkb_line(_TWO_PARTS, multi=True), GPKG_SRS_ID),
+                                                      ['8"'])])], [("PIPEDIAM", "text")])
+
+
+def multipart_two_parts_zip() -> bytes:
+    return _shp_zip("mains", [_TWO_PARTS], [['8"']], [("PIPEDIAM", "C", 8)])
+
+
+def null_shape_mid_zip() -> bytes:
+    lines = _quirk_lines()
+    recs = [[ln] for ln in lines]
+    recs.insert(3, None)
+    rows = [[f'{d}"'] for d in QUIRK_DIAMETERS]
+    rows.insert(3, ['24"'])
+    return _shp_zip("mains", recs, rows, [("PIPEDIAM", "C", 8)])
+
+
+def deleted_dbf_record_zip() -> bytes:
+    lines = _quirk_lines()
+    recs = [[ln] for ln in lines]
+    recs.insert(3, [[(2000.0, 2000.0), (3700.0, 2150.0)]])         # a stray line between two far ends
+    rows = [[f'{d}"'] for d in QUIRK_DIAMETERS]
+    rows.insert(3, ['24"'])
+    return _shp_zip("mains", recs, rows, [("PIPEDIAM", "C", 8)], deleted=(3,))
+
+
+CPG_NAMES = ("Calle Señora Ávila", "Rue du Château", "Straße Nord")
+
+
+def cpg_utf8_zip() -> bytes:
+    lines = _quirk_lines()[:3]
+    return _shp_zip("mains", [[ln] for ln in lines], [[n, '8"'] for n in CPG_NAMES],
+                    [("STREET", "C", 30), ("PIPEDIAM", "C", 8)], cpg="UTF-8", encoding="utf-8")
+
+
+def wkb_z_m_zm_gpkg() -> bytes:
+    rows = []
+    for k, dims in enumerate(("Z", "M", "ZM")):
+        base = [(3000.0 + 300 * k, 3000.0), (3200.0 + 300 * k, 3100.0), (3250.0 + 300 * k, 3300.0)]
+        pts = [(x, y, 500.0 + k, 7.5) for x, y in base]
+        rows.append((_gpkg_blob(_wkb_line([pts], dims), GPKG_SRS_ID), ['6"']))
+    return _gpkg_file([("mains", "LINESTRING", rows)], [("PIPEDIAM", "text")], z=2, m=2)
+
+
+def wkb_z_m_zm_expected() -> list:
+    return [[(3000.0 + 300 * k, 3000.0), (3200.0 + 300 * k, 3100.0), (3250.0 + 300 * k, 3300.0)] for k in range(3)]
+
+
+def prj_stateplane_ftus_zip() -> bytes:
+    return _shp_zip("mains", [[ln] for ln in _quirk_lines()], [[f'{d}"'] for d in QUIRK_DIAMETERS],
+                    [("PIPEDIAM", "C", 8)], prj=PRJ_FT)
+
+
+def gpkg_srs_undefined_gpkg() -> bytes:
+    rows = [(_gpkg_blob(_wkb_line([ln]), -1), [f'{d}"']) for ln, d in zip(_quirk_lines(), QUIRK_DIAMETERS)]
+    return _gpkg_file([("mains", "LINESTRING", rows)], [("PIPEDIAM", "text")], srs=(-1, "NONE", -1, "undefined"))
+
+
+def shape_length_mismatch_zip() -> bytes:
+    """Coordinates in metres (the .prj says so) and a Shape_Leng field in feet: the declared lengths are 3.28 times
+    the geometry's."""
+    lines = _quirk_lines()
+    rows = [[f'{d}"', f"{math.hypot(ln[1][0] - ln[0][0], ln[1][1] - ln[0][1]) / 0.3048:.3f}"]
+            for ln, d in zip(lines, QUIRK_DIAMETERS)]
+    return _shp_zip("mains", [[ln] for ln in lines], rows, [("PIPEDIAM", "C", 8), ("Shape_Leng", "N", 16)], prj=PRJ_M)
+
+
+def quantized_4dp_geojson() -> bytes:
+    feats = []
+    for r in ky4_mains_records()[:200]:
+        coords = [[round(c, 4) for c in ky4_lonlat(p)] for p in r["pts"]]
+        feats.append({"type": "Feature", "properties": {"PIPEDIAM": r["text"]},
+                      "geometry": {"type": "LineString", "coordinates": coords}})
+    return json.dumps({"type": "FeatureCollection", "features": feats}).encode()
+
+
+# snapping chains (critique 13): ends A, B, C in a row 5 ft apart; a valve cluster of five ends 4 ft apart; a pump
+# manifold of four ends 5 ft apart; every end on its own 500 ft line, so no far end meets another (EPSG 2227, US feet)
+CHAIN_ENDS = {"chain": [(0.0, 0.0), (5.0, 0.0), (10.0, 0.0)],
+              "valve_cluster": [(1000.0 + 4 * k, 0.0) for k in range(5)],
+              "pump_manifold": [(2000.0, 5.0 * k) for k in range(4)]}
+
+
+def chain_cluster_geojson() -> bytes:
+    """Each end's line leaves its row at right angles, on alternate sides, so no end lies on another line."""
+    feats, k = [], 0
+    for group, ends in CHAIN_ENDS.items():
+        along_x = ends[0][1] == ends[-1][1]
+        for i, (x, y) in enumerate(ends):
+            side = 1 if i % 2 == 0 else -1
+            far = (x, y + side * 500) if along_x else (x + side * 500, y)
+            feats.append({"type": "Feature", "properties": {"PIPEID": f"{group}_{i + 1}", "PIPEDIAM": "8 in"},
+                          "geometry": {"type": "LineString", "coordinates": [[x, y], list(far)]}})
+            k += 1
+    return json.dumps({"type": "FeatureCollection", "crs": {"type": "name",
+                                                            "properties": {"name": "urn:ogc:def:crs:EPSG::2227"}},
+                       "features": feats}).encode()
+
+
+DIRTY_IDS = ("MAIN 12", "VLV;7", "W-17", "Ünïcode_9", "A" * 40, '"QUOTED"')
+
+
+def ids_dirty_geojson() -> bytes:
+    feats = []
+    for k, pid in enumerate(DIRTY_IDS):
+        a = (5000.0 + 250 * k, 5000.0)
+        b = (5000.0 + 250 * (k + 1), 5000.0)
+        feats.append({"type": "Feature", "properties": {"PIPEID": pid, "PIPEDIAM": "6 in"},
+                      "geometry": {"type": "LineString", "coordinates": [list(a), list(b)]}})
+    return json.dumps({"type": "FeatureCollection", "crs": {"type": "name",
+                                                            "properties": {"name": "urn:ogc:def:crs:EPSG::2227"}},
+                       "features": feats}).encode()
+
+
+DIAMETER_CASES = (('8"', "8", "in", ""), ("8 in", "8", "in", ""), ("8in", "8", "in", ""), ("200 mm", "200", "mm", ""),
+                  ("200mm PVC", "200", "mm", ""), ("DN150", "150", "mm", ""), ('1965 8" CI', "8", "in", ""),
+                  ("L=350' 8\"", "8", "in", ""), ("12x8 RED", "", "", "reducer"), ('24" x 16" reducer', "", "", "reducer"),
+                  ("8 & 6", "", "", "two sizes"), ('3/4"', "0.75", "in", ""), ('1-1/2"', "1.5", "in", ""),
+                  ("2 1/2 in", "2.5", "in", ""), ("0.2 m", "0.2", "m", ""), ("1,200 mm", "1200", "mm", ""),
+                  ("8'' DIP", "8", "in", ""), ("NPS 8", "8", "in", ""), ("6", "6", "", ""), ("6.0", "6", "", ""),
+                  ("Ø200", "200", "", ""), ("unknown", "", "", "unreadable"), ("", "", "", "empty"),
+                  ('12" DI 1972', "12", "in", ""),
+                  # the review of task 17: one size labelled twice, and a coupling of one size
+                  ('6" (150mm)', "6", "in", ""), ('150 mm (6")', "6", "in", ""), ('DN 150 (6")', "6", "in", ""),
+                  ('6"x6"', "6", "in", ""))
+BARE_CASES = (((4, 6, 8, 12), "in"), ((100, 150, 200, 300), "mm"), ((0.1, 0.15, 0.3), "m"), ((1, 8, 100), None),
+              ((1.5, 6, 8), None))
+
+
+def diameter_cases_csv() -> bytes:
+    import csv as _csv
+    buf = io.StringIO()
+    w = _csv.writer(buf, lineterminator="\n")
+    w.writerow(["text", "value", "unit", "flag"])
+    w.writerows(DIAMETER_CASES)
+    return buf.getvalue().encode("utf-8")
+
+
+def no_prj_zip() -> bytes:
+    return _shp_zip("mains", [[ln] for ln in _quirk_lines()], [[f'{d}"'] for d in QUIRK_DIAMETERS],
+                    [("PIPEDIAM", "C", 8)], prj=None)
+
+
+def points_only_geojson() -> bytes:
+    feats = [{"type": "Feature", "properties": {"HYDID": f"H{k}"},
+              "geometry": {"type": "Point", "coordinates": [-100.6 + 0.001 * k, 40.0]}} for k in range(5)]
+    return json.dumps({"type": "FeatureCollection", "features": feats}).encode()
+
+
+def empty_layer_gpkg() -> bytes:
+    return _gpkg_file([("mains", "LINESTRING", [])], [("PIPEDIAM", "text")])
+
+
+VALVE_STATUS = (("V1", "OPEN"), ("V2", "CLOSED"), ("V3", "Normally Closed"), ("V4", "C"), ("V5", "O"), ("V6", ""),
+                ("V7", "closed"))
+
+
+def valves_normal_pos_geojson() -> bytes:
+    """A small mains layer (four lines meeting in a row) and its valves as points in one file: NORMAL_POS gives three
+    closed, two open, one blank, and one closed valve away from any node."""
+    feats = []
+    xs = [6000.0 + 300 * k for k in range(5)]
+    for k in range(4):
+        feats.append({"type": "Feature", "properties": {"PIPEDIAM": "8 in"},
+                      "geometry": {"type": "LineString", "coordinates": [[xs[k], 6000.0], [xs[k + 1], 6000.0]]}})
+    spots = [(xs[0], 6000.0), (xs[1] + 1.0, 6000.5), (xs[2], 6000.0), (xs[3], 6000.0), (xs[4], 6000.0),
+             (xs[1], 6000.0), (6450.0, 6900.0)]
+    for (vid, st), (x, y) in zip(VALVE_STATUS, spots):
+        feats.append({"type": "Feature", "properties": {"VALVEID": vid, "NORMAL_POS": st},
+                      "geometry": {"type": "Point", "coordinates": [x, y]}})
+    return json.dumps({"type": "FeatureCollection", "crs": {"type": "name",
+                                                            "properties": {"name": "urn:ogc:def:crs:EPSG::2227"}},
+                       "features": feats}).encode()
+
+
+def mains_and_valves_gpkg() -> bytes:
+    """valves_normal_pos.geojson's mains and valves as two layers of one GeoPackage (in its feet), as a utility keeps
+    them: a line layer 'mains' and a point layer 'valves' with VALVEID and NORMAL_POS."""
+    d = json.loads(valves_normal_pos_geojson())
+    lines = [f for f in d["features"] if f["geometry"]["type"] == "LineString"]
+    pts = [f for f in d["features"] if f["geometry"]["type"] == "Point"]
+    mains = [(_gpkg_blob(_wkb_line([f["geometry"]["coordinates"]]), GPKG_SRS_ID), [f["properties"]["PIPEDIAM"]])
+             for f in lines]
+    valves = [(_gpkg_blob(struct.pack("<BIdd", 1, 1, *f["geometry"]["coordinates"]), GPKG_SRS_ID),
+               [f["properties"]["VALVEID"], f["properties"]["NORMAL_POS"]]) for f in pts]
+    return _gpkg_file([("mains", "LINESTRING", mains, [("PIPEDIAM", "text")]),
+                       ("valves", "POINT", valves, [("VALVEID", "text"), ("NORMAL_POS", "text")])], [])
+
+
+# the review of task 17: one fixture for each issue it found, built by the writers above (never by the readers)
+def _grid_lines(n: int, step: float, x0: float, y0: float) -> list:
+    """An n by n street grid of two-point lines, step apart, from (x0, y0)."""
+    out = []
+    for i in range(n):
+        for j in range(n):
+            x, y = x0 + i * step, y0 + j * step
+            if i < n - 1:
+                out.append([(x, y), (x + step, y)])
+            if j < n - 1:
+                out.append([(x, y), (x, y + step)])
+    return out
+
+
+def _fc(lines, props, crs: str | None = None) -> bytes:
+    d = {"type": "FeatureCollection",
+         "features": [{"type": "Feature", "properties": p, "geometry": {"type": "LineString",
+                                                                       "coordinates": [list(q) for q in ln]}}
+                      for ln, p in zip(lines, props)]}
+    if crs:
+        d["crs"] = {"type": "name", "properties": {"name": crs}}
+    return json.dumps(d).encode()
+
+
+def _shp_members(stem: str, records, rows, fields, prj: str | None = PRJ_FT, cpg: str | None = "UTF-8") -> list:
+    """_shp_zip's members, for a zip that holds more than one layer or other files."""
+    shp, shx = _shp_lines(records)
+    out = [(f"{stem}.shp", shp), (f"{stem}.shx", shx), (f"{stem}.dbf", _dbf_text(fields, rows, "utf-8"))]
+    if prj is not None:
+        out.append((f"{stem}.prj", prj.encode("ascii")))
+    if cpg is not None:
+        out.append((f"{stem}.cpg", cpg.encode("ascii")))
+    return out
+
+
+GEOG_WGS84 = ('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",'
+              '0.0],UNIT["Degree",0.0174532925199433]]')
+REVIEW_GRID = (4, 400.0, 1.0e6, 2.0e5)            # 24 lines of 400 ft, in PRJ_FT's US feet
+REVIEW_BAD_VERTICES = (float("nan"), float("inf"), 1e300)
+REVIEW_LONLAT = (30, 0.001, -84.5, 38.0)          # 1,740 lines, blocks of 0.001 degree (about 90 by 110 m)
+REVIEW_MAX_FEATURES = 50                          # the feature cap the over-limit fixtures are read with
+REVIEW_POINTS = 60                                # ... and their points, over that cap
+
+
+def bad_vertices_gpkg() -> bytes:
+    """REVIEW_GRID's 24 lines and three more, each with one vertex of NaN, infinity or 1e300 (the review: one NaN vertex
+    gave the Get started page a traceback)."""
+    x0, y0 = REVIEW_GRID[2:]
+    lines = _grid_lines(*REVIEW_GRID) + [[(x0, y0), (v, y0 + 400.0)] for v in REVIEW_BAD_VERTICES]
+    rows = [(_gpkg_blob(_wkb_line([ln]), GPKG_SRS_ID), ['8"']) for ln in lines]
+    return _gpkg_file([("mains", "LINESTRING", rows)], [("PIPEDIAM", "text")])
+
+
+def empty_lines_4326_gpkg() -> bytes:
+    """A GeoPackage in longitude and latitude (EPSG 4326) whose three lines are all LINESTRING EMPTY."""
+    rows = [(_gpkg_blob(struct.pack("<BII", 1, 2, 0), 4326), ['8"']) for _ in range(3)]
+    return _gpkg_file([("mains", "LINESTRING", rows)], [("PIPEDIAM", "text")], srs=(4326, "EPSG", 4326, GEOG_WGS84))
+
+
+def lonlat_no_prj_zip() -> bytes:
+    """A street grid in longitude and latitude, zipped with no .prj (the review: read as feet, every end fell in one
+    node, and joining them took time and memory quadratic in the lines)."""
+    lines = _grid_lines(*REVIEW_LONLAT)
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'] for _ in lines], [("PIPEDIAM", "C", 8)], prj=None)
+
+
+def lonlat_as_3857_geojson() -> bytes:
+    """Longitude and latitude in a file whose crs member says EPSG:3857."""
+    lines = _grid_lines(8, 0.001, -84.5, 38.0)
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::3857")
+
+
+def stateplane_as_4326_geojson() -> bytes:
+    """State Plane feet in a file whose crs member says EPSG:4326 (a Define Projection mix-up)."""
+    lines = _grid_lines(8, 400.0, 1.5e6, 2.0e5)
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::4326")
+
+
+# Web Mercator (EPSG 3857): an east-west main of MERC_LENGTHS_M[0] and a north-south one of MERC_LENGTHS_M[1] along the
+# WGS84 ellipsoid at MERC_LAT, projected by Web Mercator's forward formula (its sphere, the ellipsoid's latitude); in
+# Web Mercator metres they measure about 1 / cos(45 degrees) = 1.41 times longer
+MERC_LON, MERC_LAT = -93.0, 45.0
+MERC_LENGTHS_M = (1000.0, 500.0)
+WEB_MERC_PRJ = ('PROJCS["WGS_1984_Web_Mercator_Auxiliary_Sphere",' + GEOG_WGS84 + ',PROJECTION["Mercator_Auxiliary_'
+                'Sphere"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",'
+                '0.0],PARAMETER["Standard_Parallel_1",0.0],PARAMETER["Auxiliary_Sphere_Type",0.0],UNIT["Meter",1.0]]')
+WORLD_MERC_PRJ = ('PROJCS["World_Mercator",' + GEOG_WGS84 + ',PROJECTION["Mercator"],PARAMETER["False_Easting",0.0],'
+                  'PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],PARAMETER["Standard_Parallel_1",'
+                  '0.0],UNIT["Meter",1.0]]')
+
+
+def _mercator_lines() -> list:
+    a, e2 = 6378137.0, 6.69437999014e-3
+    phi = math.radians(MERC_LAT)
+    w = 1.0 - e2 * math.sin(phi) ** 2
+    dlon = math.degrees(MERC_LENGTHS_M[0] / (a / math.sqrt(w) * math.cos(phi)))
+    dlat = math.degrees(MERC_LENGTHS_M[1] / (a * (1.0 - e2) / w ** 1.5))
+    fwd = lambda lon, lat: (6378137.0 * math.radians(lon),
+                            6378137.0 * math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0)))
+    p0, p1, p2 = (MERC_LON, MERC_LAT), (MERC_LON + dlon, MERC_LAT), (MERC_LON + dlon, MERC_LAT + dlat)
+    return [[fwd(*p0), fwd(*p1)], [fwd(*p1), fwd(*p2)]]
+
+
+def mercator_3857_geojson() -> bytes:
+    return _fc(_mercator_lines(), [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "8 in"}], "urn:ogc:def:crs:EPSG::3857")
+
+
+def mercator_esri_prj_zip() -> bytes:
+    lines = _mercator_lines()
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'], ['8"']], [("PIPEDIAM", "C", 8)], prj=WEB_MERC_PRJ)
+
+
+def world_mercator_zip() -> bytes:
+    lines = _mercator_lines()
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'], ['8"']], [("PIPEDIAM", "C", 8)], prj=WORLD_MERC_PRJ)
+
+
+def mains_and_many_points_gpkg() -> bytes:
+    """REVIEW_GRID's mains and a layer of REVIEW_POINTS meters (points), read with the cap at REVIEW_MAX_FEATURES (the
+    review: a large meters layer beside the mains refused the whole file)."""
+    x0, y0 = REVIEW_GRID[2:]
+    mains = [(_gpkg_blob(_wkb_line([ln]), GPKG_SRS_ID), ['8"']) for ln in _grid_lines(*REVIEW_GRID)]
+    meters = [(_gpkg_blob(struct.pack("<BIdd", 1, 1, x0 + 7.0 * k, y0 + 13.0), GPKG_SRS_ID), [f"M{k:04d}"])
+              for k in range(REVIEW_POINTS)]
+    return _gpkg_file([("mains", "LINESTRING", mains, [("PIPEDIAM", "text")]),
+                       ("meters", "POINT", meters, [("METER_ID", "text")])], [])
+
+
+def _esri(lines, sr) -> dict:
+    return {"geometryType": "esriGeometryPolyline", "spatialReference": sr,
+            "features": [{"attributes": {"DIAMETER": "8"}, "geometry": {"paths": [[list(p) for p in ln]]}}
+                         for ln in lines]}
+
+
+def esri_over_limit_json() -> bytes:
+    """Esri JSON of REVIEW_POINTS lines, read with the cap at REVIEW_MAX_FEATURES (the review: cut at the cap without a
+    word, where GeoJSON was refused)."""
+    lines = _grid_lines(7, 400.0, 1.0e6, 2.0e5)          # 84 lines
+    return json.dumps(_esri(lines[:REVIEW_POINTS], {"wkid": 2263})).encode()
+
+
+def esri_code_only_json() -> bytes:
+    """Esri JSON whose spatialReference is the code alone (the review: refused as an AttributeError)."""
+    return json.dumps(_esri(_grid_lines(*REVIEW_GRID), 2263)).encode()
+
+
+def geojson_bad_positions_geojson() -> bytes:
+    """REVIEW_GRID's lines, two of them with a position that cannot be read (a null position; 2D and 3D mixed)."""
+    lines = [[list(p) for p in ln] for ln in _grid_lines(*REVIEW_GRID)]
+    lines[3] = [lines[3][0], [None, None]]
+    lines[5] = [lines[5][0] + [10.0], lines[5][1]]
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::2263")
+
+
+def shp_with_preview_kml_zip() -> bytes:
+    """A zipped shapefile that also carries a preview.kml (the review: the zip was read as a KMZ)."""
+    lines = _grid_lines(*REVIEW_GRID)
+    kml = ('<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark>'
+           '<name>preview</name><LineString><coordinates>-98.0,36.0,0 -97.99,36.0,0</coordinates></LineString>'
+           '</Placemark></Document></kml>')
+    return _zip(_shp_members("mains", [[ln] for ln in lines], [['8"'] for _ in lines], [("PIPEDIAM", "C", 8)])
+                + [("preview.kml", kml.encode())])
+
+
+def two_folders_same_name_zip() -> bytes:
+    """north/mains and south/mains, two shapefiles of one name (the review: both were layer 'mains', and the second
+    could not be picked)."""
+    north, south = _grid_lines(*REVIEW_GRID), _grid_lines(2, 400.0, 1.2e6, 2.0e5)
+    return _zip(_shp_members("north/mains", [[ln] for ln in north], [['8"'] for _ in north], [("PIPEDIAM", "C", 8)])
+                + _shp_members("south/mains", [[ln] for ln in south], [['6"'] for _ in south], [("PIPEDIAM", "C", 8)]))
+
+
+MANY_SHAPEFILES = 101                             # one more than the reader takes from one zip
+
+
+def many_shapefiles_zip() -> bytes:
+    """MANY_SHAPEFILES shapefiles of one line each (the review: every layer's members listed the whole zip again)."""
+    members = []
+    for j in range(MANY_SHAPEFILES):
+        members += _shp_members(f"l{j:04d}", [[[(1.0e6 + 500.0 * j, 2.0e5), (1.0e6 + 500.0 * j + 100.0, 2.0e5)]]],
+                                [['8"']], [("PIPEDIAM", "C", 8)])
+    return _zip(members)
+
+
+def _kml_doc(marks: list[str]) -> bytes:
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+            + "".join(marks) + "</Document></kml>\n").encode()
+
+
+def _kml_path(i: int, name: str, desc: str = "") -> str:
+    x0 = -84.5 + 0.001 * i
+    return (f"<Placemark><name>{name}</name>" + (f"<description>{desc}</description>" if desc else "")
+            + f"<LineString><coordinates>{x0:.6f},38.000000,0 {x0 + 0.001:.6f},38.000000,0</coordinates></LineString>"
+              f"</Placemark>")
+
+
+def kml_numbered_paths_kml() -> bytes:
+    """20 paths named by their author 'Pipe 2' to 'Pipe 21' (the review: read as sizes of 2 to 21 in)."""
+    return _kml_doc([_kml_path(i, f"Pipe {i + 2}") for i in range(20)])
+
+
+KML_TABLE_DIAMETER = 8
+KML_TABLE_LENGTH_FT = 287.8               # each path's length on the ground, 0.001 degree of longitude at 38 N
+
+
+def kml_attribute_table_kml() -> bytes:
+    """20 placemarks named by facility ID, each with the attribute table ArcGIS's Layer To KML writes in its
+    description (the review: the table parsed as two sizes, and the ID became the size)."""
+    tbl = lambda i: (f"<![CDATA[<html><body><table><tr><th>FACILITYID</th><td>W-{i}</td></tr><tr><td>DIAMETER</td>"
+                     f"<td>{KML_TABLE_DIAMETER}</td></tr><tr><td>INSTALLYEAR</td><td>1965</td></tr><tr><td>"
+                     f"Shape_Length</td><td>{KML_TABLE_LENGTH_FT}</td></tr></table></body></html>]]>")
+    return _kml_doc([_kml_path(i, f"W-{i}", tbl(i)) for i in range(20)])
+
+
+def year_all_null_geojson() -> bytes:
+    """REVIEW_GRID's lines with an install-date field that is empty everywhere (the review: 'read for 0 pipes (None to
+    None)')."""
+    lines = _grid_lines(*REVIEW_GRID)
+    return _fc(lines, [{"PIPEDIAM": "8 in", "INSTALLDATE": None} for _ in lines], "urn:ogc:def:crs:EPSG::2263")
+
+
+# tees and loops (the review of task 17), each at the 6 ft default, in US feet (EPSG 2227)
+TEE_CASES = ("tee_dense_vertex_main.geojson", "tee_offset_cross.geojson", "loop_main_closed.geojson")
+
+
+def tee_dense_vertex_main_geojson() -> bytes:
+    """A main with a vertex every 10 ft and a branch ending 4 ft short of it, its foot 5 ft from the nearest vertex (the
+    review: the main was cut at that vertex, 6.4 ft from the branch end, which then joined nothing)."""
+    main = [(float(x), 0.0) for x in range(0, 101, 10)]
+    return _fc([main, [(55.0, -204.0), (55.0, -4.0)]], [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "6 in"}],
+               "urn:ogc:def:crs:EPSG::2227")
+
+
+def tee_offset_cross_geojson() -> bytes:
+    """A straight main and two branches from either side, ending 4 ft short of it with their feet 5 ft apart (the
+    review: one cut, at the second foot, 6.4 ft from the first branch end)."""
+    return _fc([[(0.0, 0.0), (100.0, 0.0)], [(50.0, 204.0), (50.0, 4.0)], [(55.0, -204.0), (55.0, -4.0)]],
+               [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "6 in"}, {"PIPEDIAM": "6 in"}], "urn:ogc:def:crs:EPSG::2227")
+
+
+def loop_main_closed_geojson() -> bytes:
+    """A feed main and a loop main drawn as one closed line of 24 vertices, starting and ending where the feed ends
+    (the review: the loop was dropped, as a pipe from a node to itself)."""
+    ring = [(100.0 * math.sin(2 * math.pi * k / 24), 100.0 - 100.0 * math.cos(2 * math.pi * k / 24)) for k in range(24)]
+    ring.append(ring[0])
+    return _fc([[(0.0, -300.0), (0.0, 0.0)], ring], [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "6 in"}],
+               "urn:ogc:def:crs:EPSG::2227")
+
+
+REVIEW_FIXTURES = ("bad_vertices.gpkg", "empty_lines_4326.gpkg", "lonlat_no_prj.zip", "lonlat_as_3857.geojson",
+                   "stateplane_as_4326.geojson", "mercator_3857.geojson", "mercator_esri_prj.zip", "world_mercator.zip",
+                   "mains_and_many_points.gpkg", "esri_over_limit.json", "esri_code_only.json",
+                   "geojson_bad_positions.geojson", "shp_with_preview_kml.zip", "two_folders_same_name.zip",
+                   "many_shapefiles.zip", "kml_numbered_paths.kml", "kml_attribute_table.kml",
+                   "year_all_null.geojson") + TEE_CASES
+
+
+# the final verification of task 17: each issue it confirmed, as a fixture of the check gis_final_verification
+FINAL_BIG_CHARS = 4_900_000                # the long run in the KMZ fixtures: within the hosted demo's 5 MB unpacked
+FINAL_PRJ_RUN = (3_000, 10_000)            # the runs of spaces around a comma in the .prj fixtures (738 B and 20 KB)
+FINAL_EPOCH_YEARS = (1931, 1948, 1965, 1972, 1990, 2004)
+
+
+def _final_kmz(extra_mark: str) -> bytes:
+    """Seven paths of 8 in end to end along 38 N, and one more (extra_mark), as doc.kml in a KMZ."""
+    return _zip([("doc.kml", _kml_doc([_kml_path(i, '8"') for i in range(7)] + [extra_mark]))])
+
+
+def kmz_long_whitespace_kmz() -> bytes:
+    """A path whose coordinates hold a run of FINAL_BIG_CHARS spaces between its two points (the final verification:
+    a pattern took time quadratic in the run, about 3.5 h for this file in the hosted demo)."""
+    x0 = -84.5 + 0.007
+    return _final_kmz(f'<Placemark><name>8"</name><LineString><coordinates>{x0:.6f},38.000000,0' + " " * FINAL_BIG_CHARS
+                      + f'{x0 + 0.001:.6f},38.000000,0</coordinates></LineString></Placemark>')
+
+
+def kmz_long_lt_kmz() -> bytes:
+    """A path whose description is FINAL_BIG_CHARS / 4 escaped '<' (the final verification: stripping its tags took
+    time quadratic in them)."""
+    return _final_kmz(_kml_path(7, '8"', "&lt;" * (FINAL_BIG_CHARS // 4)))
+
+
+def kmz_open_rows_kmz() -> bytes:
+    """A path whose description is table rows never closed, about FINAL_BIG_CHARS long (the final verification: the
+    attribute-table pattern took time quadratic in them)."""
+    return _final_kmz(_kml_path(7, '8"', "<![CDATA[" + "<tr><td>a</td>" * (FINAL_BIG_CHARS // 14) + "]]>"))
+
+
+def _doctype_kml(lead: str, where: str) -> bytes:
+    """A KML whose name uses an internal entity, the declaration after lead (blank lines before the XML declaration)
+    or where (a comment after the XML declaration)."""
+    body = ('<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>&e; 8"</name><LineString>'
+            '<coordinates>-84.5,38.0,0 -84.499,38.0,0</coordinates></LineString></Placemark></Document></kml>')
+    return _zip([("doc.kml", (lead + '<?xml version="1.0" encoding="UTF-8"?>\n' + where
+                              + '<!DOCTYPE kml [<!ENTITY e "EXPANDED">]>' + body).encode())])
+
+
+def kmz_doctype_after_blank_lines_kmz() -> bytes:
+    return _doctype_kml("\n" * 200_001, "")
+
+
+def kmz_doctype_after_comment_kmz() -> bytes:
+    return _doctype_kml("", "<!--" + "x" * 200_000 + "-->")
+
+
+def _prj_run(n: int) -> str:
+    return 'PROJCS["x",' + " " * n + "," + " " * n
+
+
+def prj_spaces_comma_zip() -> bytes:
+    """REVIEW_GRID's mains with a .prj of 'PROJCS["x",', FINAL_PRJ_RUN[0] spaces, a comma and as many spaces, no
+    closing bracket (the final verification: 28 s for this zip of under 1 KB, cubic in the run)."""
+    lines = _grid_lines(*REVIEW_GRID)
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'] for _ in lines], [("PIPEDIAM", "C", 8)],
+                    prj=_prj_run(FINAL_PRJ_RUN[0]), cpg=None)
+
+
+def prj_spaces_comma_20kb_zip() -> bytes:
+    lines = _grid_lines(*REVIEW_GRID)
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'] for _ in lines], [("PIPEDIAM", "C", 8)],
+                    prj=_prj_run(FINAL_PRJ_RUN[1]), cpg=None)
+
+
+def esri_wkt_spaces_comma_json() -> bytes:
+    """Esri JSON whose spatialReference wkt is the same run (wkt_unit reads it as the .prj is read)."""
+    return json.dumps(_esri(_grid_lines(*REVIEW_GRID), {"wkt": _prj_run(FINAL_PRJ_RUN[1])})).encode()
+
+
+def mains_and_service_lines_gpkg() -> bytes:
+    """REVIEW_GRID's mains beside a layer of REVIEW_POINTS service lines and one of REVIEW_POINTS hydrants declared
+    GEOMETRY, both over the cap of REVIEW_MAX_FEATURES they are read with (the final verification: a large line layer,
+    or points declared GEOMETRY, refused the whole GeoPackage, even with the mains layer chosen)."""
+    x0, y0 = REVIEW_GRID[2:]
+    mains = [(_gpkg_blob(_wkb_line([ln]), GPKG_SRS_ID), ['8"']) for ln in _grid_lines(*REVIEW_GRID)]
+    service = [(_gpkg_blob(_wkb_line([[(x0 + 20.0 * k, y0 + 5.0), (x0 + 20.0 * k, y0 + 45.0)]]), GPKG_SRS_ID), ['1"'])
+               for k in range(REVIEW_POINTS)]
+    hydrants = [(_gpkg_blob(struct.pack("<BIdd", 1, 1, x0 + 9.0 * k, y0 + 3.0), GPKG_SRS_ID), [f"H{k:03d}"])
+                for k in range(REVIEW_POINTS)]
+    return _gpkg_file([("mains", "LINESTRING", mains, [("PIPEDIAM", "text")]),
+                       ("service_lines", "MULTILINESTRING", service, [("PIPEDIAM", "text")]),
+                       ("hydrants", "GEOMETRY", hydrants, [("HYD_ID", "text")])], [])
+
+
+def mains_and_service_lines_zip() -> bytes:
+    """The same mains and service lines as two shapefiles in one zip."""
+    x0, y0 = REVIEW_GRID[2:]
+    mains = _grid_lines(*REVIEW_GRID)
+    service = [[(x0 + 20.0 * k, y0 + 5.0), (x0 + 20.0 * k, y0 + 45.0)] for k in range(REVIEW_POINTS)]
+    return _zip(_shp_members("mains", [[ln] for ln in mains], [['8"'] for _ in mains], [("PIPEDIAM", "C", 8)])
+                + _shp_members("service_lines", [[ln] for ln in service], [['1"'] for _ in service],
+                               [("PIPEDIAM", "C", 8)]))
+
+
+def world_mercator_3395_geojson() -> bytes:
+    """Lines in World Mercator, named by its code alone (the final verification: its unit was asked, and metres gave
+    lengths 1.41 times too long at 45 N)."""
+    return _fc(_mercator_lines(), [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "8 in"}], "urn:ogc:def:crs:EPSG::3395")
+
+
+def esri_wkid_3395_json() -> bytes:
+    return json.dumps(_esri(_mercator_lines(), {"wkid": 3395})).encode()
+
+
+FINAL_SWAP_GRID = (4, 0.002, -77.03, 38.89)      # a small grid at 38.89 N, 77.03 W, in longitude and latitude
+
+
+def _swapped_grid() -> list:
+    return [[(lat, lon) for lon, lat in ln] for ln in _grid_lines(*FINAL_SWAP_GRID)]
+
+
+def swapped_latlon_4326_geojson() -> bytes:
+    """FINAL_SWAP_GRID written latitude first, with a crs of EPSG::4326 (the final verification: it built near the
+    pole, with lengths of 50 to 223 m against 173 to 222 m, and no question)."""
+    lines = _swapped_grid()
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::4326")
+
+
+def swapped_latlon_nocrs_geojson() -> bytes:
+    lines = _swapped_grid()
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines])
+
+
+def lonlat_stateplane_prj_zip() -> bytes:
+    """A 6 by 6 grid in longitude and latitude, zipped with a State Plane .prj in US feet (the final verification: it
+    was refused as crowded and told to check the unit, with no control to change it)."""
+    lines = _grid_lines(6, 0.001, -84.5, 38.0)
+    return _shp_zip("mains", [[ln] for ln in lines], [['8"'] for _ in lines], [("PIPEDIAM", "C", 8)], prj=PRJ_FT)
+
+
+def lonlat_as_2263_geojson() -> bytes:
+    lines = _grid_lines(6, 0.001, -84.5, 38.0)
+    return _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::2263")
+
+
+def _branches(n: int, s: float, x0: float = 0.0) -> list:
+    """n branches ending 4 ft short of a main along y = 0, s ft apart from x0, fanned out 60 ft apart at 150 ft."""
+    return [[(x0 + s * k + 60.0 * (k - n / 2), 150.0), (x0 + s * k, 4.0)] for k in range(n)]
+
+
+def tee_fan_dense_main_geojson() -> bytes:
+    """Four branches 5 ft apart ending 4 ft short of a main drawn with a vertex every 2 ft (the final verification: a
+    split of the wide node put two branch ends in a node of their own, apart from the main)."""
+    main = [(float(-300 + 2 * k), 0.0) for k in range(301)]
+    lines = [main] + _branches(4, 5.0)
+    return _fc(lines, [{"PIPEDIAM": "8 in"}] + [{"PIPEDIAM": "6 in"}] * 4, "urn:ogc:def:crs:EPSG::2227")
+
+
+def tee_fan_straight_main_geojson() -> bytes:
+    """Five branches 3 ft apart ending 4 ft short of a straight two-point main (the same, two connected parts)."""
+    lines = [[(-300.0, 0.0), (300.0, 0.0)]] + _branches(5, 3.0)
+    return _fc(lines, [{"PIPEDIAM": "8 in"}] + [{"PIPEDIAM": "6 in"}] * 5, "urn:ogc:def:crs:EPSG::2227")
+
+
+def loop_joined_through_feed_geojson() -> bytes:
+    """A loop main of 41 vertices whose two ends are 8 ft apart, each 4 ft from the end of a feed main, so the two
+    ends join into one node only through the feed's end (the final verification: the loop, 321.8 ft, was dropped)."""
+    ring = [(50.0 * math.sin(t), 50.0 - 50.0 * math.cos(t)) for t in (2 * math.pi * k / 40 for k in range(41))]
+    ring[0], ring[-1] = (-4.0, 0.0), (4.0, 0.0)
+    return _fc([[(0.0, -300.0), (0.0, 0.0)], ring], [{"PIPEDIAM": "8 in"}, {"PIPEDIAM": "6 in"}],
+               "urn:ogc:def:crs:EPSG::2227")
+
+
+def kml_line_in_street_kml() -> bytes:
+    """20 paths named 'Line 1 in Oak St' to 'Line 20 in Oak St' (the final verification: 'in' after a number was read
+    as inches, 1 to 20 in, with no question)."""
+    return _kml_doc([_kml_path(i, f"Line {i + 1} in Oak St") for i in range(20)])
+
+
+def esri_epoch_dates_json() -> bytes:
+    """12 pipes whose INSTALLDATE is epoch milliseconds, as Esri JSON writes a date, for FINAL_EPOCH_YEARS (the final
+    verification: digits inside them were read as years, 1984 to 2000)."""
+    import datetime as _dt
+    lines = _grid_lines(*REVIEW_GRID)[:12]
+    ms = [int((_dt.datetime(FINAL_EPOCH_YEARS[k % 6], 6, 1) - _dt.datetime(1970, 1, 1)).total_seconds() * 1000)
+          for k in range(12)]
+    d = _esri(lines, {"wkid": 2263})
+    for f, v in zip(d["features"], ms):
+        f["attributes"]["INSTALLDATE"] = v
+    return json.dumps(d).encode()
+
+
+def _grid_gpkg() -> bytes:
+    rows = [(_gpkg_blob(_wkb_line([ln]), GPKG_SRS_ID), ['8"']) for ln in _grid_lines(*REVIEW_GRID)]
+    return _gpkg_file([("mains", "LINESTRING", rows)], [("PIPEDIAM", "text")])
+
+
+def zipped_gpkg_zip() -> bytes:
+    """A zip holding one GeoPackage of REVIEW_GRID's mains (the final verification: refused with a sentence that named
+    GeoPackage among the layers read)."""
+    return _zip([("mains.gpkg", _grid_gpkg())])
+
+
+def zipped_geojson_zip() -> bytes:
+    lines = _grid_lines(*REVIEW_GRID)
+    return _zip([("mains.geojson", _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::2263"))])
+
+
+def zipped_two_geojson_zip() -> bytes:
+    lines = _grid_lines(*REVIEW_GRID)
+    fc = _fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines], "urn:ogc:def:crs:EPSG::2263")
+    return _zip([("north.geojson", fc), ("south.geojson", fc)])
+
+
+def geojson_crs_props_string_geojson() -> bytes:
+    """A crs member whose properties are a string (the fuzzer: AttributeError on the page)."""
+    lines = _grid_lines(*REVIEW_GRID)
+    d = json.loads(_fc(lines, [{"PIPEDIAM": "8 in"} for _ in lines]))
+    d["crs"] = {"type": "name", "properties": "EPSG:2263"}
+    return json.dumps(d).encode()
+
+
+def esri_odd_attributes_json() -> bytes:
+    """Esri JSON with one feature's attributes a list, one a string, and one feature's paths a number (the fuzzer)."""
+    d = _esri(_grid_lines(*REVIEW_GRID), {"wkid": 2263})
+    d["features"][0]["attributes"] = ["DIAMETER", "8"]
+    d["features"][1]["attributes"] = "8"
+    d["features"][2]["geometry"]["paths"] = 7
+    return json.dumps(d).encode()
+
+
+def gpkg_bad_utf8_gpkg() -> bytes:
+    """REVIEW_GRID's mains with one size stored as text that is not valid UTF-8 (the fuzzer: UnicodeDecodeError)."""
+    con = sqlite3.connect(":memory:")
+    try:
+        con.deserialize(_grid_gpkg())
+        con.execute("update mains set PIPEDIAM = CAST(x'38228a' AS TEXT) where fid = 1")
+        con.commit()
+        return con.serialize()
+    finally:
+        con.close()
+
+
+def size_overflow_geojson() -> bytes:
+    """REVIEW_GRID's mains in bare inches, one of them '9' written 400 times (the fuzzer: it parsed as inf, and inf was
+    written as a diameter)."""
+    lines = _grid_lines(*REVIEW_GRID)
+    return _fc(lines, [{"PIPEDIAM": "9" * 400 if k == 0 else "8"} for k in range(len(lines))],
+               "urn:ogc:def:crs:EPSG::2263")
+
+
+FINAL_FIXTURES = ("kmz_long_whitespace.kmz", "kmz_long_lt.kmz", "kmz_open_rows.kmz", "kmz_doctype_after_blank_lines.kmz",
+                  "kmz_doctype_after_comment.kmz", "prj_spaces_comma.zip", "prj_spaces_comma_20kb.zip",
+                  "esri_wkt_spaces_comma.json", "mains_and_service_lines.gpkg", "mains_and_service_lines.zip",
+                  "world_mercator_3395.geojson", "esri_wkid_3395.json", "swapped_latlon_4326.geojson",
+                  "swapped_latlon_nocrs.geojson", "lonlat_stateplane_prj.zip", "lonlat_as_2263.geojson",
+                  "tee_fan_dense_main.geojson", "tee_fan_straight_main.geojson", "loop_joined_through_feed.geojson",
+                  "kml_line_in_street.kml", "esri_epoch_dates.json", "zipped_gpkg.zip", "zipped_geojson.zip",
+                  "zipped_two_geojson.zip", "geojson_crs_props_string.geojson", "esri_odd_attributes.json",
+                  "gpkg_bad_utf8.gpkg", "size_overflow.geojson")
+
+
+# WNTR's own GIS schema (critique 24), written here the way WNTR's to_gis lays it out, as far as this writer emulates
+# it (each element's base and optional attributes that are plain values, where to_gis keeps every plain column of
+# to_dict; coordinates and vertices as the geometry) and WNTR's JSON as the sidecar: never a file WNTR itself wrote
+# (to_gis needs geopandas, which is not installed; the review of task 17)
+WNTR_SCHEMA_NETS = ("Net3", "Net2", "ky4")
+
+
+def wntr_schema_zip(net: str) -> bytes:
+    import wntr
+    from wntr.network.elements import Junction, Pipe, Pump, Reservoir, Tank, Valve
+    wn = _wn(net)
+    d = wntr.network.to_dict(wn)
+    keep = {"Junction": Junction, "Tank": Tank, "Reservoir": Reservoir, "Pipe": Pipe, "Pump": Pump, "Valve": Valve}
+    layer_of = {"Junction": "junctions", "Tank": "tanks", "Reservoir": "reservoirs", "Pipe": "pipes", "Pump": "pumps",
+                "Valve": "valves"}
+    out = {v: [] for v in layer_of.values()}
+    xy = {n["name"]: n["coordinates"] for n in d["nodes"]}
+    for el in d["nodes"] + d["links"]:
+        t = el.get("node_type") or el.get("link_type")
+        cls = keep[t]
+        names = [a for a in cls._base_attributes + cls._optional_attributes if a not in ("coordinates", "vertices")]
+        props = {a: el.get(a) for a in names if isinstance(el.get(a), (str, int, float, bool, type(None)))}
+        if "node_type" in el:
+            geom = {"type": "Point", "coordinates": list(el["coordinates"])}
+        else:
+            pts = [xy[el["start_node_name"]]] + list(el.get("vertices") or []) + [xy[el["end_node_name"]]]
+            geom = {"type": "LineString", "coordinates": [list(p) for p in pts]}
+        out[layer_of[t]].append({"type": "Feature", "properties": props, "geometry": geom})
+    members = [(f"{net}_{k}.geojson", json.dumps({"type": "FeatureCollection", "features": v}).encode())
+               for k, v in out.items() if v]
+    members.append((f"{net}_wn.json", json.dumps(d, default=str).encode()))
+    return _zip(members)
+
+
+GIS_FIXTURES = ("ky4_mains_stdlib_shp.zip", "ky4_mains_pyshp.zip", "ky4_mains_z.gpkg", "ky4_mains_lonlat.geojson",
+                "ky4_googleearth.kmz", "ky4_mains_shuffled.geojson", "multipart_two_parts.gpkg",
+                "multipart_two_parts.zip", "null_shape_mid.zip", "deleted_dbf_record.zip", "cpg_utf8.zip",
+                "wkb_z_m_zm.gpkg", "prj_stateplane_ftus.zip", "gpkg_srs_undefined.gpkg", "shape_length_mismatch.zip",
+                "quantized_4dp.geojson", "chain_cluster.geojson", "ids_dirty.geojson", "diameter_cases.csv",
+                "no_prj.zip", "utility_gdb.zip", "points_only.geojson", "empty_layer.gpkg",
+                "valves_normal_pos.geojson", "mains_and_valves.gpkg") + tuple(f"wntr_schema_{n}.zip"
+                                                                             for n in WNTR_SCHEMA_NETS) + REVIEW_FIXTURES \
+    + FINAL_FIXTURES
+GIS_SCORED = ("ky4_mains_stdlib_shp.zip", "ky4_mains_pyshp.zip", "ky4_mains_z.gpkg", "ky4_mains_lonlat.geojson")
+FIXTURES.update({"ky4_mains_stdlib_shp.zip": ky4_mains_stdlib_shp_zip, "ky4_mains_pyshp.zip": ky4_mains_pyshp_zip,
+                 "ky4_mains_z.gpkg": ky4_mains_z_gpkg, "ky4_mains_lonlat.geojson": ky4_mains_lonlat_geojson,
+                 "ky4_googleearth.kmz": ky4_googleearth_kmz, "ky4_mains_shuffled.geojson": ky4_mains_shuffled_geojson,
+                 "multipart_two_parts.gpkg": multipart_two_parts_gpkg, "multipart_two_parts.zip": multipart_two_parts_zip,
+                 "null_shape_mid.zip": null_shape_mid_zip, "deleted_dbf_record.zip": deleted_dbf_record_zip,
+                 "cpg_utf8.zip": cpg_utf8_zip, "wkb_z_m_zm.gpkg": wkb_z_m_zm_gpkg,
+                 "prj_stateplane_ftus.zip": prj_stateplane_ftus_zip, "gpkg_srs_undefined.gpkg": gpkg_srs_undefined_gpkg,
+                 "shape_length_mismatch.zip": shape_length_mismatch_zip, "quantized_4dp.geojson": quantized_4dp_geojson,
+                 "chain_cluster.geojson": chain_cluster_geojson, "ids_dirty.geojson": ids_dirty_geojson,
+                 "diameter_cases.csv": diameter_cases_csv, "no_prj.zip": no_prj_zip,
+                 "points_only.geojson": points_only_geojson, "empty_layer.gpkg": empty_layer_gpkg,
+                 "valves_normal_pos.geojson": valves_normal_pos_geojson, "mains_and_valves.gpkg": mains_and_valves_gpkg,
+                 **{f"wntr_schema_{n}.zip": functools.partial(wntr_schema_zip, n) for n in WNTR_SCHEMA_NETS},
+                 **{n: globals()[n.replace(".", "_")] for n in REVIEW_FIXTURES + FINAL_FIXTURES}})
 
 
 def build(name: str, dest: str) -> str:

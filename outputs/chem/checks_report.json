@@ -10,9 +10,9 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 119,
+ "n_pass": 131,
  "n_fail": 0,
- "n_skipped": 0,
+ "n_skipped": 1,
  "run_log_only": {
   "no_listed_names_in_tracked_files": "reads a private list kept outside the repository (RESIDUALMAP_NAMES_CSV) and is skipped without it, so its result is in outputs/chem/checks_run.json only; a failure still fails the run"
  },
@@ -1306,36 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 535,
+    "registry_ok": 595,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1966,
-     "date": 75,
-     "identifier": 719,
+     "code or path": 2075,
+     "date": 78,
+     "identifier": 757,
      "link target": 12,
      "run cost (logs, df)": 7,
      "seed range": 20,
-     "setting or literature value written in the code": 17,
-     "time of day": 127
+     "setting or literature value written in the code": 21,
+     "time of day": 129
     },
     "traced": {
-     "iteration-4 outputs": 260,
-     "file cited in its section": 3612,
-     "file cited in its paragraph": 5260,
+     "iteration-4 outputs": 273,
+     "file cited in its section": 3788,
+     "file cited in its paragraph": 5411,
      "outputs": 10,
-     "iteration-5 outputs": 10
+     "iteration-5 outputs": 12
     },
-    "n_tokens": 9177,
+    "n_tokens": 9523,
     "power_caught_of_tested": {
      "decimal": [
-      1162,
-      9123
+      1196,
+      9184
      ],
      "integer": [
-      1312,
-      8161
+      1446,
+      8739
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 48,
+    "iteration4_texts_checked": 52,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -2135,7 +2135,7 @@
    "pass": true,
    "detail": {
     "software_choices": 12,
-    "coming": 5,
+    "coming": 2,
     "template_downloads": 5,
     "templates_parse": [
      "grab_log_template.csv",
@@ -2398,7 +2398,7 @@
      "cloud": []
     },
     "nominal_run_same_results": true,
-    "guide_swaps": 4,
+    "guide_swaps": 7,
     "limits_before_parsing": {
      "grid180.inp": {
       "bytes": 3744579,
@@ -2471,7 +2471,7 @@
    "group": "task20",
    "pass": true,
    "detail": {
-    "lines": 11,
+    "lines": 12,
     "pinned": {
      "wntr": "1.5.0",
      "scikit-learn": "1.9.1",
@@ -2483,7 +2483,8 @@
      "streamlit": "1.64.0",
      "pypdf": "6.19.0",
      "openpyxl": "3.1.5",
-     "et-xmlfile": "2.0.0"
+     "et-xmlfile": "2.0.0",
+     "pyshp": "3.1.6"
     }
    }
   },
@@ -2708,7 +2709,8 @@
      "max": 27,
      "month": 30
     },
-    "group_leaving_no_training_refused": true
+    "group_leaving_no_training_refused": true,
+    "pilot_fixed_route_k10_plain_message": true
    }
   },
   {
@@ -2737,6 +2739,40 @@
       "total_chlorine_column",
       "under_a_hundredth"
      ]
+    },
+    "final_verification_cases": {
+     "inlet_tap_with_no_node_refused": true,
+     "ugl_inlet_tap": {
+      "residual_mgL": 1.19,
+      "readings_in_ugl_note": 9
+     },
+     "ugl_inlet_thousands_refused": true,
+     "inlet_files_refused": [
+      "zone_inlets_mono_residual.csv",
+      "zone_inlets_nh2cl.csv",
+      "zone_inlets_ph.csv"
+     ],
+     "inlet_headers_after_review": {
+      "mg/L": [
+       "Lake",
+       "River"
+      ],
+      "ppm": [
+       "Lake",
+       "River"
+      ],
+      "flow-paced residual": [
+       "Lake",
+       "River"
+      ],
+      "value": "refused"
+     },
+     "daily_inlet_values": {
+      "kept": 5,
+      "residual_mgL": 0.85,
+      "date_not_read": 1
+     },
+     "inlet_with_unreadable_dates_refused_saying_why": true
     }
    }
   },
@@ -2771,7 +2807,9 @@
      "plant",
      "sites0",
      "synthetic"
-    ]
+    ],
+    "pilot_names_its_own_inlet_route": true,
+    "changelog_says_whole_log_in_the_pilot": true
    }
   },
   {
@@ -2805,6 +2843,306 @@
     ],
     "inlet_outside_window_refused": true,
     "chloramine_offers_no_inlet_upload": true
+   }
+  },
+  {
+   "name": "gis_utility_style_rebuild",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "ky4_mains_stdlib_shp.zip": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 25
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 27
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "components": 1,
+      "diameter_share": 1.0,
+      "extra_pipes": 8
+     }
+    },
+    "ky4_mains_pyshp.zip": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 25
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 27
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "components": 1,
+      "diameter_share": 1.0,
+      "extra_pipes": 8
+     }
+    },
+    "ky4_mains_z.gpkg": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 25
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 27
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "components": 1,
+      "diameter_share": 1.0,
+      "extra_pipes": 8
+     }
+    },
+    "ky4_mains_lonlat.geojson": {
+     "1": {
+      "pipes_rebuilt": 1135,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 25
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "components": 7,
+      "diameter_share": 1.0,
+      "extra_pipes": 27
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "components": 1,
+      "diameter_share": 1.0,
+      "extra_pipes": 8
+     }
+    }
+   }
+  },
+  {
+   "name": "gis_kml_handdrawn",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "5": {
+     "pipes_rebuilt": 658,
+     "components": 138,
+     "dead_ends": 703
+    },
+    "10": {
+     "pipes_rebuilt": 1060,
+     "components": 6,
+     "dead_ends": 290
+    },
+    "15": {
+     "pipes_rebuilt": 1071,
+     "components": 1,
+     "dead_ends": 253
+    },
+    "20": {
+     "pipes_rebuilt": 1059,
+     "components": 1,
+     "dead_ends": 248
+    }
+   }
+  },
+  {
+   "name": "gis_spec_quirks",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "multipart_two_parts.gpkg": true,
+    "multipart_two_parts.zip": true,
+    "null_shape_mid.zip": true,
+    "deleted_dbf_record.zip": true,
+    "cpg_utf8.zip": true,
+    "wkb_z_m_zm.gpkg": true,
+    "prj_stateplane_ftus.zip": true,
+    "gpkg_srs_undefined.gpkg": true,
+    "shape_length_mismatch.zip": true,
+    "quantized_4dp.geojson": true,
+    "mercator_3857.geojson": true,
+    "mercator_esri_prj.zip": true,
+    "esri_code_only.json": true,
+    "geojson_bad_positions.geojson": true,
+    "shp_with_preview_kml.zip": true,
+    "two_folders_same_name.zip": true,
+    "kml_numbered_paths.kml": true,
+    "kml_attribute_table.kml": true,
+    "year_all_null.geojson": true
+   }
+  },
+  {
+   "name": "gis_snapping_invariance",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "translated_rotated_same_topology": true,
+    "metres_same_topology": true,
+    "metres_vs_feet_max_rel_length": 6.035331633725166e-11,
+    "skeleton_max_rel_length": 4.8996870771035324e-12,
+    "skeleton_max_rel_diameter": 3.999896952817552e-12
+   }
+  },
+  {
+   "name": "gis_snapping_chain",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "flagged": 1,
+    "split": 2,
+    "nodes_per_group": {
+     "chain": 1,
+     "pump_manifold": 2,
+     "valve_cluster": 3
+    },
+    "tees_and_loops_connected": [
+     "loop_main_closed.geojson",
+     "tee_dense_vertex_main.geojson",
+     "tee_offset_cross.geojson"
+    ]
+   }
+  },
+  {
+   "name": "gis_ids_deterministic",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "shuffled_identical": true,
+    "nodes": 962,
+    "pipes": 1159,
+    "dirty_ids_mapped": 4
+   }
+  },
+  {
+   "name": "diameter_parsing",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "cases": 28,
+    "right": 28,
+    "bare_ranges": 5
+   }
+  },
+  {
+   "name": "gis_readers_refuse_cleanly",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "no_prj.zip": "asks",
+    "utility_gdb.zip": "refused in plain words",
+    "points_only.geojson": "refused in plain words",
+    "empty_layer.gpkg": "refused in plain words",
+    "bad_vertices.gpkg": "built",
+    "empty_lines_4326.gpkg": "refused in plain words",
+    "lonlat_no_prj.zip": "asks",
+    "lonlat_no_prj.zip|unit=ft": "refused in plain words",
+    "lonlat_no_prj.zip|unit=deg": "built",
+    "lonlat_as_3857.geojson": "refused in plain words",
+    "stateplane_as_4326.geojson": "asks",
+    "stateplane_as_4326.geojson|unit=us_ft": "asks",
+    "world_mercator.zip": "refused in plain words",
+    "many_shapefiles.zip": "refused in plain words",
+    "esri_over_limit.json|cap=50": "refused in plain words",
+    "mains_and_many_points.gpkg|cap=50": "built"
+   }
+  },
+  {
+   "name": "gis_valve_status",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "proposed_closed": 4,
+    "status_field": "NORMAL_POS",
+    "from_a_separate_valve_layer": 4
+   }
+  },
+  {
+   "name": "gis_wntr_schema_roundtrip",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "exact": [
+     "Net2",
+     "Net3",
+     "ky4"
+    ],
+    "negative_control_mgL": 0.7623943090438843
+   }
+  },
+  {
+   "name": "gis_external_file",
+   "group": "task17",
+   "pass": null,
+   "skipped": "no external mains layer: fixtures are generated locally this iteration, nothing was downloaded"
+  },
+  {
+   "name": "gis_final_verification",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "time_bound_s": 5.0,
+    "timed_cases": [
+     "esri_wkt_spaces_comma.json",
+     "kmz_doctype_after_blank_lines.kmz",
+     "kmz_long_lt.kmz",
+     "kmz_long_whitespace.kmz",
+     "kmz_open_rows.kmz",
+     "prj_spaces_comma.zip",
+     "prj_spaces_comma_20kb.zip",
+     "wkt_unit_20kb"
+    ],
+    "cases": 38,
+    "tee_sweep_connected": 32,
+    "kmz_bytes": 5190,
+    "prj_zip_bytes": 896
+   }
+  },
+  {
+   "name": "get_started_gis_import",
+   "group": "task17",
+   "pass": true,
+   "detail": {
+    "page_uploaders": [
+     "Check a file",
+     "GIS layer of your water mains"
+    ],
+    "downloads_before_a_file": 5,
+    "skeleton_handed_off": "valves_normal_pos_skeleton.inp",
+    "main_options_with_prepared": [
+     "Example network",
+     "Upload my .inp",
+     "Model prepared on Get started"
+    ],
+    "skeleton_stops_at_readiness": true,
+    "net3_from_wntr_gis_flagged": "42 of 92",
+    "upload_copies_left_by_the_main_page": [
+     "2f010a68_wntr_schema_Net3.inp",
+     "d9b87a83_valves_normal_pos_skeleton.inp"
+    ],
+    "cloud_files_under_outputs": 0,
+    "cloud_no_uploads_uploaders": 0,
+    "hand_off_through_page_list": "Model prepared on Get started",
+    "example_after_hand_off_flagged": "42 of 92",
+    "bad_vertices_page_pipes": 24,
+    "lonlat_page_pipes_in_degrees": 1740,
+    "cloud_layer_over_the_limit_refused": true,
+    "lonlat_under_a_state_plane_prj_unit_offered": true,
+    "swapped_axes_asked_and_built": true,
+    "cloud_kmz_of_4p9_mb_spaces_built_within_s": 30.0
    }
   },
   {

@@ -86,7 +86,8 @@ from scipy.stats import norm
 from .chemistry import Chemistry, Warming
 from .chloramine import CA_DOSE_MGL, ca_condition
 from .features import build_features
-from .importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_ZONE_NOTE, LogRefused, Readiness, _clock, clock_label,
+from .importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_APP_ROUTE, INLET_PILOT_ROUTE, INLET_ZONE_NOTE, LogRefused,
+                        Readiness, _clock, clock_label,
                         combine_inlet_residuals, dropped_lines, inlet_ratios_from, inlet_tap_residuals, prepare_inp,
                         read_grab_log, read_inlet_residuals, shows_clock, size_gate, stem as inp_stem)
 from .simgp import DAY_HOURS, SimGP24, grid_cache_path
@@ -388,6 +389,14 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
                 target_dose_ratio=float(ratio[m]))
         return model
 
+    if holdout_sites:       # task 17's fix of task 16c's leftovers: a group of every site is refused before any fit
+        for m in held:
+            train_ = log[log.month.isin([t for t in months if t < m][-window_months:])]
+            sites_ = sorted(set(map(str, log[log.month == m].junction)))
+            if int(holdout_sites) >= len(sites_) and not (~train_.junction.isin(sites_)).any():
+                raise ValueError(f"holdout_sites {int(holdout_sites)}: in held-out month {m} a group of sites leaves no "
+                                 f"training sample (its {len(sites_)} sites are every site of the earlier months); use "
+                                 f"fewer sites per group")
     rng_sites = np.random.default_rng(HOLDOUT_SITES_SEED + seed) if holdout_sites else None
     preds, rows, site_preds = [], [], []
     for m in held:
@@ -569,6 +578,9 @@ def main():
             inp, report = prepare_pilot_inp(a.inp, a.disinfectant)
         except FileNotFoundError as e:
             sys.exit(str(e))
+        # task 17's fix of task 16c's leftovers: the readiness warning for several entry points names the app's way to
+        # give inlet residuals; the pilot says its own
+        report.warnings = [w.replace(INLET_APP_ROUTE, INLET_PILOT_ROUTE) for w in report.warnings]
         with open(os.path.join(a.out, f"import_report_{inp_stem(a.inp)}{'_plant' if a.plant else ''}.json"), "w") as f:
             f.write(report.to_json() + "\n")
         print(report.to_markdown())
@@ -660,9 +672,12 @@ def main():
         dose = a.dose
     plant = load_plant(a.plant) if a.plant else None
     grid = "full" if a.synthetic or a.disinfectant == "chloramine" or plant is not None else grid
-    preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
-                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n, grid=grid, inlet_ratios=inlet_ratios,
-                              holdout_sites=a.holdout_sites)
+    try:            # task 17's fix of task 16c's leftovers: a refusal inside validate is a plain message, not a traceback
+        preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
+                                  disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n, grid=grid,
+                                  inlet_ratios=inlet_ratios, holdout_sites=a.holdout_sites)
+    except ValueError as e:
+        sys.exit(f"{a.samples or a.synthetic}: {e}")
     tag = (a.synthetic or inp_stem(a.inp)) + ("_plant" if plant is not None else "")
     tag += ("_inlets" if inlet_ratios is not None else "") + (f"_sites{a.holdout_sites}" if a.holdout_sites else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
