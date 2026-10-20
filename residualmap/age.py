@@ -241,19 +241,25 @@ def loss_split(model) -> pd.DataFrame:
     kb, kw, g, dm, rm = model.map_params_
     dose = float(sc.source_dose) * float(model.map_dose_)
     rates = {"full": (kb, kw), "bulk_only": (kb, 0.0), "wall_only": (0.0, kw), "no_decay": (0.0, 0.0)}
+    # iteration 5, task 16c: a model whose inlets carry different residuals runs its four runs at the same per-inlet
+    # ratios as its grid; without them (None) every call is the committed one, keyword for keyword
+    ratios = getattr(model, "inlet_ratios", None)
+    extra = {} if ratios is None else {"inlet_ratios": ratios}
     runs = {}
     with tempfile.TemporaryDirectory(prefix="rm_split_") as tmp:
         for k, (b, w) in rates.items():
             prefix = os.path.join(tmp, k)
             try:
-                runs[k] = simulate_nominal_chlorine(sc.wn_name, b, w, g, dose, dm, rm, file_prefix=prefix).loc[HOURS, sc.junctions]
+                runs[k] = simulate_nominal_chlorine(sc.wn_name, b, w, g, dose, dm, rm, file_prefix=prefix,
+                                                    **extra).loc[HOURS, sc.junctions]
             finally:
                 remove_epanet_files(prefix)
     out = split_from_runs(runs)
     # every source carries the same dose here, so the no-decay run over the dose is the share of the water at the
     # junction that entered from a source during the run; the rest is still the file's initial contents (quality 0
-    # in the example files), a start-up transient the truth shares
-    out["source_water_share"] = (runs["no_decay"].mean() / dose).values
+    # in the example files), a start-up transient the truth shares.  With per-inlet ratios the sources carry different
+    # doses and the no-decay run over the dose is no such share: NaN then.
+    out["source_water_share"] = (runs["no_decay"].mean() / dose).values if ratios is None else np.nan
     out.attrs["member"] = {"kb": kb, "kw": kw, "gamma": g, "demand": dm, "rough": rm, "dose_mult": model.map_dose_}
     return out
 

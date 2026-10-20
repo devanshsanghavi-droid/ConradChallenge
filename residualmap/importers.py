@@ -90,6 +90,19 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   time; a tap ID with a superscript digit is a tap like any other; a two-column junction export is no tap map; and a
   not-used reason that names a value is one line for all its values when more than 5 differ, the list capped at 30
   lines.
+- Task 16c, zone inlets (read_inlet_residuals, inlet_taps_of, combine_inlet_residuals, inlet_ratios_from): a zone cut
+  from a larger system has several inlets with different residuals.  An inlet residuals file gives each inlet's node ID
+  and its measured residual; a tap map's role column marks a tap as a zone 'inlet' (its junction column holds the
+  inlet's node ID), and read_grab_log keeps that tap's readings apart (GrabLog.inlets, never in the frame, never
+  thinned), their median over the window setting the inlet's residual.  inlet_ratios_from turns the residuals into
+  r_i = residual_i / the largest for every entry point of the model (an entry point without a residual, or a name
+  that is none, is refused), and simulate.simulate_nominal_chlorine doses each at r_i times the dose.  The readiness
+  report's warning for more than one entry point says so, and that water age starts at 0 at every entry point.
+  Its review: a role cell marks a zone inlet only when it reads as one (is_inlet_role: 'inlet', 'zone inlet', 'inlet
+  analyzer', never 'not inlet'); every tap marked so is kept on the log (GrabLog.inlet_taps), and inlet_tap_residuals
+  refuses one with no usable reading in the months used, or at a node that is no entry point, where it was left out
+  without a word; the inlet residuals file is read for the disinfectant's species, its decimal commas and µg/L
+  conversion are noted, and a residual under a hundredth of the highest (or under 10 µg/L) is refused as a unit slip.
 - Section headers and their names are read the way WNTR's reader reads them: after any whitespace (a form feed
   included), and a singular name such as [PIPE] is the [PIPES] section; the ID scan also stops at [END], as WNTR does.
 - Zips are read in memory only, never extracted to disk.  A member with an absolute path or a '..' part is refused,
@@ -2267,10 +2280,15 @@ def _physics_report(rep: Readiness, wn, ctl: dict, have_xy: set, src_nodes: list
                             f"leaves these as they are, so they stay in the run at about a thousandth of their strength "
                             f"and add almost nothing. How to treat boosters is an open decision; until then the map "
                             f"has almost none of their chlorine.")
-    if len(src_nodes) > 1:
-        rep.warnings.append(f"{len(src_nodes)} entry points ({_ids_list(list(src_nodes))}): every one is dosed at the "
-                            f"same value, the dose you set. If they carry different residuals, the map is off near "
-                            f"them; a residual per inlet is planned.")
+    if len(src_nodes) > 1:      # task 16c: the residual per inlet is built (read_inlet_residuals, inlet_ratios_from)
+        rep.warnings.append(f"{len(src_nodes)} entry points ({_ids_list(list(src_nodes))}): unless you give each "
+                            f"inlet's residual, every one is dosed at the same value, the dose you set, and if they "
+                            f"carry different residuals the map is off near them. An inlet residuals file (each inlet's "
+                            f"node ID and its measured residual in mg/L) doses each one in proportion: on the main page, "
+                            f"with the demo off, tick 'My zone's inlets carry different residuals' under '2. Your "
+                            f"samples' and upload it there (free chlorine only, for now). Water age starts "
+                            f"at 0 at every entry point, so in a zone cut from a larger system, whose water is already "
+                            f"old when it enters, the water is older than the age map shows.")
     # 8. structure: pumps and controls, demand and patterns, connected parts, export connectors
     loose = []
     for pn in wn.pump_name_list:
@@ -3343,6 +3361,39 @@ class GrabLog:
     start_clock_h: float = 0.0
     n_rows: int = 0                     # data rows in the file
     row_no: object = None               # each frame row's line in the file (same index as frame)
+    # task 16c: the readings at taps the tap map marks as a zone inlet (role 'inlet'): row, tap_id, inlet (the node the
+    # tap map gives), date, month, y.  A boundary condition, never in frame; None when the tap map marks no inlet
+    inlets: object = None
+    # task 16c (its review): every tap the tap map marks as a zone inlet, {tap: {'inlet': node, 'role': the role cell}},
+    # with or without a usable reading, so a declared inlet with none is refused, never silently dropped
+    inlet_taps: dict = field(default_factory=dict)
+
+    def inlet_unused(self, months) -> list[dict]:
+        """The readings at zone-inlet taps outside the given months (YYYY-MM), as not-used rows (row, tap_id, reason):
+        the app takes an inlet's residual over the grab log's window, so the rest are listed, never lost."""
+        f = self.inlets
+        if f is None or not len(f) or months is None:
+            return []
+        use = list(months)
+        why = (f"zone inlet reading outside the window ({', '.join(use)}), so it does not set the inlet's residual"
+               if use else "zone inlet reading outside the window")
+        return [{"row": int(r.row), "tap_id": r.tap_id, "reason": why} for r in f[~f.month.isin(use)].itertuples()]
+
+    def inlet_residuals(self, months=None) -> dict:
+        """{inlet node: {'residual_mgL': the median of its readings, 'readings', 'taps', 'first', 'last'}} over the
+        given months (YYYY-MM; None: every month of the log), sorted by node ID.  The median of every reading, not
+        thinned: an inlet analyzer's whole series sets the inlet's residual."""
+        f = self.inlets
+        if f is None or not len(f):
+            return {}
+        if months is not None:
+            f = f[f.month.isin(list(months))]
+        out = {}
+        for node, g in f.groupby("inlet", sort=True):
+            out[str(node)] = {"residual_mgL": float(g.y.median()), "readings": int(len(g)),
+                              "taps": sorted(set(map(str, g.tap_id))), "first": str(g.date.min()),
+                              "last": str(g.date.max())}
+        return out
 
     def only_junctions(self, junctions) -> "GrabLog":
         """The same log with the rows whose junction is not in the model moved to dropped (and censored readings at
@@ -3363,7 +3414,8 @@ class GrabLog:
                       censored=c[ck].reset_index(drop=True) if len(c) else c, dropped=sorted(dropped, key=lambda d: d["row"]),
                       notes=list(self.notes), warnings=list(self.warnings), mapping=dict(self.mapping),
                       analyzer=dict(self.analyzer), start_clock_h=self.start_clock_h, n_rows=self.n_rows,
-                      row_no=self.row_no[keep].reset_index(drop=True))
+                      row_no=self.row_no[keep].reset_index(drop=True), inlets=self.inlets,
+                      inlet_taps=dict(self.inlet_taps))
         return out
 
     def window(self, months: int = LOG_WINDOW_MONTHS) -> tuple:
@@ -3640,8 +3692,23 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
     if zoned:
         warns.append(f"{zoned} date{'s' if zoned != 1 else ''} carry a time zone mark (Z, UTC or an offset): each time "
                      f"is read as written. If the log's times are UTC, export them in local time.")
-    taps, tmap_cols = ((None, {}) if taps_data is None else
-                       read_tap_map(taps_data, taps_name, tap_mapping, max_unpacked)[0::2])
+    taps, tmap_cols, inlet_taps, inlet_roles = None, {}, {}, {}
+    if taps_data is not None:
+        taps, t_taps, tmap_cols = read_tap_map(taps_data, taps_name, tap_mapping, max_unpacked)
+        # task 16c: taps whose role is 'inlet' (a zone inlet's analyzer or grab tap) set that inlet's residual and are
+        # never fitted; a tap map without a role column reads exactly as before
+        inlet_taps, role_col, inlet_roles, near_misses = inlet_taps_of(t_taps, tmap_cols, tap_mapping)
+        if role_col is not None:
+            tmap_cols = {**tmap_cols, "role": role_col}
+        if near_misses:      # the review of task 16c: 'not inlet', 'downstream of inlet' are no zone inlet
+            warns.append(f"{len(near_misses)} tap{'s' if len(near_misses) != 1 else ''} of the tap map "
+                         f"{'have roles' if len(near_misses) != 1 else 'has a role'} that mention{'' if len(near_misses) != 1 else 's'} "
+                         f"an inlet but {'do' if len(near_misses) != 1 else 'does'} not mark a zone inlet ("
+                         + ", ".join(f"{t}: {c!r}" for t, c in near_misses[:6])
+                         + (f" and {len(near_misses) - 6} more" if len(near_misses) > 6 else "")
+                         + f"), so {'their' if len(near_misses) != 1 else 'its'} readings are read as a tap's. A zone "
+                           f"inlet's role is 'inlet' (or 'zone inlet', 'inlet analyzer', 'inlet tap').")
+    inlet_rows = []
     by_number = {}
     if taps is not None:
         for k in taps:
@@ -3699,6 +3766,16 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
                "hour": model_hour(minute, start_clock_h)}
         if ix["time"] is None and i_row in midnight:     # an Excel 00:00 that may be a date typed with no time
             rec.update(midnight=True, date_text=_cell_text(r[ix["date"]]))
+        if rec["tap_id"] in inlet_taps:      # task 16c: a zone inlet's reading is a boundary condition, never fitted
+            v = None if y is None else (y * factor if factor != 1.0 else y)
+            if v is None or v > READING_MAX_MGL:
+                dropped.append({"row": row_no, "tap_id": rec["tap_id"],
+                                "reason": f"zone inlet {junction}: not a reading its residual can use",
+                                "example": _cell_text(raw)})
+            else:
+                inlet_rows.append({"row": row_no, "tap_id": rec["tap_id"], "inlet": str(junction),
+                                   "date": rec["date"], "month": rec["month"], "y": float(v)})
+            continue
         if y is None and why.startswith(("censored", "above")):
             cens.append({**rec, "raw": _cell_text(raw), "reason": why,
                          "kind": "above" if why.startswith("above") else "below"})
@@ -3832,6 +3909,22 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
         notes.append(f"Times of day are converted to model hours: the model starts at {_clock(start_clock_h)} (START "
                      f"CLOCKTIME), so a sample taken at {clock_label(3, start_clock_h)} is model hour 3. Minutes are "
                      f"truncated.")
+    if inlet_taps:       # task 16c; the review: the count only (the caller says over which months), and 0 said plainly
+        names = ", ".join(f"{t} at {inlet_taps[t]}" for t in sorted(inlet_taps)[:6]) + (
+            f" and {len(inlet_taps) - 6} more" if len(inlet_taps) > 6 else "")
+        one, n_in = len(inlet_taps) == 1, len(inlet_rows)
+        n_bad = sum(d["reason"].startswith("zone inlet ") for d in dropped)
+        bad = (f"; {n_bad:,} more cannot set it (below detection, not a number or above {READING_MAX_MGL:g} mg/L) and "
+               f"{'are' if n_bad != 1 else 'is'} listed as not used" if n_bad else "")
+        if n_in:
+            notes.append(f"{len(inlet_taps)} tap{'' if one else 's'} the tap map marks as a zone inlet ({names}): "
+                         f"{'its' if one else 'their'} {n_in:,} usable reading{'s' if n_in != 1 else ''} "
+                         f"{'are' if n_in != 1 else 'is'} kept apart to set the inlet's residual and never fitted{bad}.")
+        else:
+            notes.append(f"{len(inlet_taps)} tap{'' if one else 's'} the tap map marks as a zone inlet ({names}): no "
+                         f"reading of {'it' if one else 'them'} can set the inlet's residual"
+                         + (f" ({n_bad:,} cannot: below detection, not a number or above {READING_MAX_MGL:g} mg/L, listed "
+                            f"as not used)" if n_bad else " (the grab log has none)") + ", and none is fitted.")
     cols_out = ["junction", "hour", "y", "month", "date", "tap_id"]
     frame = pd.DataFrame({"junction": [x["junction"] for x in rows], "hour": [int(x["hour"]) for x in rows],
                           "y": [float(x["y"]) for x in rows], "month": [x["month"] for x in rows],
@@ -3847,7 +3940,10 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
                           "tap_map": tmap_cols},
                  analyzer=analyzer,
                  start_clock_h=float(start_clock_h or 0.0), n_rows=len(t.rows),
-                 row_no=pd.Series([x["row"] for x in rows], dtype=int))
+                 row_no=pd.Series([x["row"] for x in rows], dtype=int),
+                 inlets=(pd.DataFrame(inlet_rows, columns=["row", "tap_id", "inlet", "date", "month", "y"])
+                         if inlet_taps else None),
+                 inlet_taps={t: {"inlet": str(n), "role": inlet_roles.get(t, "")} for t, n in sorted(inlet_taps.items())})
     return gl
 
 
@@ -3966,6 +4062,266 @@ def xlsx_bytes(rows: list[list], sheet: str = "grab log") -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ----------------------------------------------------------------------------- zone inlets (task 16c)
+# A zone cut from a large system has several inlets, each with its own measured residual, where a whole system has a
+# plant.  Each inlet is dosed at r_i times the dose, r_i = residual_i / the largest residual, so the dose input means
+# the highest residual entering the zone.  The residuals come from an inlet residuals file (the inlet's node ID and its
+# residual, docs/templates/inlet_residuals_template.csv) or from taps the tap map gives the role 'inlet' (an inlet
+# analyzer, or a tap sampled at the inlet): the median of their readings sets the inlet's residual (over the months
+# the caller names: the app's window, the pilot's whole log), and those readings never enter the calibration.  A
+# constant ratio per inlet is an approximation: inlet residuals vary through the day.  task 19's operator form
+# 'source' rows are to reuse inlet_ratios_from.
+_ROLE_EXACT = ("role", "tap role", "site role", "sample role", "point role", "role at the zone")
+INLET_ROLE_WORD = "inlet"              # the word a zone inlet's role cell is built on ('inlet', 'Zone inlet', ...)
+# the review of task 16c: a role cell marks a zone inlet only when its words are these around 'inlet' (any cell that
+# merely contained the word did, 'not inlet' and 'downstream of inlet' included)
+_INLET_ROLE_BEFORE = {"zone", "pressure", "boundary", "district", "dma"}
+_INLET_ROLE_AFTER = {"analyzer", "analyser", "tap", "site", "point", "station", "sampler", "monitor", "sample",
+                     "sampling", "meter"}
+_INLET_NODE_EXACT = ("inlet node id", "inlet id", "inlet node", "inlet", "inlet name", "node id", "node", "entry point",
+                     "entry point id", "source", "source id", "reservoir", "reservoir id", "junction id", "junction")
+_INLET_RESIDUAL_EXACT = ("residual mgl", "residual", "residual mg l", "inlet residual", "inlet residual mgl",
+                         "chlorine residual", "measured residual", "residual chlorine")
+INLET_TEMPLATE = "inlet_residuals_template.csv"
+INLET_RATIO_MIN = 0.01                 # a residual above 0 but under this share of the highest is refused (its unit)
+INLET_UGL_MIN_MGL = 0.01               # a residual from a µg/L column under this (10 µg/L) is refused (its unit)
+
+
+def mgl_text(v: float) -> str:
+    """A residual as the page and the PDF print it (the review of task 16c): 2 decimals from 0.1 mg/L up and for 0, 3
+    significant figures below, so a small residual never prints as 0.00."""
+    return f"{v:.2f}" if v >= 0.1 or v == 0 else f"{v:.3g}"
+
+
+def is_inlet_role(cell) -> bool:
+    """A tap map's role cell marks a zone inlet (task 16c, its review): its words are 'inlet' (or 'inlets'), with at
+    most words such as zone, pressure or district before it and analyzer, tap, site, point or station after it
+    ('inlet', 'Zone inlet', 'inlet analyzer', 'Pressure zone inlet tap'), or a number after it ('Inlet 2'), and nothing
+    else, so 'not inlet', 'non-inlet' and 'downstream of inlet' mark none."""
+    w = _words(_cell_text(cell), True)
+    at = [i for i, x in enumerate(w) if x in ("inlet", "inlets")]
+    return (len(at) == 1 and set(w[:at[0]]) <= _INLET_ROLE_BEFORE
+            and all(x in _INLET_ROLE_AFTER or x.isdigit() for x in w[at[0] + 1:]))
+
+
+def inlet_taps_of(t: LogTable, cols: dict, mapping: dict | None = None) -> tuple[dict, str | None, dict, list]:
+    """({tap ID: inlet node ID}, the role column, {tap ID: its role cell}, [(tap ID, role cell)]) for the taps a tap
+    map gives a zone inlet's role (task 16c; is_inlet_role), the last list the roles that mention an inlet but mark
+    none ('not inlet'), for a warning.  The role column is mapping's 'role', else a header named role, tap role, site
+    role ...; no role column gives ({}, None, {}, []), and the tap map reads exactly as before.  The tap's junction
+    column holds the inlet's node ID."""
+    role = (mapping or {}).get("role") or _guess(t.header, _ROLE_EXACT)
+    if role is None or role not in t.header:
+        return {}, None, {}, []
+    ir, it, ij = t.header.index(role), t.header.index(cols["tap"]), t.header.index(cols["junction"])
+    out, roles, near = {}, {}, []
+    for r in t.rows:
+        tap, node, cell = _cell_text(r[it]), _cell_text(r[ij]), _cell_text(r[ir])
+        if not tap:
+            continue
+        if is_inlet_role(cell):
+            if node:
+                out[tap], roles[tap] = node, cell
+        elif any(x.startswith(INLET_ROLE_WORD) for x in _words(cell, True)):
+            near.append((tap, cell))
+    return out, role, roles, near
+
+
+def read_inlet_residuals(data: bytes, name: str = "inlet_residuals.csv", mapping: dict | None = None,
+                         max_unpacked: int | None = None, disinfectant: str = "free_chlorine") -> tuple[dict, dict]:
+    """An inlet residuals file (task 16c): ({inlet node ID: residual in mg/L}, info).  Two columns, the inlet's node ID
+    and its measured residual (inlet_node_id, residual_mgL in the template; guessed from the header, or named in
+    mapping as {'inlet', 'residual'}); any encoding, separator and decimal comma read_table reads; a header in µg/L is
+    divided by 1000.  Refused (LogRefused, in plain words): no such columns, a residual column that names the other
+    disinfectant's species (free and total chlorine are never mixed; the review of task 16c), a residual that is not a
+    number (a reading below detection included: an inlet's residual must be measured), one above READING_MAX_MGL, one
+    from a µg/L column above 0 and under INLET_UGL_MIN_MGL (a thousands separator read as a decimal comma, or the
+    wrong unit), an inlet given twice with two values, or no inlet at all.  info['notes']: how the file was read
+    (decimal commas, the µg/L conversion), for the app and the pilot to show."""
+    if disinfectant not in DISINFECTANT_WORDS:
+        raise ValueError(f"disinfectant must be one of {sorted(DISINFECTANT_WORDS)}")
+    t = read_table(data, name, max_unpacked)
+    node = (mapping or {}).get("inlet") or _guess(t.header, _INLET_NODE_EXACT)
+    res = (mapping or {}).get("residual") or _guess(t.header, _INLET_RESIDUAL_EXACT) or next(
+        (h for h in t.header if "residual" in _norm_header(h).split() and h != node), None)
+    if (node is None or res is None) and len(t.header) == 2:
+        node = node or next(h for h in t.header if h != res)
+        res = res or next(h for h in t.header if h != node)
+    if node is None or res is None or node == res or node not in t.header or res not in t.header:
+        raise LogRefused(f"The inlet residuals file needs two columns, each inlet's node ID in the model and its "
+                         f"residual in mg/L; its header is {', '.join(t.header[:8])}. Name them inlet_node_id and "
+                         f"residual_mgL.")
+    want = "total" if disinfectant == "chloramine" else "free"
+    word = {"free": "free chlorine", "total": "total chlorine"}
+    sp = reading_species(res)
+    if sp is not None and sp != want:
+        raise LogRefused(f"The inlet residuals file's residual column, '{res}', is {word[sp]}, and "
+                         + ("the free-chlorine model reads free chlorine only" if want == "free" else
+                            "the chloramine mode reads total chlorine only")
+                         + f": free and total chlorine are different measurements and one model never mixes them. "
+                           f"Give each inlet's {word[want]} residual.")
+    factor = header_unit(res) or 1.0
+    i_n, i_r = t.header.index(node), t.header.index(res)
+    out, bad, small, commas = {}, [], [], 0
+    for r, row_no in zip(t.rows, t.row_numbers):
+        n_, raw = _cell_text(r[i_n]), r[i_r]
+        if not n_ and not _cell_text(raw):
+            continue
+        y, why = parse_reading(raw)
+        if not n_ or y is None or y * factor > READING_MAX_MGL:
+            bad.append(f"row {row_no} ({n_ or 'no node ID'}: {_cell_text(raw)!r})")
+            continue
+        v = y * factor if factor != 1.0 else y
+        if factor != 1.0 and 0 < v < INLET_UGL_MIN_MGL:
+            small.append(f"row {row_no} ({n_}: {_cell_text(raw)!r}, {mgl_text(v)} mg/L)")
+            continue
+        if n_ in out and out[n_] != v:
+            raise LogRefused(f"The inlet residuals file gives inlet {n_} two residuals ({out[n_]:g} and {v:g} mg/L). "
+                             f"Keep one per inlet.")
+        out[n_] = float(v)
+        commas += isinstance(raw, str) and "," in raw
+    if bad:
+        raise LogRefused(f"The inlet residuals file has {len(bad)} row{'s' if len(bad) != 1 else ''} that cannot be "
+                         f"used: {'; '.join(bad[:6])}. Each row needs an inlet's node ID and its measured residual as a "
+                         f"number in mg/L (a reading below detection cannot set an inlet's residual).")
+    if small:
+        raise LogRefused(f"The inlet residuals file's residual column, '{res}', is in µg/L, and "
+                         f"{len(small)} residual{'s are' if len(small) != 1 else ' is'} under "
+                         f"{INLET_UGL_MIN_MGL * 1000:g} µg/L: {'; '.join(small[:6])}. Check the unit, and that a "
+                         f"thousands separator ('1,200') was not read as a decimal comma: write residuals without one.")
+    if not out:
+        raise LogRefused("The inlet residuals file lists no inlet. Give one row per inlet: its node ID in the model and "
+                         "its residual in mg/L.")
+    notes = []
+    if commas:
+        notes.append(f"{commas} residual{'s' if commas != 1 else ''} written with a decimal comma (0,45) "
+                     f"{'were' if commas != 1 else 'was'} read as decimals (0.45).")
+    if factor != 1.0:
+        notes.append(f"The residual column '{res}' is in µg/L (micrograms per litre): each residual was divided by 1000 "
+                     f"to mg/L. Check that the unit is right.")
+    return dict(sorted(out.items())), {"columns": {"inlet": node, "residual": res}, "how": t.how,
+                                       "micrograms": factor != 1.0, "notes": notes}
+
+
+def combine_inlet_residuals(from_file: dict | None, from_taps: dict | None) -> dict[str, dict]:
+    """{inlet: {'residual_mgL', 'source'}} from an inlet residuals file ({inlet: mg/L}) and the inlet taps of a grab log
+    (GrabLog.inlet_residuals), sorted by node ID.  An inlet given by both is refused: keep one."""
+    both = sorted(set(from_file or {}) & set(from_taps or {}))
+    if both:
+        raise LogRefused(f"Inlet {', '.join(both[:6])} has a residual in the inlet residuals file and readings at a tap "
+                         f"the tap map marks as that inlet. Keep one of the two for each inlet.")
+    out = {n: {"residual_mgL": float(v), "source": "the inlet residuals file"} for n, v in (from_file or {}).items()}
+    for n, d in (from_taps or {}).items():
+        out[n] = {"residual_mgL": float(d["residual_mgL"]),
+                  "source": f"the median of {d['readings']:,} reading{'s' if d['readings'] != 1 else ''} at tap "
+                            f"{', '.join(d['taps'])}, {d['first']} to {d['last']}"}
+    return dict(sorted(out.items()))
+
+
+def inlet_tap_residuals(g: GrabLog, entry_points, months=None, from_file: dict | None = None) -> dict:
+    """GrabLog.inlet_residuals over months (YYYY-MM; None: every month of the log), with every tap the tap map marks as
+    a zone inlet accounted for (the review of task 16c: a declared inlet with no usable reading in the months was left
+    out without a word, and dosed at the one dose).  Refused (LogRefused, in plain words): such a tap naming a node
+    that is not an entry point of the model (the tap and its role named); an inlet that also has a residual in the
+    inlet residuals file (from_file); an inlet with no usable reading in the months, saying where its readings are.
+    Every inlet needs a residual, or none.  No declared inlet tap gives {}."""
+    declared = g.inlet_taps or {}
+    if not declared:
+        return {}
+    entry = [str(e) for e in entry_points]
+    wrong = [(t, d) for t, d in declared.items() if d["inlet"] not in entry]
+    if wrong:
+        raise LogRefused(" ".join(f"The tap map marks tap {t} (role {d['role']!r}) as a zone inlet at {d['inlet']}, which "
+                                  f"is not where water enters this model." for t, d in wrong[:6])
+                         + (f" So do {len(wrong) - 6} more taps." if len(wrong) > 6 else "")
+                         + f" Its entry points are {', '.join(entry[:10])}: a zone inlet tap's junction column names the "
+                           f"entry point it measures, and a tap that is no zone inlet needs another role.")
+    nodes = sorted({d["inlet"] for d in declared.values()})
+    taps_of = {n: sorted(t for t, d in declared.items() if d["inlet"] == n) for n in nodes}
+    both = [n for n in nodes if n in (from_file or {})]
+    if both:
+        raise LogRefused(f"Inlet {', '.join(both[:6])} has a residual in the inlet residuals file and a tap the tap map "
+                         f"marks as that inlet ({', '.join(t for n in both[:6] for t in taps_of[n])}). Keep one of the "
+                         f"two for each inlet.")
+    res = g.inlet_residuals(months)
+    f = g.inlets
+    problems = []
+    for n in nodes:
+        if n in res:
+            continue
+        rows = f[f.inlet == n] if f is not None and len(f) else None
+        bad = [d for d in g.dropped if d["reason"].startswith(f"zone inlet {n}:")]
+        parts = []
+        if rows is not None and len(rows):
+            parts.append(f"its {len(rows):,} reading{'s are' if len(rows) != 1 else ' is'} dated {rows.date.min()}"
+                         + (f" to {rows.date.max()}" if rows.date.max() != rows.date.min() else ""))
+        if bad:
+            ex = ", ".join(f"row {d['row']}: {d.get('example', '')!r}" for d in bad[:3])
+            parts.append(f"{len(bad):,} {'more ' if parts else ''}reading{'s' if len(bad) != 1 else ''} cannot be used "
+                         f"(below detection, not a number or above {READING_MAX_MGL:g} mg/L; {ex})")
+        if not parts:
+            parts.append("the grab log has no reading of it")
+        where = f" in the months the map is fitted on ({', '.join(months)})" if months else ""
+        problems.append(f"Zone inlet {n} (tap {', '.join(taps_of[n])}) has no usable reading{where} to set its "
+                        f"residual: " + "; ".join(parts) + ".")
+    if problems:
+        raise LogRefused(" ".join(problems[:6]) + " Every inlet needs a residual, or none: add usable readings of the "
+                         + ("inlet taps in those months" if months else "inlet taps")
+                         + ", or give the inlet's residual in an inlet residuals file and clear the tap's role in the "
+                           "tap map.")
+    return res
+
+
+def inlet_ratios_from(residuals: dict, entry_points) -> tuple[dict | None, dict]:
+    """(ratios, info) for a model's entry points (simulate.source_nodes) and the residuals measured at them, as
+    combine_inlet_residuals gives them ({inlet: {'residual_mgL', ...}}) or plain {inlet: mg/L} (task 16c; task 19's
+    form rows).  r_i = residual_i / the largest residual, so the dose input means the highest residual entering the
+    zone.  ratios is None when every residual is the same (today's code path, simulate.normalize_inlet_ratios) and
+    for a model with one entry point.  Refused (LogRefused, in plain words): a name that is not an entry point of the
+    model, an entry point with no residual, every residual 0, or a residual above 0 and under INLET_RATIO_MIN of the
+    highest (a unit or separator slip, the review of task 16c).  info: the residuals by entry point, the highest, the
+    ratios (all 1 when ratios is None) and a plain sentence."""
+    from .simulate import normalize_inlet_ratios
+    entry = [str(e) for e in entry_points]
+    res = {str(k): float(v["residual_mgL"] if isinstance(v, dict) else v) for k, v in (residuals or {}).items()}
+    unknown = sorted(set(res) - set(entry))
+    if unknown:
+        raise LogRefused(f"Inlet{'s' if len(unknown) != 1 else ''} {', '.join(unknown[:6])} {'are' if len(unknown) != 1 else 'is'} "
+                         f"not where water enters this model. Its entry points are {', '.join(entry[:10])}: give each "
+                         f"inlet's residual under its node ID in the model.")
+    missing = [e for e in entry if e not in res]
+    if missing:
+        raise LogRefused(f"The model has {len(entry)} entry point{'s' if len(entry) != 1 else ''} "
+                         f"({', '.join(entry[:10])}) and {len(missing)} of them {'have' if len(missing) != 1 else 'has'} "
+                         f"no residual: {', '.join(missing[:10])}. Give every inlet's measured residual, or none.")
+    top = max(res.values())
+    if top <= 0:
+        raise LogRefused("Every inlet residual is 0, so no chlorine enters the zone. Check the residuals.")
+    top_at = next(e for e in entry if res[e] == top)
+    tiny = [e for e in entry if 0 < res[e] < INLET_RATIO_MIN * top]
+    if tiny:
+        raise LogRefused(f"The residual at {', '.join(f'{e} ({mgl_text(res[e])} mg/L)' for e in tiny[:6])} is less "
+                         f"than a hundredth of the highest ({top_at}, {mgl_text(top)} mg/L). Check its unit (mg/L; a "
+                         f"µg/L value is 1000 times larger) and that a thousands separator ('1,200') was not read as a "
+                         f"decimal comma.")
+    ratios = normalize_inlet_ratios({e: res[e] / top for e in entry})
+    shown = ratios or {e: 1.0 for e in entry}
+    info = {"residuals_mgL": {e: res[e] for e in entry}, "highest_mgL": top, "ratios": shown,
+            "same_everywhere": ratios is None,
+            "sentence": "Inlet residuals: " + ", ".join(f"{e} {mgl_text(res[e])} mg/L" for e in entry[:10])
+                        + (f" and {len(entry) - 10} more" if len(entry) > 10 else "") + ". "
+                        + ("They are the same at every inlet, so every inlet is dosed at the one dose, as without them."
+                           if ratios is None else
+                           "Each inlet is dosed in proportion to its residual, the highest at the dose input, which "
+                           "now means the highest residual entering the zone.")}
+    return ratios, info
+
+
+INLET_ZONE_NOTE = ("Water age starts at 0 at every inlet: in a zone cut from a larger system the water entering it is "
+                   "already old, so the zone's water is older than its age map shows. A constant residual per inlet is "
+                   "an approximation, since inlet residuals vary through the day.")
 
 
 # ----------------------------------------------------------------------------- tap maps by coordinates (task 16b)

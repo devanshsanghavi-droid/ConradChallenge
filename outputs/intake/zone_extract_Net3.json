@@ -1,0 +1,391 @@
+{
+ "about": "Task 16c's zone extracts on Net3, a public network with two entry points (its reservoirs River and Lake), simulated only (R6): each inlet dosed at its own share of the dose, the superposition of the two inlets at one member (kb 0.40 per day, kw 0.70 m/day, the truth's default and off the grid's kw axis; a member on the grid added after the scored run) against the pre-registered bars (part 'superposition'), ratios (1, 1) as today's path (part 'identity'), leave-sites-out validation on a synthetic fixed route of 10 taps, with each group fit's training size (part 'holdout'), and an online analyzer at a zone inlet read as a boundary condition, not data, with the review's cases of declared inlets (part 'analyzer', invented readings). Written by python -m residualmap.intake_exp zone; the task16c checks in residualmap/checks.py rerun every part and compare.",
+ "identity": {
+  "entry_points": [
+   "River",
+   "Lake"
+  ],
+  "ratios": {
+   "River": 1.0,
+   "Lake": 1.0
+  },
+  "normalized": null,
+  "equal_residuals_give_ratios": null,
+  "cache_name_with_ratios": "grid24_full_Net3.pkl",
+  "cache_name_today": "grid24_full_Net3.pkl",
+  "member_inp_identical": true,
+  "member_values_identical": true,
+  "fresh_grid_members": 675,
+  "fresh_grid_sha256": "bc849e767dc6e82e41ed3a3bc09e4b673fba8cb8b6698b15eb26efba006c99fb",
+  "fresh_grid_sha256_matches_recorded": true
+ },
+ "superposition": {
+  "network": "Net3",
+  "member": {
+   "kb_per_day": 0.4,
+   "kw_m_per_day": 0.7,
+   "gamma": 1.0,
+   "demand": 1.0,
+   "rough": 1.0,
+   "dose_mgL": 1.2
+  },
+  "ratios": {
+   "River": 1.0,
+   "Lake": 0.5
+  },
+  "file_tolerance": 0.01,
+  "file_tolerance_in_grid_units_mgL": 1e-05,
+  "units_note": "the grid writes each dose to EPANET in the model's units, a thousand times its mg/L, so the file's tolerance of 0.01 is 1e-5 mg/L in the grid's units",
+  "bar_mgL": {
+   "default_tolerance": 5e-05,
+   "tolerance_1e-9": 1e-06
+  },
+  "by_tolerance": {
+   "default_tolerance": {
+    "tolerance": 0.01,
+    "max_abs_error_mgL": 1.3571232557296753e-05,
+    "junction_hours": 2208,
+    "max_concentration_mgL": 1.193085789680481,
+    "bar_mgL": 5e-05,
+    "passed": true,
+    "dose_axis_max_abs_diff_mgL": 9.812414646148682e-06,
+    "dose_axis_multiplier": 1.1
+   },
+   "tolerance_1e-9": {
+    "tolerance": 1e-09,
+    "max_abs_error_mgL": 1.1920928955078125e-07,
+    "junction_hours": 2208,
+    "max_concentration_mgL": 1.193085789680481,
+    "bar_mgL": 1e-06,
+    "passed": true,
+    "dose_axis_max_abs_diff_mgL": 2.384185791015625e-07,
+    "dose_axis_multiplier": 1.1
+   }
+  },
+  "passed": true,
+  "on_grid_member": {
+   "member": {
+    "kb_per_day": 0.4,
+    "kw_m_per_day": 0.6,
+    "gamma": 1.0,
+    "demand": 1.0,
+    "rough": 1.0,
+    "dose_mgL": 1.2
+   },
+   "why": "the scored member's kw (0.70 m/day, the truth's default) is not on the grid's kw axis; this member is on every free-chlorine grid; added after the scored run, which stands as scored",
+   "by_tolerance": {
+    "default_tolerance": {
+     "max_abs_error_mgL": 8.959323167800903e-06,
+     "bar_mgL": 5e-05,
+     "within_bar": true
+    },
+    "tolerance_1e-9": {
+     "max_abs_error_mgL": 1.1920928955078125e-07,
+     "bar_mgL": 1e-06,
+     "within_bar": true
+    }
+   }
+  },
+  "effect": {
+   "what": "this member with Lake's residual half River's, against every inlet at the one dose (today's path), daily means at each junction",
+   "junctions": 92,
+   "moved_more_than_mgL": 0.1,
+   "junctions_moved": 30,
+   "largest_drop_mgL": 0.5781458020210266,
+   "junctions_daily_min_below_0.2_today": 36,
+   "junctions_daily_min_below_0.2_half_at_lake": 42
+  }
+ },
+ "holdout": {
+  "network": "Net3",
+  "log": {
+   "per_month": 10,
+   "rotating": 0,
+   "seed": 0,
+   "months": 6
+  },
+  "taps": [
+   "T1",
+   "T10",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6",
+   "T7",
+   "T8",
+   "T9"
+  ],
+  "samples": 60,
+  "months": [
+   "2026-01",
+   "2026-02",
+   "2026-03",
+   "2026-04",
+   "2026-05",
+   "2026-06"
+  ],
+  "held_out_months": [
+   "2026-04",
+   "2026-05",
+   "2026-06"
+  ],
+  "k": 3,
+  "seed": 50000,
+  "every_site_predicted_once": true,
+  "held_out_predictions": 30,
+  "sites_per_group": [
+   1,
+   1,
+   1,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3,
+   3
+  ],
+  "by_month": {
+   "held_out_sites": [
+    {
+     "held_out_month": "2026-04",
+     "n_train": 21,
+     "n_test": 10,
+     "rmse": 0.06629652424840259,
+     "mae": 0.054523682589092695,
+     "rmse_network_mean": 0.3562934979610804,
+     "coverage50": 0.7,
+     "coverage80": 0.9,
+     "coverage90": 1.0,
+     "coverage95": 1.0,
+     "band90_width_mgL": 0.3420733495437885,
+     "n_true_below": 2,
+     "recall_below": 1.0,
+     "false_alarms": 0,
+     "sites": 10,
+     "site_groups": 4,
+     "sites_per_group": 3,
+     "n_train_min": 21,
+     "n_train_max": 27
+    },
+    {
+     "held_out_month": "2026-05",
+     "n_train": 21,
+     "n_test": 10,
+     "rmse": 0.1947553418781803,
+     "mae": 0.13405448087869412,
+     "rmse_network_mean": 0.3657710842106352,
+     "coverage50": 0.4,
+     "coverage80": 0.6,
+     "coverage90": 0.8,
+     "coverage95": 0.9,
+     "band90_width_mgL": 0.41689825904979944,
+     "n_true_below": 4,
+     "recall_below": 0.5,
+     "false_alarms": 0,
+     "sites": 10,
+     "site_groups": 4,
+     "sites_per_group": 3,
+     "n_train_min": 21,
+     "n_train_max": 27
+    },
+    {
+     "held_out_month": "2026-06",
+     "n_train": 21,
+     "n_test": 10,
+     "rmse": 0.19979856471955512,
+     "mae": 0.1383756324891136,
+     "rmse_network_mean": 0.31611869727400804,
+     "coverage50": 0.3,
+     "coverage80": 0.8,
+     "coverage90": 0.9,
+     "coverage95": 1.0,
+     "band90_width_mgL": 0.3036858504345698,
+     "n_true_below": 1,
+     "recall_below": 1.0,
+     "false_alarms": 2,
+     "sites": 10,
+     "site_groups": 4,
+     "sites_per_group": 3,
+     "n_train_min": 21,
+     "n_train_max": 27
+    }
+   ],
+   "all": [
+    {
+     "held_out_month": "2026-04",
+     "n_train": 30,
+     "n_test": 10,
+     "rmse": 0.05226777452764996,
+     "mae": 0.04296669694632409,
+     "rmse_network_mean": 0.3467046453555405,
+     "coverage50": 0.6,
+     "coverage80": 0.8,
+     "coverage90": 0.9,
+     "coverage95": 0.9,
+     "band90_width_mgL": 0.22763428971401412,
+     "n_true_below": 2,
+     "recall_below": 1.0,
+     "false_alarms": 1
+    },
+    {
+     "held_out_month": "2026-05",
+     "n_train": 30,
+     "n_test": 10,
+     "rmse": 0.1904670975007382,
+     "mae": 0.12174773785464262,
+     "rmse_network_mean": 0.33243044385254483,
+     "coverage50": 0.5,
+     "coverage80": 0.6,
+     "coverage90": 0.7,
+     "coverage95": 0.8,
+     "band90_width_mgL": 0.393656533554341,
+     "n_true_below": 4,
+     "recall_below": 0.5,
+     "false_alarms": 0
+    },
+    {
+     "held_out_month": "2026-06",
+     "n_train": 30,
+     "n_test": 10,
+     "rmse": 0.10006536340792542,
+     "mae": 0.08403814750757599,
+     "rmse_network_mean": 0.28610215735720074,
+     "coverage50": 0.4,
+     "coverage80": 0.9,
+     "coverage90": 1.0,
+     "coverage95": 1.0,
+     "band90_width_mgL": 0.2717614228462425,
+     "n_true_below": 1,
+     "recall_below": 1.0,
+     "false_alarms": 0
+    }
+   ]
+  },
+  "mean": {
+   "held_out_sites": {
+    "n": 30,
+    "rmse": 0.153616810282046,
+    "rmse_network_mean": 0.34606109314857453,
+    "coverage50": 0.4666666666666666,
+    "coverage80": 0.7666666666666666,
+    "coverage90": 0.8999999999999999,
+    "coverage95": 0.9666666666666666,
+    "n_true_below": 7,
+    "found_below": 5,
+    "false_alarms": 2
+   },
+   "all": {
+    "n": 30,
+    "rmse": 0.11426674514543786,
+    "rmse_network_mean": 0.3217457488550953,
+    "coverage50": 0.5,
+    "coverage80": 0.7666666666666666,
+    "coverage90": 0.8666666666666667,
+    "coverage95": 0.8999999999999999,
+    "n_true_below": 7,
+    "found_below": 5,
+    "false_alarms": 1
+   }
+  },
+  "subsets": [
+   "all",
+   "held_out_sites",
+   "seen_taps"
+  ]
+ },
+ "analyzer": {
+  "inlet_tap": "AN-1",
+  "inlet": "Lake",
+  "inlet_readings": 2880,
+  "inlet_rows_in_S": 0,
+  "rows_in_S": 33,
+  "S_junctions": [
+   "193",
+   "225",
+   "239",
+   "263"
+  ],
+  "other_analyzer_rows_in_S": 30,
+  "grab_rows_in_S": 3,
+  "inlet_residual_mgL": 0.519,
+  "expected_median_mgL": 0.519,
+  "inlet_residual_in_the_window_mgL": 0.519,
+  "window": [
+   "2026-04"
+  ],
+  "river_from_file_mgL": 1.2,
+  "ratios": {
+   "Lake": 0.4325,
+   "River": 1.0
+  },
+  "highest_mgL": 1.2,
+  "r_inlet_expected": 0.4325,
+  "note": "1 tap the tap map marks as a zone inlet (AN-1 at Lake): its 2,880 usable readings are kept apart to set the inlet's residual and never fitted.",
+  "without_role_column": {
+   "inlet_tap_rows_in_S": 30,
+   "inlets": null,
+   "rows_in_S": 63
+  },
+  "ugl_file": {
+   "Lake": 0.6,
+   "River": 1.2
+  },
+  "refused": {
+   "inlet_missing": "The model has 2 entry points (River, Lake) and 1 of them has no residual: Lake. Give every inlet's measured residual, or none.",
+   "not_an_entry_point": "Inlet Tank9 is not where water enters this model. Its entry points are River, Lake: give each inlet's residual under its node ID in the model.",
+   "below_detection": "The inlet residuals file has 1 row that cannot be used: row 3 (Lake: '<0.02'). Each row needs an inlet's node ID and its measured residual as a number in mg/L (a reading below detection cannot set an inlet's residual).",
+   "given_twice": "Inlet Lake has a residual in the inlet residuals file and readings at a tap the tap map marks as that inlet. Keep one of the two for each inlet."
+  },
+  "review": {
+   "outside_window": {
+    "inlet_readings": 3,
+    "window": [
+     "2026-04",
+     "2026-05",
+     "2026-06"
+    ],
+    "inlet_months": [
+     "2026-01",
+     "2026-02",
+     "2026-03"
+    ],
+    "app_window_refused": "Zone inlet Lake (tap INL) has no usable reading in the months the map is fitted on (2026-04, 2026-05, 2026-06) to set its residual: its 3 readings are dated 2026-01-10 to 2026-03-10. Every inlet needs a residual, or none: add usable readings of the inlet taps in those months, or give the inlet's residual in an inlet residuals file and clear the tap's role in the tap map.",
+    "pilot_whole_log_mgL": 0.85,
+    "expected_median_mgL": 0.85,
+    "listed_not_used_in_window": 3,
+    "note": "1 tap the tap map marks as a zone inlet (INL at Lake): its 3 usable readings are kept apart to set the inlet's residual and never fitted."
+   },
+   "only_below_detection": {
+    "usable": 0,
+    "listed_not_used": 3,
+    "refused": "Zone inlet Lake (tap INL) has no usable reading to set its residual: 3 readings cannot be used (below detection, not a number or above 10 mg/L; row 2: '<0.02', row 3: 'ND', row 4: '<0.02'). Every inlet needs a residual, or none: add usable readings of the inlet taps, or give the inlet's residual in an inlet residuals file and clear the tap's role in the tap map.",
+    "note": "1 tap the tap map marks as a zone inlet (INL at Lake): no reading of it can set the inlet's residual (3 cannot: below detection, not a number or above 10 mg/L, listed as not used), and none is fitted."
+   },
+   "roles_that_mark_no_inlet": {
+    "roles": [
+     "not inlet",
+     "non-inlet",
+     "downstream of inlet"
+    ],
+    "inlet_taps": 0,
+    "rows_fitted": 9,
+    "rows_in_log": 9,
+    "warning": "3 taps of the tap map have roles that mention an inlet but do not mark a zone inlet (T1: 'not inlet', T2: 'non-inlet', INL: 'downstream of inlet'), so their readings are read as a tap's. A zone inlet's role is 'inlet' (or 'zone inlet', 'inlet analyzer', 'inlet tap')."
+   },
+   "inlet_at_a_junction_refused": "The tap map marks tap INL (role 'Zone inlet') as a zone inlet at 20, which is not where water enters this model. Its entry points are River, Lake: a zone inlet tap's junction column names the entry point it measures, and a tap that is no zone inlet needs another role.",
+   "files_refused": {
+    "thousands_separator_ugl": "The inlet residuals file's residual column, 'residual_ugL', is in \u00b5g/L, and 1 residual is under 10 \u00b5g/L: row 2 (River: '1,200', 0.0012 mg/L). Check the unit, and that a thousands separator ('1,200') was not read as a decimal comma: write residuals without one.",
+    "total_chlorine_column": "The inlet residuals file's residual column, 'total_chlorine_mgL', is total chlorine, and the free-chlorine model reads free chlorine only: free and total chlorine are different measurements and one model never mixes them. Give each inlet's free chlorine residual.",
+    "under_a_hundredth": "The residual at Lake (0.005 mg/L) is less than a hundredth of the highest (River, 1.20 mg/L). Check its unit (mg/L; a \u00b5g/L value is 1000 times larger) and that a thousands separator ('1,200') was not read as a decimal comma."
+   },
+   "ugl_file_notes": [
+    "2 residuals written with a decimal comma (0,45) were read as decimals (0.45).",
+    "The residual column 'Residual (ug/L)' is in \u00b5g/L (micrograms per litre): each residual was divided by 1000 to mg/L. Check that the unit is right."
+   ]
+  }
+ }
+}

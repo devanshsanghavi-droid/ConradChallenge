@@ -85,6 +85,20 @@ process of its own with the hosted demo's other limits (links, tanks and reservo
 run) and a time limit (cloud.prepare_upload), every EPANET run on the upload runs in a process whose working
 directory is that folder (in_folder), so EPANET's own scratch file goes with it, and an Excel grab log is held to
 cloud.WORKBOOK_MB once unpacked (TABLE_LIMITS).  Local mode runs exactly as before.
+
+Iteration 5, task 16c (zone extracts): with the demo off, 'My zone's inlets carry different residuals' (a checkbox
+after the tap map uploader, so the uploaders before it are unchanged) offers 'Inlet residuals (CSV)', each inlet's node
+ID and measured residual (importers.read_inlet_residuals); a tap map's role column can mark a tap as a zone inlet too,
+and the median of its readings over the grab log's window sets that inlet's residual (its readings are never fitted).
+Every entry point needs a residual (importers.inlet_ratios_from); each is dosed at r_i times the dose, so the dose
+input, written into its place in the sidebar once the inlets are known, is labelled 'Highest residual entering the
+zone' and starts at the highest residual given.  The grid at those ratios has its own cache name (and in cloud mode is
+kept in the visitor's session, on an example network too); the page and the PDF say which residuals were used and
+that water age starts at 0 at every inlet.  Without inlet residuals every path is the one before task 16c.
+Its review: a tap the tap map marks as a zone inlet with no usable reading in the window is refused in plain words
+(it was left out without a word), its readings outside the window are listed as not used, the inlet file's notes
+(decimal commas, µg/L) are shown, the chloramine mode does not offer inlet residuals yet (its dose range is the
+plant's), and every stop between the sidebar and the inlets draws the plain dose input first (stop_page).
 """
 from __future__ import annotations
 
@@ -112,9 +126,11 @@ from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, 
 from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
 from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
 from residualmap.features import build_features
-from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, LOG_WINDOW_MONTHS, LogRefused, clock_label,
-                                   clock_minute_of, daytime_model_hours, distinct_values, dropped_lines, guess_columns,
-                                   prepare_inp, read_grab_log, read_table, shows_clock, size_gate)
+from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_ZONE_NOTE, LOG_WINDOW_MONTHS, LogRefused,
+                                   clock_label, clock_minute_of, combine_inlet_residuals, daytime_model_hours,
+                                   distinct_values, dropped_lines, guess_columns, inlet_ratios_from, inlet_tap_residuals,
+                                   mgl_text, prepare_inp, read_grab_log, read_inlet_residuals, read_table, shows_clock,
+                                   size_gate)
 from residualmap.route import plan_route
 from residualmap.simgp import (DAY_HOURS, DOSES_CA, GRIDS, LIK_SD_CA, SimGP24, grid_cache_path,
                                grid_edge_mass, simulator_grid_24h)
@@ -171,6 +187,21 @@ DATE_FORMAT_CHOICES = {"guess (ask when a date reads two ways)": None, **{v: k f
                        TYPE_FORMAT: "typed"}
 TEMPLATE_NAMES = {"date", "time", "tap_id", "free_chlorine_mgL", "total_chlorine_mgL"}   # docs/templates' headers
 KEEP_ALL = "Keep every reading of these taps (a sampling study, not an online analyzer)"
+# task 16c: a zone's inlets, each with its own measured residual
+INLET_BOX = "My zone's inlets carry different residuals"
+INLET_BOX_HELP = ("A pressure zone cut from a larger system has several inlets, each with its own chlorine residual. "
+                  "Tick this to give each inlet's residual, so each is dosed in proportion instead of all at one dose.")
+INLET_LABEL = "Inlet residuals (CSV)"
+INLET_HELP = ("Two columns: each inlet's node ID in your model and its measured residual in mg/L (a typical recent "
+              "value). Every inlet needs one. Each inlet is dosed in proportion to its residual, and the dose input then "
+              "means the highest residual entering the zone. A tap map can mark a tap as a zone inlet instead, with a "
+              "'role' column that says inlet: the median of that tap's readings in the grab log's window sets the "
+              "inlet's residual, and its readings are not fitted.")
+# the review of task 16c: inlet residuals are not offered in the chloramine mode until a check covers them
+INLET_NOT_CA_WHY = ("Inlet residuals are not available in the chloramine mode yet: its dose range is made for the total "
+                    "chlorine leaving a plant, which the plant's fast organic demand lowers, and a residual measured "
+                    "where water enters a zone has already passed that demand.")
+INLET_NOT_CA = INLET_NOT_CA_WHY + " Every inlet is dosed at the one dose."
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -274,6 +305,19 @@ def grab_log(data: bytes, name: str, taps: bytes, taps_name: str, disinfectant: 
                       f"upload those.")
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def inlet_file(data: bytes, name: str, disinfectant: str = "free_chlorine"):
+    """importers.read_inlet_residuals on the upload (task 16c): (({inlet: mg/L}, notes), None), or (None, why).  Its
+    review: read for the disinfectant's species, and how it was read (decimal commas, µg/L) is shown."""
+    try:
+        res, info = read_inlet_residuals(data, name, disinfectant=disinfectant, **TABLE_LIMITS)
+        return (res, info["notes"]), None
+    except LogRefused as e:
+        return None, str(e)
+    except Exception as e:  # noqa: BLE001  (the last guard: a file the reader did not foresee)
+        return None, f"The inlet residuals file could not be read ({type(e).__name__}). Save it again as CSV and upload it."
+
+
 def show_intake(box, rep) -> bool:
     """The upload's advice (not a model), its blocking problems, or its readiness report, in the main area.  For a
     model of more than importers.LARGE_JUNCTIONS junctions (task 15b) the report holds a checkbox: True when the grid
@@ -345,15 +389,45 @@ with st.sidebar:
             st.stop()
         uniform_c = bool(readiness.flags.get("uniform_c"))
         clock_h = float(readiness.flags.get("start_clock_h") or 0.0)
+    # task 16c: the dose input is written into this place once the inlets are known (below the sidebar), so its label
+    # can say 'the highest residual entering the zone' when inlet residuals are given; same position, same widget.
+    # Its review: every stop before then (stop_page) draws the plain dose input first, as before task 16c
+    dose_box = st.container()
+    dose_drawn: list = []
+
+    def draw_dose(inlet_info=None) -> float:
+        """The sidebar's dose input in its place (dose_box), drawn once per run: the plant's dose, or with inlet
+        residuals (task 16c) the highest residual entering the zone, starting at the highest given."""
+        if dose_drawn:
+            return dose_drawn[0]
+        with dose_box:
+            if inlet_info is not None:
+                top = float(inlet_info["highest_mgL"])
+                v = st.number_input("Highest residual entering the zone (mg/L)", 0.05, 4.0,
+                                    float(min(max(round(top, 2), 0.05), 4.0)), 0.05,
+                                    help="Your inlet residuals dose each inlet in proportion, and this is the highest of "
+                                         "them (the highest you gave, unless you change it). The model treats it as "
+                                         "uncertain, by ±10%.")
+            elif ca:
+                v = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
+                                    help="Total chlorine (chloramine) at the source. The model treats it as uncertain and "
+                                         "lets the fast organic demand lower it (an effective dose of 0.65 to 1.10 times "
+                                         "this).")
+            else:
+                v = st.number_input("Chlorine dose leaving the plant (mg/L)", 0.2, 4.0, 1.2, 0.1,
+                                    help="Free chlorine at the source. The model treats it as ±10% uncertain.")
+        dose_drawn.append(v)
+        return v
+
+    def stop_page():
+        """st.stop, with the sidebar's dose input drawn first (the review of task 16c: a stop between the sidebar and the
+        inlets left the page without it)."""
+        draw_dose()
+        st.stop()
     if ca:
-        dose = st.number_input("Total chlorine leaving the plant (mg/L as Cl2)", 0.5, 4.0, 2.0, 0.1,
-                               help="Total chlorine (chloramine) at the source. The model treats it as uncertain and lets "
-                                    "the fast organic demand lower it (an effective dose of 0.65 to 1.10 times this).")
         threshold = st.number_input("Minimum residual, total chlorine (mg/L)", 0.05, 2.0, 0.5, 0.05,
                                     help=f"Default {CA.THRESHOLD_NOTE}. {TEXAS_EXAMPLE[True]} Set your own target here.")
     else:
-        dose = st.number_input("Chlorine dose leaving the plant (mg/L)", 0.2, 4.0, 1.2, 0.1,
-                               help="Free chlorine at the source. The model treats it as ±10% uncertain.")
         threshold = st.number_input("Minimum residual (mg/L)", 0.05, 1.0, 0.2, 0.05,
                                     help=f"Default {THRESHOLD_NOTE[FREE_CHLORINE]}. {TEXAS_EXAMPLE[False]} Set your own "
                                          f"target here.")
@@ -362,17 +436,24 @@ with st.sidebar:
     demo = st.toggle("Demo: simulate a hidden truth and draw samples from it", value=True,
                      help="Off = upload your grab log and tap map, or type your own grab samples in the table."
                      if UPLOADS else cloud.DEMO_HELP_NO_UPLOADS)
-    log_up = tap_up = None
+    log_up = tap_up = inlet_up = None
     glog, glog_error = None, None
     if not demo and not UPLOADS:      # task 20: the hosted demo, examples only: the samples are typed
         st.caption(cloud.SAMPLES_OFF)
     elif not demo:     # task 16: the grab log and its tap map, after the model uploader (file_uploader[0] is unchanged)
         log_up = st.file_uploader("Grab log (CSV or Excel)", type=None, help=LOG_HELP, max_upload_size=UPLOAD_MB)
         tap_up = st.file_uploader("Tap map (CSV)", type=None, help=TAP_HELP, max_upload_size=UPLOAD_MB)
-    for f in (log_up, tap_up) if CLOUD else ():     # task 20: the hosted demo's file limit, before either is read
+        # task 16c: a zone's inlets with different residuals; behind a checkbox, so the uploaders above stay the only
+        # ones until it is ticked
+        if st.checkbox(INLET_BOX, value=False, help=INLET_BOX_HELP):
+            if ca:      # the review of task 16c: not built for the chloramine mode (its dose axis is the plant's)
+                st.caption(INLET_NOT_CA)
+            else:
+                inlet_up = st.file_uploader(INLET_LABEL, type=None, help=INLET_HELP, max_upload_size=UPLOAD_MB)
+    for f in (log_up, tap_up, inlet_up) if CLOUD else ():   # task 20: the hosted demo's file limit, before it is read
         if f is not None and cloud.too_big(f.size):
             intake_box.error(cloud.too_big(f.size))
-            st.stop()
+            stop_page()
     if log_up is not None:
         log_bytes = log_up.getvalue()
         log_key = hashlib.sha1(log_bytes).hexdigest()[:10]
@@ -469,28 +550,32 @@ def workers_skip_this_app():
 
 
 @st.cache_resource(show_spinner=False)
-def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = "", grid: str = "full"):
+def prepare(path: str, dose: float, chloramine: bool = False, chem_tag: str = "", grid: str = "full",
+            inlets: tuple = ()):
     """Nominal model, physics features and the simulator grid (cached on disk too): the 675-run free-chlorine grid
     (or, for an uploaded file with one C value on every pipe, its 225-run gamma-0 slice 'full_fixed_gamma', task 15b),
     or the chloramine mode's 1440-run grid under its own cache tag.  The in-memory cache key is (file, dose,
     disinfectant, chemistry tag, grid): chem_tag is the chloramine grid's chemistry.cache_tag ('' for free chlorine),
-    so a change to the chloramine grid's definition or physics version is never served a grid from before it."""
+    so a change to the chloramine grid's definition or physics version is never served a grid from before it.
+    inlets (task 16c): the per-inlet dose ratios as sorted (node, ratio) pairs, () for none (today's grid and key)."""
     sc = nominal_scenario(path, sample_hour=14, source_dose=dose)
     X = build_features(sc)
+    kw = {"inlet_ratios": dict(inlets)} if inlets else {}
     with workers_skip_this_app():      # n_jobs: None (the default) in local mode; 2 workers in cloud mode (task 20)
         if chloramine:
-            simulator_grid_24h(sc, CACHE_DIR, "chloramine", n_jobs=cloud.grid_workers(APP_ROOT), cond=CA.ca_condition())
+            simulator_grid_24h(sc, CACHE_DIR, "chloramine", n_jobs=cloud.grid_workers(APP_ROOT), cond=CA.ca_condition(),
+                               **kw)
         else:
-            simulator_grid_24h(sc, CACHE_DIR, grid, n_jobs=cloud.grid_workers(APP_ROOT))
+            simulator_grid_24h(sc, CACHE_DIR, grid, n_jobs=cloud.grid_workers(APP_ROOT), **kw)
     return sc, X
 
 
-def prepare_in_session(path: str, dose: float, chloramine: bool, grid: str):
+def prepare_in_session(path: str, dose: float, chloramine: bool, grid: str, inlets: tuple = ()):
     """prepare for a visitor's upload in cloud mode (task 20): the same nominal model, features and grid, the grid
     built in memory (build_grid_24h) and never written to outputs/cache.  Returns (sc, X, (params, Z)); the caller
     keeps it in the browser session only.  Since the final verification of task 20 it runs in this run's folder
-    (in_folder, cloud.upload_grid), its grid's workers too."""
-    return in_folder(cloud.upload_grid, path, dose, chloramine, grid, cloud.grid_workers(APP_ROOT))
+    (in_folder, cloud.upload_grid), its grid's workers too.  inlets (task 16c): as prepare's."""
+    return in_folder(cloud.upload_grid, path, dose, chloramine, grid, cloud.grid_workers(APP_ROOT), dict(inlets) or None)
 
 
 @st.cache_resource(show_spinner=False)
@@ -501,7 +586,8 @@ def water_age(path: str, _sc):
 
 
 @st.cache_resource(show_spinner=False)
-def chlorine_loss(path: str, dose: float, member: tuple, dose_mult: float, _model, chloramine: bool = False):
+def chlorine_loss(path: str, dose: float, member: tuple, dose_mult: float, _model, chloramine: bool = False,
+                  inlets: tuple = ()):
     """Where the calibrated member loses its chlorine: four EPANET runs (as calibrated, wall decay off, bulk decay
     off, no decay), cached per network, dose and member."""
     return loss_split(_model)
@@ -575,10 +661,49 @@ try:
     wn_check = wntr.network.WaterNetworkModel(net_path if os.path.exists(net_path) else os.path.join(LIB, f"{net_path}.inp"))
 except Exception as e:  # noqa: BLE001
     st.error(f"Could not read this .inp with EPANET/WNTR: {e}")
-    st.stop()
+    stop_page()
 if not source_nodes(wn_check):
     st.error("No reservoir, inflow junction or tank found — the model needs a place where water enters.")
-    st.stop()
+    stop_page()
+
+# task 16c: a zone's inlet residuals (the inlet file, and taps the tap map marks as a zone inlet: the median of their
+# readings over the grab log's window), checked against the model's entry points.  None: every inlet at the one dose.
+# Its review: every tap the tap map marks as a zone inlet must give its inlet a residual in that window (refused in
+# plain words otherwise, where it was left out without a word), its readings outside the window are listed as not
+# used, and the inlet file's notes (decimal commas, µg/L) are shown
+inlet_ratios, inlet_info, inlet_from, inlet_notes, inlet_unused = None, None, {}, [], []
+file_res, tap_res = None, {}
+if inlet_up is not None:
+    got, inlet_error = run_cached(inlet_file, CLOUD, file_key(inlet_up.getvalue(), inlet_up.name, "free_chlorine"),
+                                  inlet_up.getvalue(), inlet_up.name, "free_chlorine")
+    if inlet_error:
+        st.error(f"The inlet residuals cannot be used as they are. {inlet_error}")
+        stop_page()
+    file_res, inlet_notes = got
+if glog is not None and glog.inlet_taps and tap_up is not None:
+    if ca:
+        n_ = len(glog.inlet_taps)
+        st.error(f"The tap map marks tap{'s' if n_ != 1 else ''} {', '.join(sorted(glog.inlet_taps)[:6])}"
+                 f"{f' and {n_ - 6} more' if n_ > 6 else ''} as a zone inlet. {INLET_NOT_CA_WHY} Clear the role in the "
+                 f"tap map (the readings are then fitted as a tap's), or leave those readings out of the grab log.")
+        stop_page()
+    g_in = glog.only_junctions(wn_check.junction_name_list)
+    in_months = g_in.window(LOG_WINDOW_MONTHS)[2]["months"] or None       # no grab rows: every month of the log
+    try:
+        tap_res = inlet_tap_residuals(g_in, source_nodes(wn_check), in_months, file_res)
+    except LogRefused as e:
+        st.error(f"The inlet residuals cannot be used as they are. {e}")
+        stop_page()
+    inlet_unused = g_in.inlet_unused(in_months)
+if file_res or tap_res:
+    try:
+        inlet_from = combine_inlet_residuals(file_res, tap_res)
+        inlet_ratios, inlet_info = inlet_ratios_from(inlet_from, source_nodes(wn_check))
+    except LogRefused as e:
+        st.error(f"The inlet residuals cannot be used as they are. {e}")
+        stop_page()
+inlets_key = tuple(inlet_ratios.items()) if inlet_ratios is not None else ()
+dose = draw_dose(inlet_info)      # the sidebar's dose input, in its place before the threshold (task 16c)
 
 if ca and demo and os.path.basename(net_path) == "ky4":
     st.error("The chloramine demo truth (EPA's chloramine chemistry in EPANET-MSX) is offered on Net3 and Net2 only: on "
@@ -589,18 +714,22 @@ n_runs = int(np.prod([len(a) for a in GRIDS[grid]]))
 if up is not None:     # task 15b: refuse a grid build that would leave less than 1.5 GB free (a cached grid needs none)
     cond_ = CA.ca_condition() if ca else None
     if not os.path.exists(grid_cache_path(types.SimpleNamespace(wn_name=net_path, source_dose=float(dose)), CACHE_DIR,
-                                          grid, cond_)):
+                                          grid, cond_, inlet_ratios)):
         disk_ok, disk_msg = size_gate(readiness.run_cost, CACHE_DIR)
         if not disk_ok:
             st.error(disk_msg)
             st.stop()
-SESSION_ONLY = CLOUD and up is not None      # task 20: a visitor's upload, kept in this browser session only
+# task 20: a visitor's upload, kept in this browser session only; task 16c: so is a grid made from their inlet residuals
+SESSION_ONLY = CLOUD and (up is not None or inlet_ratios is not None)
 grid_data = None                             # the session's own grid (a cloud upload); None: the cached grid
 with st.spinner(f"Running {n_runs} EPANET simulations of your model over the decay and hydraulic-mismatch grid "
                 f"(once per network; cached afterwards)…"):
     if SESSION_ONLY:
-        sc, X, grid_data = cloud.session_cached(st.session_state, "prepare", (net_path, float(dose), ca, grid),
-                                                prepare_in_session, net_path, float(dose), ca, grid)
+        sc, X, grid_data = cloud.session_cached(st.session_state, "prepare", (net_path, float(dose), ca, grid, inlets_key),
+                                                prepare_in_session, net_path, float(dose), ca, grid, inlets_key)
+    elif inlets_key:     # task 16c: the grid at the inlets' ratios, under its own cache name
+        sc, X = prepare(net_path, float(dose), ca, cache_tag(CA.ca_condition(), "chloramine") if ca else "", grid,
+                        inlets_key)
     else:
         sc, X = (prepare(net_path, float(dose), True, cache_tag(CA.ca_condition(), "chloramine")) if ca else
                  prepare(net_path, float(dose)) if grid == "full" else prepare(net_path, float(dose), False, "", grid))
@@ -699,7 +828,7 @@ if log_up is not None:
                     f"Within the window every sample is treated as one simulated day: a reading is compared with the "
                     f"model's day at its junction and hour, whatever its date. " + " ".join(gj.notes))
         not_used = (gj.dropped + [{"row": int(r.row), "reason": r.reason} for r in cens_w.itertuples()]
-                    + winfo["outside"])
+                    + winfo["outside"] + inlet_unused)        # task 16c's review: zone inlet readings outside the window
         if not_used:
             st.warning(f"Rows of the grab log that are not used ({len(not_used)}), each with its reason:\n\n"
                        + "\n".join(f"- {ln}" for ln in dropped_lines(sorted(not_used, key=lambda d: d["row"]))))
@@ -711,6 +840,10 @@ if log_up is not None:
         default = pd.DataFrame({"junction": rows_w.junction.astype(str), "hour": rows_w.hour.astype(int),
                                 "mg/L": rows_w.y.astype(float)})
         log_key_suffix = "_log" + hashlib.sha1(default.to_csv(index=False).encode()).hexdigest()[:10]
+
+if inlet_info is not None:      # task 16c: the inlet residuals in use, where each comes from, and what they do not cover
+    st.info(f"{inlet_info['sentence']} From: " + "; ".join(f"{n}, {d['source']}" for n, d in inlet_from.items())
+            + f". {INLET_ZONE_NOTE}" + "".join(f" {n_}" for n_ in inlet_notes))
 
 st.subheader("Grab samples")
 st.caption("One row per sample: the junction ID from your model, the hour it was taken (0 to 23), the TOTAL chlorine "
@@ -737,12 +870,15 @@ S = pd.DataFrame({"junction": samples.junction.astype(str), "hour": samples.hour
 # model ------------------------------------------------------------------------------------
 if ca:
     model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid="chloramine",
-                    cond=CA.ca_condition(), lik_sd=LIK_SD_CA, doses=DOSES_CA, grid_data=grid_data)
+                    cond=CA.ca_condition(), lik_sd=LIK_SD_CA, doses=DOSES_CA, grid_data=grid_data,
+                    inlet_ratios=inlet_ratios)
     model.log_prior = CA.prior_log_vector(model.params, float(ph_log), float(cl2n_log))
 elif grid == "full":
-    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid_data=grid_data)
+    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid_data=grid_data,
+                    inlet_ratios=inlet_ratios)
 else:
-    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid=grid, grid_data=grid_data)
+    model = SimGP24(sc, X, seed=0, cache_dir=CACHE_DIR, threshold=float(threshold), grid=grid, grid_data=grid_data,
+                    inlet_ratios=inlet_ratios)
 model.fit(S if len(S) else None)
 hourly = model.predict_hours()
 pmin = model.predict_daily_min()
@@ -928,14 +1064,17 @@ with age_col:
         tested = " It has not been tested against a simulated truth for this file, so it is shown as a range, not a 90% band."
     st.caption(f"Hours since the water left the source, from your EPANET file: {oldest_line}. {lower_note} Right: how far "
                f"each junction's age moves across the 9 settings the model already weighs (demand x0.85, x1, x1.15; pipe "
-               f"roughness x0.9, x1, x1.1).{tested}")
+               f"roughness x0.9, x1, x1.1).{tested}"
+               + (" Water age starts at 0 at every inlet: in a zone cut from a larger system the water entering it is "
+                  "already old, so the zone's water is older than this map shows." if inlet_info is not None else ""))
 with loss_col:
     st.subheader("Where chlorine is lost")
     if model.map_params_ is None:
         st.info("Enter at least one grab sample: the split uses the decay rates your samples calibrate.")
     else:
         member = (net_path, float(dose), tuple(model.map_params_), float(model.map_dose_))
-        split = run_cached(chlorine_loss, SESSION_ONLY, (*member, ca), *member, model, ca, job=(loss_split, model))
+        split = run_cached(chlorine_loss, SESSION_ONLY, (*member, ca, inlets_key), *member, model, ca, inlets_key,
+                           job=(loss_split, model))
         ws = split.wall_share.dropna()
         if ws.empty:
             st.info("Chlorine loss is under 2% at every junction for these decay rates: there is nothing to split.")
@@ -1015,9 +1154,17 @@ def pdf_bytes() -> bytes:
     gamma_pdf = "old-pipe factor not identifiable (one C value)" if uniform_c else f"old-pipe factor {model.map_params_[2]:.1f}" if model.map_params_ is not None else ""
     calib = (f"calibrated decay: bulk {model.map_params_[0]:{KB_FMT}} /day, wall {model.map_params_[1]:.2f} m/day, {gamma_pdf}; "
              f"demand ×{model.map_params_[3]:.2f}, roughness ×{model.map_params_[4]:.2f}, dose ×{model.map_dose_:.2f}") if model.map_params_ is not None else "no samples yet: map from the model's physics alone"
-    ax.text(0, 0.74, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · dose {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
+    # task 16c: with inlet residuals, the dose is the highest of them, and the residuals and the age caveat are printed
+    # one line, so it never reaches the chemistry lines below it (at most 6 inlets named)
+    inlet_pdf = "" if inlet_info is None else (
+        "\ninlet residuals: " + ", ".join(f"{e} {mgl_text(v)}" for e, v in list(inlet_info["residuals_mgL"].items())[:6])
+        + (f" and {len(inlet_info['residuals_mgL']) - 6} more" if len(inlet_info["residuals_mgL"]) > 6 else "")
+        + " mg/L, each inlet dosed in proportion; water age starts at 0 at every inlet, so a zone's water is older "
+          "than its age map shows")
+    dose_words = "highest inlet residual" if inlet_info is not None else "dose"
+    ax.text(0, 0.74, f"{len(S)} grab samples{' of TOTAL chlorine (chloramine mode)' if ca else ''} · {dose_words} {dose:g} mg/L · minimum residual {threshold:g} mg/L · "
                      f"{int((pmin['p_below'] > 0.5).sum())} of {len(junctions)} junctions likely below the minimum at their daily minimum · "
-                     f"worst hour {hlabel(worst)}{pdf_hour_note}\n{calib}\n{oldest_line}", fontsize=10.5, va="top")
+                     f"worst hour {hlabel(worst)}{pdf_hour_note}\n{calib}\n{oldest_line}{inlet_pdf}", fontsize=10.5, va="top")
     chem = "\n".join(w for line in pdf_chem_lines() for w in textwrap.wrap(line, PDF_CHEM_CHARS))
     ax.text(0, 0.36, chem, fontsize=9.5, va="top", color="0.15")
     axes = [fig.add_subplot(gs[1, i]) for i in range(4)]

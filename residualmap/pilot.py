@@ -44,10 +44,25 @@ are noted apart from those below detection.  After the final verification: --col
 one analyte whose rows are read, for a long-format export whose analytes do not name the species in words the reader
 knows (a log is refused with that question rather than read whole).
 
+Task 16c, zone extracts: --inlets inlet_residuals.csv (inlet_node_id, residual_mgL) gives each inlet of a zone its
+measured residual; each entry point is dosed at r_i x --dose, r_i = residual_i / the largest, so --dose means the
+highest residual entering the zone (default: the file's highest).  A tap map's role column can mark a tap as a zone
+'inlet' (its junction column naming the inlet's node): the median of its readings over the whole log sets that
+inlet's residual, and its rows never enter the calibration.  Every entry point needs a residual, or none.  The grid is
+cached under its own name (simgp.grid_cache_path); outputs get '_inlets' in their names.  Not built with --plant.
+--holdout-sites K adds leave-sites-out rows ('held_out_sites'): within each held-out month, the model is refitted on
+the same earlier months without every sample at K of that month's sites, and those sites are predicted at their own
+hours, rotating through all its sites in seeded groups of K; outputs get '_sites<K>' in their names.  Without these
+flags the pilot is unchanged.  Its review: an inlet tap with no usable reading, or at a node that is no entry point, is
+refused; the inlet file's notes are printed; per-inlet residuals are refused in the chloramine mode (--inlets with
+--disinfectant chloramine, and inlet taps); a held-out-sites row's n_train is its smallest group fit's (n_train_min and
+n_train_max give the range).
+
 grab_log.csv  : date (YYYY-MM-DD), time (HH:MM), tap_id, free_chlorine_mgL   [optional: method, notes]
                 or, for a chloraminated system (--disinfectant chloramine), total_chlorine_mgL instead (never both
                 columns: a log that mixes the two species is refused; docs/example_grab_log_total.csv)
-tap_map.csv   : tap_id, junction_id                                          [optional: flush_min, notes]
+tap_map.csv   : tap_id, junction_id                                          [optional: flush_min, notes, role]
+inlet_residuals.csv : inlet_node_id, residual_mgL                            [optional: notes]   (task 16c)
 plant_log.csv : month (YYYY-MM), temp_C                                      [optional: toc_mgL, dose_mgL]
                 With a plant log the model is seasonal.SeasonalSimGP24: every grab sample is explained at its own
                 month's water temperature and the held-out month is predicted at its own.  dose_mgL, when given, is
@@ -71,8 +86,9 @@ from scipy.stats import norm
 from .chemistry import Chemistry, Warming
 from .chloramine import CA_DOSE_MGL, ca_condition
 from .features import build_features
-from .importers import (ANALYZER_HOUR, DATE_ORDERS, Readiness, _clock, clock_label, dropped_lines, prepare_inp,
-                        read_grab_log, shows_clock, size_gate, stem as inp_stem)
+from .importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_ZONE_NOTE, LogRefused, Readiness, _clock, clock_label,
+                        combine_inlet_residuals, dropped_lines, inlet_ratios_from, inlet_tap_residuals, prepare_inp,
+                        read_grab_log, read_inlet_residuals, shows_clock, size_gate, stem as inp_stem)
 from .simgp import DAY_HOURS, SimGP24, grid_cache_path
 from .simulate import build_scenario, load, net_path, nominal_scenario
 
@@ -161,24 +177,29 @@ def load_log(samples_csv: str, taps_csv: str, disinfectant: str = "free_chlorine
     g = read_log(samples_csv, taps_csv, disinfectant, date_format, start_clock_h, analyzer_hour, columns,
                  thin_analyzers)
     if not quiet:
-        unknown = sorted({d["tap_id"] for d in g.dropped if d["reason"].endswith("is not in the tap map")})
-        if unknown:     # at most 20 named (the final verification of task 16: a tap map from another system)
-            n = sum(d["reason"].endswith("is not in the tap map") for d in g.dropped)
-            print(f"warning: {n} samples at taps with no junction in the tap map are dropped: {unknown[:20]}"
-                  + (f" and {len(unknown) - 20} more taps" if len(unknown) > 20 else ""))
-        for line in dropped_lines([d for d in g.dropped if not d["reason"].endswith("is not in the tap map")]):
-            print(f"warning: not used: {line}")
-        for kind, words in (("below", "below detection"), ("above", "above the measuring range")):
-            c = g.censored[g.censored.kind == kind] if len(g.censored) else g.censored
-            if len(c):
-                print(f"note: {len(c)} reading{'s' if len(c) != 1 else ''} {words} {'are' if len(c) != 1 else 'is'} "
-                      f"kept and listed, not used in the fit: "
-                      + "; ".join(f"row {r.row} tap {r.tap_id} {r.raw!r}" for r in c.itertuples()))
-        for n_ in g.notes[2:]:
-            print(f"note: {n_}")
-        for w in g.warnings:
-            print(f"warning: {w}")
+        print_log(g)
     return g.frame
+
+
+def print_log(g) -> None:
+    """What load_log prints about a GrabLog: the rows dropped, censored, thinned or warned about (task 16)."""
+    unknown = sorted({d["tap_id"] for d in g.dropped if d["reason"].endswith("is not in the tap map")})
+    if unknown:     # at most 20 named (the final verification of task 16: a tap map from another system)
+        n = sum(d["reason"].endswith("is not in the tap map") for d in g.dropped)
+        print(f"warning: {n} samples at taps with no junction in the tap map are dropped: {unknown[:20]}"
+              + (f" and {len(unknown) - 20} more taps" if len(unknown) > 20 else ""))
+    for line in dropped_lines([d for d in g.dropped if not d["reason"].endswith("is not in the tap map")]):
+        print(f"warning: not used: {line}")
+    for kind, words in (("below", "below detection"), ("above", "above the measuring range")):
+        c = g.censored[g.censored.kind == kind] if len(g.censored) else g.censored
+        if len(c):
+            print(f"note: {len(c)} reading{'s' if len(c) != 1 else ''} {words} {'are' if len(c) != 1 else 'is'} "
+                  f"kept and listed, not used in the fit: "
+                  + "; ".join(f"row {r.row} tap {r.tap_id} {r.raw!r}" for r in c.itertuples()))
+    for n_ in g.notes[2:]:
+        print(f"note: {n_}")
+    for w in g.warnings:
+        print(f"warning: {w}")
 
 
 def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, rotating: int = 3, seed: int = 0,
@@ -257,13 +278,21 @@ def load_plant(path: str) -> pd.DataFrame:
 
 
 DEFAULT_DOSE_MGL = {"free_chlorine": 1.2, "chloramine": CA_DOSE_MGL}   # mg/L; typical chloramine doses are 1.5 to 4.0
+# the review of task 16c: per-inlet residuals are not built for the chloramine mode until a check covers them
+INLETS_NOT_CA = ("per-inlet residuals are not built for the chloramine mode yet: its dose axis (an effective dose of "
+                 "0.65 to 1.10 times the dose) is made for the total chlorine leaving a plant, which the plant's fast "
+                 "organic demand lowers, and a residual measured where water enters a zone has already passed that "
+                 "demand.")
+HOLDOUT_SITES_SEED = 50_000      # task 16c: the held-out site groups come from default_rng(HOLDOUT_SITES_SEED + seed)
+HELD_OUT_SITES = "held_out_sites"
 
 
 def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: float | None = None,
              window_months: int = 3, holdout_months: int | None = None, cache_dir: str = "outputs/cache", seed: int = 0,
              plant: pd.DataFrame | None = None, bank_cache: str = "readwrite",
              disinfectant: str = "free_chlorine", ph: float | None = None,
-             cl2n: float | None = None, grid: str = "full") -> tuple[pd.DataFrame, pd.DataFrame]:
+             cl2n: float | None = None, grid: str = "full", inlet_ratios: dict | None = None,
+             holdout_sites: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Rolling hold-out: for each held-out month, fit on the `window_months` before it and predict its
     samples.  Returns (per-sample predictions, per-month summary).
     plant: the plant log (load_plant).  None is the committed temperature-blind SimGP24, unchanged.  With a plant log,
@@ -278,9 +307,34 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
     model (b).  A plant log is refused (no seasonal chloramine model is built).  dose and threshold default to the
     disinfectant's (1.2 mg/L free chlorine and 0.2; 2.0 mg/L total chlorine and 0.5).
     grid: the free-chlorine grid without a plant log, 'full' (the committed path) or 'full_fixed_gamma' for a file
-    with one C value on every pipe (task 15b; importers.grid_for)."""
+    with one C value on every pipe (task 15b; importers.grid_for).
+    inlet_ratios (task 16c): {entry point: r}, a zone whose inlets carry different residuals, each dosed at r times
+    dose (importers.inlet_ratios_from; dose is then the highest residual entering the zone); None, or every ratio 1,
+    is the committed path.  Refused with a plant log (the seasonal grids are not built at inlet ratios) and, since the
+    review of task 16c, with chloramine (INLETS_NOT_CA); checked as given against the model's entry points.
+    holdout_sites (task 16c): None is the committed validation, row for row.  k adds leave-sites-out rows ('taps'
+    'held_out_sites'): within each held-out month its sites (junctions) are split into groups of k, in an order drawn
+    from default_rng(HOLDOUT_SITES_SEED + seed), and each group's samples of that month are predicted, at their own
+    junction and hour, by a model refitted on the same earlier months with every sample at those sites removed, so
+    every site of the month is predicted once by a fit that never saw it.  This is the map's accuracy at places
+    without a tap that a fixed compliance route can give, where the 'new_taps' rows need rotating taps.  Their
+    rmse_persistence is NaN (a held-out site has no reading of its own in training) and their map_* columns too (each
+    group has its own fit); the predictions frame then gains a 'validation' column and the held-out sites' rows.
+    Each group's fit trains on fewer samples than the month's rows (its sites' earlier samples are dropped): their
+    n_train is the smallest group fit's, with n_train_min and n_train_max (the review of task 16c; it was the month's
+    whole training set).  A group that leaves no training sample is refused, and k at least the month's sites warns."""
     if disinfectant not in DEFAULT_DOSE_MGL:
         raise ValueError(f"disinfectant must be one of {sorted(DEFAULT_DOSE_MGL)}")
+    if holdout_sites is not None and (int(holdout_sites) != holdout_sites or holdout_sites < 1):
+        raise ValueError("holdout_sites must be a whole number of sites, 1 or more")
+    from .simulate import normalize_inlet_ratios
+    ratios = normalize_inlet_ratios(inlet_ratios)
+    if ratios is not None and plant is not None:
+        raise NotImplementedError("per-inlet residuals with a plant log: the seasonal model's grids are not built at "
+                                  "inlet ratios")
+    if ratios is not None and disinfectant == "chloramine":      # the review of task 16c
+        raise NotImplementedError(INLETS_NOT_CA)
+    inlet_kw = {} if ratios is None else {"inlet_ratios": ratios}
     if disinfectant == "chloramine" and plant is not None:
         raise NotImplementedError("a plant log (temperature) with chloramine: no seasonal chloramine model is built")
     if (ph is None) != (cl2n is None):
@@ -290,6 +344,9 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
     dose = DEFAULT_DOSE_MGL[disinfectant] if dose is None else dose
     threshold = (0.5 if disinfectant == "chloramine" else 0.2) if threshold is None else threshold
     sc = nominal_scenario(inp, sample_hour=14, source_dose=dose)
+    if inlet_ratios:     # the review of task 16c: checked as given, before the all-ones shortcut, as the grid checks them
+        from .simulate import check_inlet_ratios, source_nodes
+        check_inlet_ratios(inlet_ratios, source_nodes(sc.wn))
     X = build_features(sc)
     unknown = sorted(set(log.junction) - set(sc.junctions))
     if unknown:
@@ -306,30 +363,37 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
         ratio = (pl.dose_mgL.astype(float) / dose) if "dose_mgL" in pl and pl.dose_mgL.notna().all() else pd.Series(1.0, index=pl.index)
         log = log.assign(temp_C=log.month.map(pl.temp_C.astype(float)), dose_ratio=log.month.map(ratio))
         bank = covariate_bank(sc, sorted(set(log.temp_C)), cache_dir=cache_dir, cache=bank_cache)
-    preds, rows = [], []
-    for m in held:
-        train_months = [t for t in months if t < m][-window_months:]
-        train, test = log[log.month.isin(train_months)], log[log.month == m]
+    def fit_on(train: pd.DataFrame, m: str, warn: bool = True):
+        """The month's model fitted on train (the committed constructors, plus the inlet ratios when given)."""
         if bank is None and disinfectant == "chloramine":
             from .chloramine import ca_condition, prior_log_vector
             from .simgp import DOSES_CA, LIK_SD_CA
             model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid="chloramine", cond=ca_condition(),
-                            lik_sd=LIK_SD_CA, doses=DOSES_CA, threshold=threshold)
+                            lik_sd=LIK_SD_CA, doses=DOSES_CA, threshold=threshold, **inlet_kw)
             if ph is not None:
                 model.log_prior = prior_log_vector(model.params, float(ph), float(cl2n))
             model.fit(train[["junction", "hour", "y"]])
-            if model.map_dose_ in (DOSES_CA[0], DOSES_CA[-1]):
+            if warn and model.map_dose_ in (DOSES_CA[0], DOSES_CA[-1]):
                 print(f"warning: held-out month {m}: the fitted effective dose sits at the edge of the chloramine dose "
                       f"axis (x{model.map_dose_:.2f} of {dose:g} mg/L): check --dose, the total chlorine leaving the "
                       f"plant", file=sys.stderr, flush=True)
         elif bank is None and grid == "full":
-            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir).fit(train[["junction", "hour", "y"]])
+            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, **inlet_kw).fit(train[["junction", "hour", "y"]])
         elif bank is None:
-            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid=grid).fit(train[["junction", "hour", "y"]])
+            model = SimGP24(sc, X, seed=seed, cache_dir=cache_dir, grid=grid, **inlet_kw).fit(
+                train[["junction", "hour", "y"]])
         else:
             model = SeasonalSimGP24(sc, X, bank, seed=seed, cache_dir=cache_dir).fit(
                 train[["junction", "hour", "y", "temp_C", "dose_ratio"]], target_temp_C=float(pl.temp_C[m]),
                 target_dose_ratio=float(ratio[m]))
+        return model
+
+    rng_sites = np.random.default_rng(HOLDOUT_SITES_SEED + seed) if holdout_sites else None
+    preds, rows, site_preds = [], [], []
+    for m in held:
+        train_months = [t for t in months if t < m][-window_months:]
+        train, test = log[log.month.isin(train_months)], log[log.month == m]
+        model = fit_on(train, m)
         z_mu, z_sd = model.predict_hours()
         jidx = np.array([sc.junctions.index(j) for j in test.junction]); h = test.hour.values
         mu, sd = z_mu[h, jidx], z_sd[h, jidx]
@@ -367,7 +431,57 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
             if bank is not None:
                 rows[-1].update({"temp_C": float(pl.temp_C[m]), "kb20": model.kb20(), "map_hypothesis": model.map_hypothesis_,
                                  **{f"P_{k}": v for k, v in model.hypothesis_posterior().items()}})
-    return pd.concat(preds, ignore_index=True), pd.DataFrame(rows)
+        if holdout_sites:        # task 16c: leave k sites out, rotating through every site of the month
+            p["validation"] = "held_out_month"
+            sites = sorted(set(map(str, test.junction)))
+            order = [sites[i] for i in rng_sites.permutation(len(sites))]
+            groups = [order[i:i + int(holdout_sites)] for i in range(0, len(order), int(holdout_sites))]
+            # the review of task 16c: each group's fit trains on fewer samples than the month's (those sites' earlier
+            # samples are dropped), recorded as n_train_min and n_train_max; a group that leaves no training sample
+            # would be a fit on the prior alone, and is refused
+            sizes = [int((~train.junction.isin(gr)).sum()) for gr in groups]
+            if min(sizes) == 0:
+                raise ValueError(f"holdout_sites {int(holdout_sites)}: in held-out month {m} a group of sites leaves no "
+                                 f"training sample (its {len(sites)} sites are every site of the earlier months); use "
+                                 f"fewer sites per group")
+            if int(holdout_sites) >= len(sites):
+                print(f"warning: held-out month {m}: --holdout-sites {int(holdout_sites)} is at least its {len(sites)} "
+                      f"sites, so they are all held out together, in one group", file=sys.stderr, flush=True)
+            parts = []
+            for gi, group in enumerate(groups):
+                tr_g, te_g = train[~train.junction.isin(group)], test[test.junction.isin(group)]
+                mg = fit_on(tr_g, m, warn=False)
+                gz_mu, gz_sd = mg.predict_hours()
+                gj = np.array([sc.junctions.index(j) for j in te_g.junction]); gh = te_g.hour.values
+                mu_g, sd_g = gz_mu[gh, gj], gz_sd[gh, gj]
+                pg = te_g.assign(pred=np.exp(mu_g), z_mu=mu_g, z_sd=sd_g,
+                                 p_below=norm.cdf((np.log(threshold) - mu_g) / sd_g), train_months=",".join(train_months))
+                for q in LEVELS:
+                    k_ = norm.ppf(0.5 + q / 200)
+                    pg[f"in{q}"] = (te_g.y.values >= np.exp(mu_g - k_ * sd_g)) & (te_g.y.values <= np.exp(mu_g + k_ * sd_g))
+                pg["persistence"] = np.nan          # no reading of a held-out site is in its fit
+                pg["network_mean"] = tr_g.y.mean() if len(tr_g) else np.nan
+                pg["seen_tap"] = False
+                pg["validation"], pg["site_group"] = HELD_OUT_SITES, gi
+                parts.append(pg)
+            ps = pd.concat(parts)
+            site_preds.append(ps)
+            t = ps.y.values
+            viol = t < threshold; flagged = ps.p_below.values > 0.5
+            rows.append({"held_out_month": m, "taps": HELD_OUT_SITES, "trained_on": ",".join(train_months),
+                         "n_train": min(sizes), "n_test": int(len(ps)),
+                         "rmse": float(np.sqrt(np.mean((t - ps.pred.values) ** 2))),
+                         "mae": float(np.mean(np.abs(t - ps.pred.values))), "rmse_persistence": float("nan"),
+                         "rmse_network_mean": float(np.sqrt(np.mean((t - ps.network_mean.values) ** 2))),
+                         **{f"coverage{q}": float(ps[f"in{q}"].mean()) for q in LEVELS},
+                         "band90_width_mgL": float(np.median(np.exp(ps.z_mu + 1.645 * ps.z_sd) - np.exp(ps.z_mu - 1.645 * ps.z_sd))),
+                         "n_true_below": int(viol.sum()),
+                         "recall_below": float((viol & flagged).sum() / viol.sum()) if viol.sum() else float("nan"),
+                         "false_alarms": int((~viol & flagged).sum()),
+                         "map_kb": float("nan"), "map_kw": float("nan"), "map_gamma": float("nan"),
+                         "map_dose": float("nan"), "sites": len(sites), "site_groups": len(groups),
+                         "sites_per_group": int(holdout_sites), "n_train_min": min(sizes), "n_train_max": max(sizes)})
+    return pd.concat(preds + site_preds, ignore_index=True), pd.DataFrame(rows)
 
 
 def main():
@@ -408,7 +522,24 @@ def main():
                          "also analyte=<column> and unit=<column> for a log with one row per analyte, and "
                          "analyte_value=<value> for the analyte whose rows are the reading (a LIMS code such as "
                          "CHLF)")
+    ap.add_argument("--inlets", default=None,
+                    help="task 16c: an inlet residuals CSV (inlet_node_id,residual_mgL; "
+                         "docs/templates/inlet_residuals_template.csv) for a zone whose inlets carry different "
+                         "residuals: each inlet is dosed in proportion, and --dose means the highest residual entering "
+                         "the zone (default: the file's highest). A tap map's role column can mark a tap as a zone "
+                         "'inlet' too: the median of its readings sets that inlet's residual, and none is fitted")
+    ap.add_argument("--holdout-sites", type=int, default=None, metavar="K",
+                    help="task 16c: also leave K sites out: within each held-out month, refit without every sample at "
+                         "K of its sites and predict them, rotating through all its sites in seeded groups of K "
+                         "(rows 'held_out_sites': the map's accuracy where there is no tap)")
     a = ap.parse_args()
+    if a.holdout_sites is not None and a.holdout_sites < 1:
+        ap.error("--holdout-sites needs 1 or more sites per group")
+    if a.inlets and a.synthetic:
+        ap.error("--inlets is for a zone's real data; --synthetic doses every inlet alike")
+    if a.inlets and a.disinfectant == "chloramine":      # the review of task 16c
+        ap.error(f"--inlets is refused with --disinfectant chloramine, since {INLETS_NOT_CA}")
+    dose_given = a.dose is not None      # task 16c: without --dose, inlet residuals set it to their highest
     if a.threshold is None:
         a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
     if a.dose is None:
@@ -425,6 +556,7 @@ def main():
                  "python -m residualmap.experiment <net> --disinfectant=chloramine")
     a.out = a.out or default_out(bool(a.synthetic))
     os.makedirs(a.out, exist_ok=True)
+    inlet_ratios = None      # task 16c: per-inlet dose ratios (None: every inlet at the one dose, the committed path)
     if a.synthetic:
         truth_kw = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}.get(a.synthetic, {})
         log, inp = synthetic_log(a.synthetic, **truth_kw)
@@ -464,10 +596,62 @@ def main():
                 cols[k.strip()] = v.strip() or None
         start_h = float(report.flags.get("start_clock_h") or 0.0)
         try:            # task 16: each time of day becomes a model hour with the file's START CLOCKTIME
-            log = load_log(a.samples, a.taps, a.disinfectant, date_format=a.date_format, start_clock_h=start_h,
-                           analyzer_hour=a.analyzer_hour, columns=cols, thin_analyzers=not a.keep_every_reading)
+            g_log = read_log(a.samples, a.taps, a.disinfectant, date_format=a.date_format, start_clock_h=start_h,
+                             analyzer_hour=a.analyzer_hour, columns=cols, thin_analyzers=not a.keep_every_reading)
         except ValueError as e:
             sys.exit(f"{a.samples}: {e}")
+        print_log(g_log)        # what load_log printed
+        log = g_log.frame
+        # task 16c: per-inlet residuals, from --inlets and from taps the tap map marks as a zone inlet (the median of
+        # their readings over the whole log); without either, nothing below runs and the committed path is unchanged.
+        # Its review: every tap marked as a zone inlet must give its inlet a usable reading (inlet_tap_residuals), the
+        # file is read for the disinfectant's species and its notes are printed, and not in the chloramine mode
+        file_res, entry = None, report.flags.get("entry_points") or []
+        if a.inlets:
+            try:
+                with open(a.inlets, "rb") as fh:
+                    file_res, f_info = read_inlet_residuals(fh.read(), os.path.basename(a.inlets),
+                                                            disinfectant=a.disinfectant)
+            except (OSError, LogRefused) as e:
+                sys.exit(f"{a.inlets}: {e}")
+            for n_ in f_info["notes"]:
+                print(f"note: {a.inlets}: {n_}")
+        if g_log.inlet_taps and a.disinfectant == "chloramine":
+            sys.exit(f"{a.taps}: the tap map marks {', '.join(sorted(g_log.inlet_taps)[:6])} as a zone inlet, and "
+                     f"{INLETS_NOT_CA} Clear the role in the tap map, or leave those readings out of the log.")
+        try:
+            tap_res = inlet_tap_residuals(g_log, entry, None, file_res)
+        except LogRefused as e:
+            sys.exit(f"{a.taps}: {e}")
+        if file_res or tap_res:
+            try:
+                inlets = combine_inlet_residuals(file_res, tap_res)
+                inlet_ratios, inlet_info = inlet_ratios_from(inlets, entry)
+            except LogRefused as e:
+                sys.exit(f"{a.inlets or a.taps}: {e}")
+            print(f"note: {inlet_info['sentence']} From: "
+                  + "; ".join(f"{n}, {d['source']}" for n, d in inlets.items()) + ".")
+            if tap_res:
+                print("note: an inlet tap's residual is the median of its readings over the whole log, the held-out "
+                      "months' included: one set of ratios for every held-out month, as a boundary condition known "
+                      "when the map is made (the app takes the median over its window instead).")
+            top = inlet_info["highest_mgL"]
+            if not dose_given:
+                a.dose = top
+                print(f"note: --dose not given: taking the highest inlet residual, {top:g} mg/L.")
+            elif abs(a.dose - top) > 0.1 * top:
+                print(f"warning: --dose {a.dose:g} mg/L is the highest residual entering the zone when inlet residuals "
+                      f"are given, and the highest given is {top:g} mg/L: check one of them.")
+            print(f"note: {INLET_ZONE_NOTE}")
+            if a.plant and inlet_ratios is not None:
+                sys.exit(f"{a.inlets or a.taps}: per-inlet residuals with --plant are not built (the temperature model's "
+                         f"grids are made at one dose for every inlet). Run without one of them.")
+            sc_in = types.SimpleNamespace(wn_name=inp, source_dose=float(a.dose))
+            if inlet_ratios is not None and not os.path.exists(grid_cache_path(
+                    sc_in, "outputs/cache", grid, ca_condition() if grid == "chloramine" else None, inlet_ratios)):
+                ok, msg = size_gate(report.run_cost, "outputs/cache")
+                if not ok:
+                    sys.exit(f"{a.inp}: {msg}")
         if shows_clock(start_h):    # the review of task 16: the outputs' hours are model hours, and the run says so
             print(f"note: {a.inp} starts at {_clock(start_h)} (START CLOCKTIME): the log's times of day were converted "
                   f"to model hours, and every hour in the pilot's outputs (predictions and validation files) is a "
@@ -477,8 +661,10 @@ def main():
     plant = load_plant(a.plant) if a.plant else None
     grid = "full" if a.synthetic or a.disinfectant == "chloramine" or plant is not None else grid
     preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,
-                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n, grid=grid)
+                              disinfectant=a.disinfectant, ph=a.ph, cl2n=a.cl2n, grid=grid, inlet_ratios=inlet_ratios,
+                              holdout_sites=a.holdout_sites)
     tag = (a.synthetic or inp_stem(a.inp)) + ("_plant" if plant is not None else "")
+    tag += ("_inlets" if inlet_ratios is not None else "") + (f"_sites{a.holdout_sites}" if a.holdout_sites else "")
     preds.to_csv(os.path.join(a.out, f"predictions_{tag}.csv"), index=False)
     summary.to_csv(os.path.join(a.out, f"validation_{tag}.csv"), index=False)
     pd.set_option("display.width", 220); pd.set_option("display.max_columns", 40)
@@ -486,10 +672,15 @@ def main():
     print(summary[["held_out_month", "taps", "n_train", "n_test", "rmse", "rmse_persistence", "rmse_network_mean", "coverage50", "coverage80", "coverage90", "coverage95",
                    "band90_width_mgL", "n_true_below", "recall_below", "false_alarms", "map_kb", "map_kw"]
                   + (["temp_C", "kb20", "P_H0"] if plant is not None else [])].round(3).to_string(index=False))
+    if a.holdout_sites:     # task 16c
+        print(f"held_out_sites: within each held-out month, groups of {a.holdout_sites} sites, each predicted by a fit on "
+              f"the same months without any of its samples (a held-out site has no reading of its own in that fit, so "
+              f"there is no persistence baseline; map_kb and map_kw are per group, not shown)")
     agg = {}
     for subset, g in summary.groupby("taps"):
         w = g.n_test / g.n_test.sum()
-        agg[subset] = {"n": int(g.n_test.sum()), "rmse": float((g.rmse * w).sum()), "rmse_persistence": float((g.rmse_persistence * w).sum()),
+        pers = (g.rmse_persistence * w).sum(min_count=1) if subset == HELD_OUT_SITES else (g.rmse_persistence * w).sum()
+        agg[subset] = {"n": int(g.n_test.sum()), "rmse": float((g.rmse * w).sum()), "rmse_persistence": float(pers),
                        "rmse_network_mean": float((g.rmse_network_mean * w).sum()), **{f"coverage{q}": float((g[f"coverage{q}"] * w).sum()) for q in LEVELS}}
         print(f"mean over held-out months, {subset}:", {k: (round(v, 3) if isinstance(v, float) else v) for k, v in agg[subset].items()})
     with open(os.path.join(a.out, f"validation_{tag}.json"), "w") as f:

@@ -135,6 +135,12 @@ _TM = ("urban_grid", "transmission_main_variants")
 _GF = ("georef", "review", "final")              # the final verification's georeference cases
 T20 = "Task 20"                                  # task 20's journal section (the hosted demo)
 _T20R = ("runs", "post_task20")                 # the rerun on task 20's tree
+T16C = "Task 16c"                                # task 16c's journal section (zone extracts)
+_Z = "outputs/intake/zone_extract_Net3.json"
+_ZS = ("superposition", "by_tolerance")
+_ZH = ("holdout", "mean")
+_ZHS = ("holdout", "by_month", "held_out_sites")
+_T16CR = ("runs", "post_task16c")               # the rerun on task 16c's tree
 
 
 def _age(net: str, *keys) -> tuple:
@@ -217,6 +223,18 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
         "bomb_limit_mb": (_MD, "shared_strings_bomb_refused", "limit_mb"),
         "bomb_app_s": (_UP, "shared_strings_bomb_refused_in_the_app", "time_bound_s"),
         "allowed": (_EX, "allowed_mentions"), "rewordings": (_EX, "rewordings_caught")}.items()},
+    # task 16c's checks, as its journal's numbers table and the README's bullet quote them
+    **{f"t16c_{k}": ((SELF_REPORT,), (lambda keys: lambda: _cd(*keys))(keys)) for k, keys in {
+        "committed_hos_rmse": ("holdout_sites_fixed_route", "committed_log_held_out_sites", "rmse"),
+        "committed_hos_cov90": ("holdout_sites_fixed_route", "committed_log_held_out_sites", "coverage90"),
+        "pilot_rmse_without": ("pilot_inlet_residuals", "rmse_all", "without_inlets"),
+        "pilot_rmse_with": ("pilot_inlet_residuals", "rmse_all", "with_inlets"),
+        "app_flagged_with": ("app_inlet_residuals", "flagged_with_inlets"),
+        "app_flagged_without": ("app_inlet_residuals", "flagged_without"),
+        # the review of task 16c: the pilot's inlet-tap counts
+        "pilot_inlet_tap_readings": ("pilot_inlet_residuals", "inlet_tap_readings"),
+        "pilot_fitted_with_inlet_tap": ("pilot_inlet_residuals", "samples_in_log", "inlet_tap"),
+        "pilot_fitted_without": ("pilot_inlet_residuals", "samples_in_log", "without_inlets")}.items()},
     # task 12, low-pH stress, random rule: model (c)'s RMSE over the uniform prior (b)'s at every n
     "ca_lowph_prior_cost": ((_C3,), lambda: _pct_range(
         [_json(_C3)["pooled"]["stress"]["c"]["random"][n]["rmse"] / _json(_C3)["pooled"]["stress"]["b"]["random"][n]["rmse"]
@@ -751,6 +769,59 @@ REGISTRY: list[tuple] = [
     ("journal", T20, "refused at {} MB before openpyxl opens it, within", "t20_bomb_limit_mb", "d"),
     ("journal", T20, "in 'Check a file', each page run within {} s | refused |", "t20_bomb_app_s", ".0f"),
     ("journal", T20, "the saved check's copy of that workbook, {} bytes, written", "t20_bomb_bytes", ",d"),
+    # task 16c (journal 'Task 16c'; README limitations bullet), outputs/intake/zone_extract_Net3.json and its checks
+    ("journal", T16C, "sum of its single-inlet runs within {} mg/L at the file's tolerance", (_Z, _ZS + ("default_tolerance", "max_abs_error_mgL")), ".2e"),
+    ("journal", T16C, "at the file's tolerance and {} mg/L at 1e-9, the second", (_Z, _ZS + ("tolerance_1e-9", "max_abs_error_mgL")), ".2e"),
+    ("journal", T16C, "2,208 junction-hours: {} mg/L at the file's tolerance", (_Z, _ZS + ("default_tolerance", "max_abs_error_mgL")), ".2e"),
+    ("journal", T16C, "mg/L at the file's tolerance, {} mg/L at 1e-9 |", (_Z, _ZS + ("tolerance_1e-9", "max_abs_error_mgL")), ".2e"),
+    ("journal", T16C, "| {} and 1.19e-07 mg/L | within both |", (_Z, ("superposition", "on_grid_member", "by_tolerance", "default_tolerance", "max_abs_error_mgL")), ".2e"),
+    ("journal", T16C, "1.1 times the dose | {} and 2.38e-07", (_Z, _ZS + ("default_tolerance", "dose_axis_max_abs_diff_mgL")), ".2e"),
+    ("journal", T16C, "1.1 times the dose | 9.81e-06 and {} mg/L", (_Z, _ZS + ("tolerance_1e-9", "dose_axis_max_abs_diff_mgL")), ".2e"),
+    ("journal", T16C, "scored member | {} of 92 junctions' daily means", (_Z, ("superposition", "effect", "junctions_moved")), "d"),
+    ("journal", T16C, "below 0.2 mg/L at {} junctions, against 36", (_Z, ("superposition", "effect", "junctions_daily_min_below_0.2_half_at_lake")), "d"),
+    ("journal", T16C, "below 0.2 mg/L at 42 junctions, against {} |", (_Z, ("superposition", "effect", "junctions_daily_min_below_0.2_today")), "d"),
+    ("journal", T16C, "(the largest by {} mg/L)", (_Z, ("superposition", "effect", "largest_drop_mgL")), ".3f"),
+    ("journal", T16C, "held-out sites: RMSE {} mg/L, coverage90", (_Z, _ZH + ("held_out_sites", "rmse")), ".3f"),
+    ("journal", T16C, "held-out sites: RMSE 0.154 mg/L, coverage90 {}, 5 of 7", (_Z, _ZH + ("held_out_sites", "coverage90")), ".3f"),
+    ("journal", T16C, "found, {} false alarms (30 samples)", (_Z, _ZH + ("held_out_sites", "false_alarms")), "d"),
+    ("journal", T16C, "the route's own taps: {}, 0.867", (_Z, _ZH + ("all", "rmse")), ".3f"),
+    ("journal", T16C, "the route's own taps: 0.114, {}, 5 of 7", (_Z, _ZH + ("all", "coverage90")), ".3f"),
+    ("journal", T16C, "network-mean baseline ({} and 0.322)", (_Z, _ZH + ("held_out_sites", "rmse_network_mean")), ".3f"),
+    ("journal", T16C, "network-mean baseline (0.346 and {})", (_Z, _ZH + ("all", "rmse_network_mean")), ".3f"),
+    ("journal", T16C, "its held-out sites RMSE {} mg/L, coverage90", "t16c_committed_hos_rmse", ".3f"),
+    ("journal", T16C, "its held-out sites RMSE 0.068 mg/L, coverage90 {} |", "t16c_committed_hos_cov90", ".3f"),
+    ("journal", T16C, "| {} readings, 0 in the samples fitted", (_Z, ("analyzer", "inlet_readings")), ",d"),
+    ("journal", T16C, "(33 left; {} without the role column)", (_Z, ("analyzer", "without_role_column", "rows_in_S")), "d"),
+    ("journal", T16C, "without the role column); Lake {} mg/L, r_Lake", (_Z, ("analyzer", "inlet_residual_mgL")), ".3f"),
+    ("journal", T16C, "Lake 0.519 mg/L, r_Lake {}; 4 of 4", (_Z, ("analyzer", "ratios", "Lake")), ".4f"),
+    ("journal", T16C, "held-out RMSE {} without the file", "t16c_pilot_rmse_without", ".3f"),
+    ("journal", T16C, "without the file, {} with Lake at half", "t16c_pilot_rmse_with", ".4f"),
+    ("journal", T16C, "Net3 with no samples flags {}, against", "t16c_app_flagged_with", "s"),
+    ("journal", T16C, "flags 41 of 92, against {}; cloud mode", "t16c_app_flagged_without", "s"),
+    ("journal", T16C, "(label `post_task16c`) | {} of", (_BR, _T16CR + ("vs_committed", "n_byte_identical")), "d"),
+    ("journal", T16C, "files byte-identical; default demo {} of 92 flagged", (_BR, _T16CR + ("app_default_demo", "flagged")), "d"),
+    ("journal", T16C, "default demo 42 of 92 flagged, {} of 36 found, 1 false alarm | unchanged |", (_BR, _T16CR + ("app_default_demo", "found")), "d"),
+    ("README", L15, "superpose within {} mg/L at the file's quality tolerance", (_Z, _ZS + ("default_tolerance", "max_abs_error_mgL")), ".2e"),
+    ("README", L15, "held-out RMSE from {} to 0.0997 mg/L", "t16c_pilot_rmse_without", ".3f"),
+    ("README", L15, "held-out RMSE from 0.077 to {} mg/L", "t16c_pilot_rmse_with", ".4f"),
+    ("README", L15, "gave a mean monthly RMSE of {} mg/L and coverage90 0.900 at held-out sites", (_Z, _ZH + ("held_out_sites", "rmse")), ".3f"),
+    ("README", L15, "gave a mean monthly RMSE of 0.154 mg/L and coverage90 {} at held-out sites", (_Z, _ZH + ("held_out_sites", "coverage90")), ".3f"),
+    ("README", L15, "on fewer samples ({} or 27 of the month's 30", (_Z, _ZHS + (0, "n_train_min")), "d"),
+    ("README", L15, "on fewer samples (21 or {} of the month's 30", (_Z, _ZHS + (0, "n_train_max")), "d"),
+    ("README", L15, "21 or 27 of the month's {}, since", (_Z, ("holdout", "by_month", "all", 0, "n_train")), "d"),
+    # the review of task 16c (journal findings 7, 10 and 14 and the numbers table)
+    ("journal", T16C, "dropped ({} of the month's 30 for a group of 3", (_Z, _ZHS + (0, "n_train_min")), "d"),
+    ("journal", T16C, "of the month's {} for a group of 3", (_Z, ("holdout", "by_month", "all", 0, "n_train")), "d"),
+    ("journal", T16C, "for a group of 3, {} for the group of 1", (_Z, _ZHS + (0, "n_train_max")), "d"),
+    ("journal", T16C, "each held-out-site fit on {} or 27 samples", (_Z, _ZHS + (0, "n_train_min")), "d"),
+    ("journal", T16C, "each held-out-site fit on 21 or {} samples", (_Z, _ZHS + (0, "n_train_max")), "d"),
+    ("journal", T16C, "`n_train_max` ({} and 27 here)", (_Z, _ZHS + (0, "n_train_min")), "d"),
+    ("journal", T16C, "`n_train_max` (21 and {} here)", (_Z, _ZHS + (0, "n_train_max")), "d"),
+    ("journal", T16C, "the record's case: {} readings in January to March", (_Z, ("analyzer", "review", "outside_window", "inlet_readings")), "d"),
+    ("journal", T16C, "an inlet tap leaves its {} readings out", "t16c_pilot_inlet_tap_readings", "d"),
+    ("journal", T16C, "readings out ({} of the 78 samples fitted)", "t16c_pilot_fitted_with_inlet_tap", "d"),
+    ("journal", T16C, "readings out (72 of the {} samples fitted)", "t16c_pilot_fitted_without", "d"),
+    ("README", L15, "against {} and 0.867 at the route's own taps", (_Z, _ZH + ("all", "rmse")), ".3f"),
 ]
 
 

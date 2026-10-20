@@ -11,6 +11,9 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
     python -m residualmap.intake_exp snapping     # task 16b: outputs/intake/tap_snapping.json (not part of 'all';
                                                   # run it from a folder outside the repository, as EPANET writes
                                                   # scratch files into the working directory while it runs)
+    python -m residualmap.intake_exp zone         # task 16c: outputs/intake/zone_extract_Net3.json (not part of 'all';
+                                                  # run it from outside the repository too: the pilot's validation
+                                                  # writes EPANET's temp.inp, .rpt and .bin to the working directory)
 
 - elevation_prv_ky10.json: ky10 (five PRVs) with its own junction elevations and with every junction at one elevation
   (the mean of its junctions'), 7-day water-age runs set up as every run is: how many junctions have an hour of the
@@ -34,6 +37,15 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
   and its variants, ky4 drawn half the other way, Net3's refusals, the georeference against a Lambert conformal conic
   truth, the review's cases, and a measurement of the ky4 misses made after the stop (not a rescoring); the task16b
   checks rerun each part and compare.
+
+- zone_extract_Net3.json (task 16c): per-inlet residuals on Net3 (two reservoirs): ratios (1, 1) as today's path, a
+  fresh grid at them against the cached grid's recorded sha256; the superposition of the two inlets at one member (kb
+  0.40, kw 0.70 m/day, the truth's default and off the grid's kw axis; a member on the grid added after the scored run)
+  against the pre-registered bars, at the file's quality tolerance and at 1e-9, with the dose axis and the map's
+  change for information; leave-3-sites-out validation on a synthetic fixed route (10 taps, no rotating taps), each
+  group fit's training size recorded; an online analyzer at a zone inlet read as a boundary condition, with the
+  refusals and the review's cases (a declared inlet with no usable reading in the window, roles that mark no inlet);
+  the task16c checks rerun each part.
 
 Every file is built from public models (WNTR's bundled networks, edited by fixtures.py), so the results are converter
 self-consistency on public models, never a test on a utility's own files.
@@ -1805,10 +1817,305 @@ def snapping_record() -> dict:
                 "review": part_review_16b(paths)}
 
 
+# ----------------------------------------------------------------------------- task 16c: zone extracts
+RECORD_16C = os.path.join(OUT, "zone_extract_Net3.json")
+ZONE_NET = "Net3"                      # two entry points, its reservoirs River and Lake
+ZONE_RATIOS = {"River": 1.0, "Lake": 0.5}
+SUPERPOSE_BAR = {"default_tolerance": 5e-5, "tolerance_1e-9": 1e-6}   # mg/L, pre-registered (plan task 16c)
+TIGHT_TOLERANCE = 1e-9                 # EPANET's quality tolerance for the second bar, in the model's units
+DOSE_AXIS_MULT = 1.1                   # the dose axis's largest multiplier (simgp.DOSE_GRID)
+ZONE_DOSE = 1.2
+HOLDOUT_K = 3                          # holdout_sites_fixed_route: leave 3 sites out
+FIXED_ROUTE = {"per_month": 10, "rotating": 0, "seed": 0, "months": 6}   # pilot.synthetic_log, no rotating taps
+ZONE_CHANGE_MGL = 0.1                  # the effect part: a junction's daily mean 'moves' by more than this
+GRID24_FULL_NET3_SHA256 = "bc849e767dc6e82e41ed3a3bc09e4b673fba8cb8b6698b15eb26efba006c99fb"   # checks.py's record
+
+
+def _grid_sha256(params, Z) -> str:
+    """checks._grid_sha256, the same bytes in the same order (intake_exp never imports the checks)."""
+    import hashlib
+    h = hashlib.sha256()
+    h.update(json.dumps([[float(v) for v in p] for p in params]).encode())
+    h.update(f"{Z.dtype.str}{Z.shape}".encode())
+    h.update(np.ascontiguousarray(Z).tobytes())
+    return h.hexdigest()
+
+
+ZONE_GRID_MEMBER = (0.40, 0.60, 1.0)  # added after the scored run: MEMBER's kw 0.70 m/day is the truth's default and
+                                       # not on the grid's kw axis (0.60 and 1.00 are its neighbours); this one is a
+                                       # member of every free-chlorine grid
+
+
+def _zone_run(ratios, tol=None, dose: float = ZONE_DOSE, keep_inp: bool = False, member=MEMBER):
+    """One member of Net3 (kb, kw, gamma; demand and roughness x1) at these inlet ratios and quality tolerance, hour x
+    junction (last day), run in a temporary folder; with keep_inp also the .inp WNTR wrote, without its date line."""
+    from .simulate import simulate_nominal_chlorine
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_") as d:
+        p = os.path.join(d, "m")
+        c = simulate_nominal_chlorine(ZONE_NET, *member, dose, 1.0, 1.0, file_prefix=p, inlet_ratios=ratios,
+                                      quality_tolerance=tol)
+        if not keep_inp:
+            return c
+        with open(p + ".inp") as fh:
+            return c, "".join(line for line in fh if not line.startswith("; Created:"))
+
+
+def part_zone_identity(fresh_grid: bool = True) -> dict:
+    """inlet_ratios_identity: ratios (1, 1) are today's path.  They normalize to None, so do two equal residuals; the
+    cache name is today's; one member's .inp is byte for byte today's (with ratios given and without); and, with
+    fresh_grid, a fresh 675-run grid at ratios (1, 1), built in memory, has the sha256 recorded for the cached grid."""
+    from .importers import inlet_ratios_from
+    from .simgp import build_grid_24h, grid_cache_path
+    from .simulate import nominal_scenario, normalize_inlet_ratios, source_nodes
+    sc = nominal_scenario(ZONE_NET)
+    entry = source_nodes(sc.wn)
+    ones = {e: 1.0 for e in entry}
+    c0, t0 = _zone_run(None, keep_inp=True)
+    c1, t1 = _zone_run(ones, keep_inp=True)
+    out = {"entry_points": list(entry), "ratios": ones, "normalized": normalize_inlet_ratios(ones),
+           "equal_residuals_give_ratios": inlet_ratios_from({e: 0.8 for e in entry}, entry)[0],
+           "cache_name_with_ratios": os.path.basename(grid_cache_path(sc, "outputs/cache", "full", None, ones)),
+           "cache_name_today": os.path.basename(grid_cache_path(sc, "outputs/cache", "full")),
+           "member_inp_identical": t0 == t1, "member_values_identical": bool(c0.equals(c1))}
+    if fresh_grid:
+        p, Z = build_grid_24h(sc, "full", preflight_paths=[os.path.join(REPO, "outputs", "cache")], inlet_ratios=ones)
+        out.update(fresh_grid_members=len(p), fresh_grid_sha256=_grid_sha256(p, Z),
+                   fresh_grid_sha256_matches_recorded=_grid_sha256(p, Z) == GRID24_FULL_NET3_SHA256)
+    return out
+
+
+def part_zone_superposition() -> dict:
+    """inlet_ratios_superpose: Net3 at ratios (1.0, 0.5), one member (MEMBER: kb 0.40, kw 0.70 m/day, the truth's
+    default, which is off the grid's kw axis), against C(1, 0) + 0.5 C(0, 1), at the file's quality tolerance and at
+    1e-9; the pre-registered bars; the dose axis at fixed ratios (information, no bar); how much the half residual at
+    Lake moves the map at this member; and, added after the scored run, the same test at a member on the grid
+    (ZONE_GRID_MEMBER)."""
+    from .simulate import load
+    tol_file = float(load(ZONE_NET).options.quality.tolerance)
+    entry = list(ZONE_RATIOS)
+    only = {e: {f: (1.0 if f == e else 0.0) for f in entry} for e in entry}
+    out = {"network": ZONE_NET, "member": {"kb_per_day": MEMBER[0], "kw_m_per_day": MEMBER[1], "gamma": MEMBER[2],
+                                           "demand": 1.0, "rough": 1.0, "dose_mgL": ZONE_DOSE},
+           "ratios": dict(ZONE_RATIOS), "file_tolerance": tol_file,
+           "file_tolerance_in_grid_units_mgL": tol_file / 1000.0,
+           "units_note": "the grid writes each dose to EPANET in the model's units, a thousand times its mg/L, so the "
+                         "file's tolerance of 0.01 is 1e-5 mg/L in the grid's units",
+           "bar_mgL": dict(SUPERPOSE_BAR), "by_tolerance": {}}
+    runs = {}
+    for label, tol in (("default_tolerance", None), ("tolerance_1e-9", TIGHT_TOLERANCE)):
+        both = _zone_run(ZONE_RATIOS, tol).values
+        parts = {e: _zone_run(only[e], tol).values for e in entry}
+        summed = sum(ZONE_RATIOS[e] * parts[e] for e in entry)
+        err = float(np.abs(both - summed).max())
+        dose_up = _zone_run(ZONE_RATIOS, tol, dose=ZONE_DOSE * DOSE_AXIS_MULT).values
+        d_err = float(np.abs(dose_up - DOSE_AXIS_MULT * both).max())
+        out["by_tolerance"][label] = {"tolerance": tol_file if tol is None else tol, "max_abs_error_mgL": err,
+                                      "junction_hours": int(both.size), "max_concentration_mgL": float(both.max()),
+                                      "bar_mgL": SUPERPOSE_BAR[label], "passed": err <= SUPERPOSE_BAR[label],
+                                      "dose_axis_max_abs_diff_mgL": d_err, "dose_axis_multiplier": DOSE_AXIS_MULT}
+        runs[label] = both
+    out["passed"] = all(v["passed"] for v in out["by_tolerance"].values())
+    # added after the scored run (the bars applied, the scored result above unchanged): the same test at a member that
+    # is on the grid's axes
+    on = {"member": {"kb_per_day": ZONE_GRID_MEMBER[0], "kw_m_per_day": ZONE_GRID_MEMBER[1],
+                     "gamma": ZONE_GRID_MEMBER[2], "demand": 1.0, "rough": 1.0, "dose_mgL": ZONE_DOSE},
+          "why": "the scored member's kw (0.70 m/day, the truth's default) is not on the grid's kw axis; this member is "
+                 "on every free-chlorine grid; added after the scored run, which stands as scored",
+          "by_tolerance": {}}
+    for label, tol in (("default_tolerance", None), ("tolerance_1e-9", TIGHT_TOLERANCE)):
+        both = _zone_run(ZONE_RATIOS, tol, member=ZONE_GRID_MEMBER).values
+        summed = sum(ZONE_RATIOS[e] * _zone_run(only[e], tol, member=ZONE_GRID_MEMBER).values for e in entry)
+        err = float(np.abs(both - summed).max())
+        on["by_tolerance"][label] = {"max_abs_error_mgL": err, "bar_mgL": SUPERPOSE_BAR[label],
+                                     "within_bar": err <= SUPERPOSE_BAR[label]}
+    out["on_grid_member"] = on
+    today = _zone_run(None).values
+    half = runs["default_tolerance"]
+    dm = today.mean(axis=0) - half.mean(axis=0)
+    out["effect"] = {"what": "this member with Lake's residual half River's, against every inlet at the one dose "
+                             "(today's path), daily means at each junction",
+                     "junctions": int(today.shape[1]), "moved_more_than_mgL": ZONE_CHANGE_MGL,
+                     "junctions_moved": int((np.abs(dm) > ZONE_CHANGE_MGL).sum()),
+                     "largest_drop_mgL": float(dm.max()),
+                     "junctions_daily_min_below_0.2_today": int((today.min(axis=0) < 0.2).sum()),
+                     "junctions_daily_min_below_0.2_half_at_lake": int((half.min(axis=0) < 0.2).sum())}
+    return out
+
+
+def _subset_rows(summary, subset: str) -> list:
+    keep = ("held_out_month", "n_train", "n_test", "rmse", "mae", "rmse_network_mean", "coverage50", "coverage80",
+            "coverage90", "coverage95", "band90_width_mgL", "n_true_below", "recall_below", "false_alarms")
+    s = summary[summary.taps == subset]
+    extra = (("sites", "site_groups", "sites_per_group", "n_train_min", "n_train_max") if subset == "held_out_sites"
+             else ())
+    return [{k: (int(r[k]) if k in ("n_train", "n_test", "n_true_below", "false_alarms") + extra else r[k])
+             for k in keep + extra} for _, r in s.iterrows()]
+
+
+def _subset_mean(summary, subset: str) -> dict:
+    from .pilot import LEVELS
+    g = summary[summary.taps == subset]
+    w = g.n_test / g.n_test.sum()
+    viol = g.n_true_below.sum()
+    return {"n": int(g.n_test.sum()), "rmse": float((g.rmse * w).sum()),
+            "rmse_network_mean": float((g.rmse_network_mean * w).sum()),
+            **{f"coverage{q}": float((g[f"coverage{q}"] * w).sum()) for q in LEVELS},
+            "n_true_below": int(viol), "found_below": int(round(float((g.recall_below.fillna(0) * g.n_true_below).sum()))),
+            "false_alarms": int(g.false_alarms.sum())}
+
+
+def part_zone_holdout() -> dict:
+    """holdout_sites_fixed_route: pilot.validate with holdout_sites=3 on a synthetic Net3 log of a fixed route (10
+    taps, no rotating taps, six months; the hold-out is the last three).  Every site of each held-out month is
+    predicted once by a fit that never saw it; its table and means, beside the same months' 'all' rows (the fixed
+    route's own taps, seen in training: a month-ahead forecast at sampled places)."""
+    from .pilot import HOLDOUT_SITES_SEED, synthetic_log, validate
+    cache = os.path.join(REPO, "outputs", "cache")
+    log, inp = synthetic_log(ZONE_NET, **FIXED_ROUTE)
+    preds, summary = validate(inp, log, dose=ZONE_DOSE, threshold=0.2, window_months=3, cache_dir=cache,
+                              holdout_sites=HOLDOUT_K)
+    ps = preds[preds.validation == "held_out_sites"]
+    test = preds[preds.validation == "held_out_month"]
+    per = lambda f: f.groupby(["month", "junction"]).size().sort_index()
+    groups = ps.groupby(["month", "site_group"]).junction.nunique()
+    return {"network": ZONE_NET, "log": dict(FIXED_ROUTE), "taps": sorted(set(log.tap_id)), "samples": int(len(log)),
+            "months": sorted(set(log.month)), "held_out_months": sorted(set(summary.held_out_month)),
+            "k": HOLDOUT_K, "seed": HOLDOUT_SITES_SEED + FIXED_ROUTE["seed"],
+            "every_site_predicted_once": bool(per(ps).equals(per(test))), "held_out_predictions": int(len(ps)),
+            "sites_per_group": sorted(int(v) for v in groups.values),
+            "by_month": {"held_out_sites": _subset_rows(summary, "held_out_sites"),
+                         "all": _subset_rows(summary, "all")},
+            "mean": {"held_out_sites": _subset_mean(summary, "held_out_sites"), "all": _subset_mean(summary, "all")},
+            "subsets": sorted(set(summary.taps))}
+
+
+def part_zone_analyzer(paths: dict) -> dict:
+    """analyzer_is_boundary_not_data: analyzer_15min.csv read with zone_tap_map.csv, whose role column makes AN-1
+    Lake's inlet analyzer.  Its 2,880 readings leave the frame the model is fitted on (S) and set Lake's residual,
+    their median, equal to the median of what the fixture wrote; River's residual comes from an inlet residuals file;
+    r_Lake = Lake's residual over River's.  The same log with the task-16 tap map (no role column) keeps AN-1 as an
+    analyzer, thinned to one reading a day, as before.  And the refusals: an inlet missing, a node that is no entry
+    point, a residual below detection, an inlet given twice (the file and an inlet tap)."""
+    from . import fixtures as FX
+    from .importers import (LogRefused, combine_inlet_residuals, inlet_ratios_from, read_grab_log,
+                            read_inlet_residuals)
+    rd = lambda n: _read_bytes(paths[n])
+    tap, inlet = FX.ZONE_INLET_TAP
+    g = read_grab_log(rd("analyzer_15min.csv"), "analyzer_15min.csv", rd("zone_tap_map.csv"), "zone_tap_map.csv")
+    g0 = read_grab_log(rd("analyzer_15min.csv"), "analyzer_15min.csv", rd("task16_tap_map.csv"), "task16_tap_map.csv")
+    S = g.frame[["junction", "hour", "y"]]
+    taps_res = g.inlet_residuals()
+    window = g.window()[2]["months"]
+    file_res, _ = read_inlet_residuals(rd("zone_inlet_residuals.csv"), "zone_inlet_residuals.csv")
+    comb = combine_inlet_residuals(file_res, taps_res)
+    ratios, info = inlet_ratios_from(comb, list(ZONE_RATIOS))
+    expected = float(np.median(FX.analyzer_values(FX.ANALYZER_SITES.index(tap))))
+
+    def refusal(fn) -> str | None:
+        try:
+            fn()
+        except LogRefused as e:
+            return str(e)
+        return None
+    both = {inlet: 0.5, "River": 1.2}
+    review = _zone_review_cases(paths)
+    return {"inlet_tap": tap, "inlet": inlet, "inlet_readings": int(len(g.inlets)),
+            "inlet_rows_in_S": int((g.frame.tap_id == tap).sum()), "rows_in_S": int(len(S)),
+            "S_junctions": sorted(set(S.junction)), "other_analyzer_rows_in_S": int((g.frame.tap_id == "AN-2").sum()),
+            "grab_rows_in_S": int((~g.frame.tap_id.isin(FX.ANALYZER_SITES)).sum()),
+            "inlet_residual_mgL": taps_res[inlet]["residual_mgL"], "expected_median_mgL": expected,
+            "inlet_residual_in_the_window_mgL": g.inlet_residuals(window)[inlet]["residual_mgL"], "window": window,
+            "river_from_file_mgL": file_res["River"], "ratios": ratios, "highest_mgL": info["highest_mgL"],
+            "r_inlet_expected": round(expected / FX.ZONE_RIVER_MGL, 6),
+            "note": next(n for n in g.notes if "zone inlet" in n),
+            "without_role_column": {"inlet_tap_rows_in_S": int((g0.frame.tap_id == tap).sum()),
+                                    "inlets": g0.inlets, "rows_in_S": int(len(g0.frame))},
+            "ugl_file": read_inlet_residuals(rd("zone_inlets_ugl.csv"), "zone_inlets_ugl.csv")[0],
+            "refused": {
+                "inlet_missing": refusal(lambda: inlet_ratios_from(read_inlet_residuals(rd("zone_inlets_missing.csv"))[0],
+                                                                   list(ZONE_RATIOS))),
+                "not_an_entry_point": refusal(lambda: inlet_ratios_from(
+                    read_inlet_residuals(rd("zone_inlets_unknown.csv"))[0], list(ZONE_RATIOS))),
+                "below_detection": refusal(lambda: read_inlet_residuals(rd("zone_inlets_censored.csv"))),
+                "given_twice": refusal(lambda: combine_inlet_residuals(both, taps_res))},
+            "review": review}
+
+
+def _zone_review_cases(paths: dict) -> dict:
+    """The review of task 16c's cases, read as the app and the pilot read them: a declared inlet tap (INL, Lake's)
+    whose 3 readings are all before the grab rows' 3-month window is refused in the app's window and used over the
+    pilot's whole log, its readings listed as not used in the window; the same tap read only below detection is
+    refused everywhere; role cells that mention an inlet but mark none are read as taps, with a warning; a tap marked
+    as an inlet at a junction is refused naming the tap and its role; and three inlet files are refused (a µg/L value
+    with a thousands separator, a total chlorine column in free-chlorine mode, a residual under a hundredth of the
+    highest), while the µg/L file with decimal commas is read with its two notes."""
+    from . import fixtures as FX
+    from .importers import (LOG_WINDOW_MONTHS, LogRefused, inlet_ratios_from, inlet_tap_residuals, read_grab_log,
+                            read_inlet_residuals)
+    from .simulate import load, source_nodes
+    rd = lambda n: _read_bytes(paths[n])
+    wn = load(ZONE_NET)
+    entry, J = source_nodes(wn), wn.junction_name_list
+
+    def refusal(fn) -> str | None:
+        try:
+            fn()
+        except LogRefused as e:
+            return str(e)
+        return None
+    log = lambda name, taps: read_grab_log(rd(name), name, rd(taps), taps).only_junctions(J)
+    g = log("zone_inlet_window_log.csv", "zone_window_tap_map.csv")
+    months = g.window(LOG_WINDOW_MONTHS)[2]["months"]
+    whole = inlet_tap_residuals(g, entry, None)
+    gc = log("zone_inlet_censored_log.csv", "zone_window_tap_map.csv")
+    gn = log("zone_inlet_window_log.csv", "zone_tap_map_not_inlet.csv")
+    gw = log("zone_inlet_window_log.csv", "zone_tap_map_wrong_node.csv")
+    return {"outside_window": {"inlet_readings": int(len(g.inlets)), "window": months,
+                               "inlet_months": sorted(set(g.inlets.month)),
+                               "app_window_refused": refusal(lambda: inlet_tap_residuals(g, entry, months)),
+                               "pilot_whole_log_mgL": whole[FX.ZONE_WINDOW_INLET[1]]["residual_mgL"],
+                               "expected_median_mgL": float(np.median(FX.ZONE_WINDOW_INLET_MGL)),
+                               "listed_not_used_in_window": len(g.inlet_unused(months)),
+                               "note": next(n for n in g.notes if "zone inlet" in n)},
+            "only_below_detection": {"usable": int(len(gc.inlets)),
+                                     "listed_not_used": sum(d["reason"].startswith("zone inlet ") for d in gc.dropped),
+                                     "refused": refusal(lambda: inlet_tap_residuals(gc, entry, None)),
+                                     "note": next(n for n in gc.notes if "zone inlet" in n)},
+            "roles_that_mark_no_inlet": {"roles": list(FX.ZONE_NEAR_MISS_ROLES), "inlet_taps": len(gn.inlet_taps),
+                                         "rows_fitted": int(len(gn.frame)), "rows_in_log": gn.n_rows,
+                                         "warning": next(w for w in gn.warnings if "mention" in w)},
+            "inlet_at_a_junction_refused": refusal(lambda: inlet_tap_residuals(gw, entry, None)),
+            "files_refused": {
+                "thousands_separator_ugl": refusal(lambda: read_inlet_residuals(rd("zone_inlets_thousands_ugl.csv"))),
+                "total_chlorine_column": refusal(lambda: read_inlet_residuals(rd("zone_inlets_total.csv"))),
+                "under_a_hundredth": refusal(lambda: inlet_ratios_from(
+                    read_inlet_residuals(rd("zone_inlets_tiny.csv"))[0], entry))},
+            "ugl_file_notes": read_inlet_residuals(rd("zone_inlets_ugl.csv"), "zone_inlets_ugl.csv")[1]["notes"]}
+
+
+def zone_record(fresh_grid: bool = True) -> dict:
+    from . import fixtures as FX
+    _quiet()
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.ZONE_FIXTURES)
+        return {"about": "Task 16c's zone extracts on Net3, a public network with two entry points (its reservoirs "
+                         "River and Lake), simulated only (R6): each inlet dosed at its own share of the dose, the "
+                         "superposition of the two inlets at one member (kb 0.40 per day, kw 0.70 m/day, the truth's "
+                         "default and off the grid's kw axis; a member on the grid added after the scored run) against "
+                         "the pre-registered bars (part 'superposition'), ratios (1, 1) as today's path (part "
+                         "'identity'), leave-sites-out validation on a synthetic fixed route of 10 taps, with each group "
+                         "fit's training size (part 'holdout'), and an online analyzer at a zone inlet read as a "
+                         "boundary condition, not data, with the review's cases of declared inlets (part 'analyzer', "
+                         "invented readings). Written by python -m residualmap.intake_exp zone; the task16c checks in "
+                         "residualmap/checks.py rerun every part and compare.",
+                "identity": part_zone_identity(fresh_grid), "superposition": part_zone_superposition(),
+                "holdout": part_zone_holdout(), "analyzer": part_zone_analyzer(paths)}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples",
-                                                "snapping"),
+                                                "snapping", "zone"),
                     default="all")
     ap.add_argument("--ky10", action="store_true", help="timing: also time ky10's grid (about 4 minutes)")
     ap.add_argument("--fixed-only", action="store_true", help="timing: rewrite only the records copied from logs "
@@ -1826,6 +2133,9 @@ def main(argv=None) -> int:
         return 0
     if a.what == "snapping":             # task 16b (not part of 'all')
         _write(RECORD_16B, snapping_record())
+        return 0
+    if a.what == "zone":                 # task 16c (not part of 'all'); a fresh 675-run Net3 grid, about 15 s
+        _write(RECORD_16C, zone_record())
         return 0
     if a.what in ("all", "elevation"):      # first: the readiness text quotes it
         _write(ELEVATION_PRV, elevation_prv())

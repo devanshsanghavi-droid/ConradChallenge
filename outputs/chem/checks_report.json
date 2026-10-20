@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 113,
+ "n_pass": 119,
  "n_fail": 0,
  "n_skipped": 0,
  "run_log_only": {
@@ -1306,14 +1306,14 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 484,
+    "registry_ok": 535,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 1857,
+     "code or path": 1966,
      "date": 75,
-     "identifier": 693,
+     "identifier": 719,
      "link target": 12,
      "run cost (logs, df)": 7,
      "seed range": 20,
@@ -1321,21 +1321,21 @@
      "time of day": 127
     },
     "traced": {
-     "iteration-4 outputs": 256,
-     "file cited in its section": 3482,
-     "file cited in its paragraph": 5155,
-     "outputs": 9,
+     "iteration-4 outputs": 260,
+     "file cited in its section": 3612,
+     "file cited in its paragraph": 5260,
+     "outputs": 10,
      "iteration-5 outputs": 10
     },
-    "n_tokens": 8937,
+    "n_tokens": 9177,
     "power_caught_of_tested": {
      "decimal": [
-      1110,
-      9003
+      1162,
+      9123
      ],
      "integer": [
-      1293,
-      7891
+      1312,
+      8161
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 45,
+    "iteration4_texts_checked": 48,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -2616,6 +2616,195 @@
     },
     "epanet_scratch_in_cwd_during_uploads": 0,
     "epanet_scratch_upload_steps_seen": 3
+   }
+  },
+  {
+   "name": "inlet_ratios_identity",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "bar": "pre-registered: ratios (1, 1) give the cached grid, sha256 equal; met",
+    "fresh_grid_sha256_matches_recorded": true,
+    "cached_file_sha256_matches": true,
+    "cache_name": "grid24_full_Net3.pkl",
+    "member_inp_identical": true
+   }
+  },
+  {
+   "name": "inlet_ratios_superpose",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "bar": "pre-registered: within 5e-5 mg/L at the file's tolerance and 1e-6 mg/L at 1e-9; met",
+    "max_abs_error_mgL": {
+     "default_tolerance": 1.3571232557296753e-05,
+     "tolerance_1e-9": 1.1920928955078125e-07
+    },
+    "on_grid_member_max_abs_error_mgL": {
+     "default_tolerance": 8.959323167800903e-06,
+     "tolerance_1e-9": 1.1920928955078125e-07
+    },
+    "dose_axis_max_abs_diff_mgL": {
+     "default_tolerance": 9.812414646148682e-06,
+     "tolerance_1e-9": 2.384185791015625e-07
+    },
+    "decay_grid_member_equals_run_max_abs_diff": 0.0,
+    "tagged_name": true,
+    "bad_ratios_refused": {
+     "grid_build": 2,
+     "simgp24_and_validate": 4
+    },
+    "effect": {
+     "what": "this member with Lake's residual half River's, against every inlet at the one dose (today's path), daily means at each junction",
+     "junctions": 92,
+     "moved_more_than_mgL": 0.1,
+     "junctions_moved": 30,
+     "largest_drop_mgL": 0.5781458020210266,
+     "junctions_daily_min_below_0.2_today": 36,
+     "junctions_daily_min_below_0.2_half_at_lake": 42
+    }
+   }
+  },
+  {
+   "name": "holdout_sites_fixed_route",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "fixed_route": {
+     "held_out_sites": {
+      "n": 30,
+      "rmse": 0.153616810282046,
+      "coverage90": 0.8999999999999999,
+      "n_true_below": 7,
+      "found_below": 5,
+      "false_alarms": 2
+     },
+     "all": {
+      "n": 30,
+      "rmse": 0.11426674514543786,
+      "coverage90": 0.8666666666666667,
+      "n_true_below": 7,
+      "found_below": 5,
+      "false_alarms": 1
+     }
+    },
+    "synthetic_pilot_net3_unchanged": {
+     "rmse": 0.07737841187902948,
+     "coverage90": 0.9230769230769231
+    },
+    "flag_leaves_every_other_row": true,
+    "committed_log_held_out_sites": {
+     "n": 39,
+     "rmse": 0.06808681238956212,
+     "rmse_persistence": null,
+     "rmse_network_mean": 0.2996929225572572,
+     "coverage50": 0.641025641025641,
+     "coverage80": 0.8974358974358974,
+     "coverage90": 0.9743589743589743,
+     "coverage95": 0.9743589743589743
+    },
+    "group_fit_training_sizes": {
+     "min": 21,
+     "max": 27,
+     "month": 30
+    },
+    "group_leaving_no_training_refused": true
+   }
+  },
+  {
+   "name": "analyzer_is_boundary_not_data",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "inlet_readings": 2880,
+    "inlet_rows_in_S": 0,
+    "rows_in_S": 33,
+    "inlet_residual_mgL": 0.519,
+    "r_lake": 0.4325,
+    "refused": [
+     "below_detection",
+     "given_twice",
+     "inlet_missing",
+     "not_an_entry_point"
+    ],
+    "review_cases": {
+     "inlet_outside_window_refused": true,
+     "inlet_only_below_detection_refused": true,
+     "roles_marking_no_inlet_read_as_taps": 3,
+     "inlet_at_a_junction_refused": true,
+     "inlet_files_refused": [
+      "thousands_separator_ugl",
+      "total_chlorine_column",
+      "under_a_hundredth"
+     ]
+    }
+   }
+  },
+  {
+   "name": "pilot_inlet_residuals",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "dose_taken": "1.2",
+    "grids_built": [
+     "grid24_full_Net3_inlets_1605ada550.pkl",
+     "grid24_full_Net3_inlets_da13f4432e.pkl"
+    ],
+    "rmse_all": {
+     "without_inlets": 0.07737841187902948,
+     "with_inlets": 0.09973177872153982,
+     "inlet_tap": 0.07580893080763684
+    },
+    "held_out_samples": {
+     "without_inlets": 39,
+     "inlet_tap": 36
+    },
+    "inlet_tap_readings": 6,
+    "samples_in_log": {
+     "without_inlets": 78,
+     "inlet_tap": 72
+    },
+    "refused": [
+     "chloramine",
+     "chloramine_inlet_tap",
+     "missing",
+     "plant",
+     "sites0",
+     "synthetic"
+    ]
+   }
+  },
+  {
+   "name": "app_inlet_residuals",
+   "group": "task16c",
+   "pass": true,
+   "detail": {
+    "uploaders_before_tick": [
+     "Grab log (CSV or Excel)",
+     "Tap map (CSV)"
+    ],
+    "uploaders_after_tick": [
+     "Grab log (CSV or Excel)",
+     "Tap map (CSV)",
+     "Inlet residuals (CSV)"
+    ],
+    "dose_label_with_inlets": "Highest residual entering the zone (mg/L)",
+    "flagged_without": "36 of 92",
+    "flagged_with_inlets": "41 of 92",
+    "grid_built_and_removed": "grid24_full_Net3_inlets_1605ada550.pkl",
+    "with_log_samples": 39,
+    "analyzer_inlet_samples": 33,
+    "analyzer_no_role_samples": 63,
+    "cloud_uploads_off_checkbox": false,
+    "cloud_uploads_on_flagged": "41 of 92",
+    "cloud_files_written_under_outputs": 0,
+    "dose_input_drawn_at_stops": [
+     "inlet file missing an inlet",
+     "inlet tap outside the window",
+     "cloud file over the size limit"
+    ],
+    "inlet_outside_window_refused": true,
+    "chloramine_offers_no_inlet_upload": true
    }
   },
   {

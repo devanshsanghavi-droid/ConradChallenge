@@ -380,7 +380,7 @@
    "blocking": [],
    "fixes": [],
    "warnings": [
-    "2 entry points (River, Lake): every one is dosed at the same value, the dose you set. If they carry different residuals, the map is off near them; a residual per inlet is planned."
+    "2 entry points (River, Lake): unless you give each inlet's residual, every one is dosed at the same value, the dose you set, and if they carry different residuals the map is off near them. An inlet residuals file (each inlet's node ID and its measured residual in mg/L) doses each one in proportion: on the main page, with the demo off, tick 'My zone's inlets carry different residuals' under '2. Your samples' and upload it there (free chlorine only, for now). Water age starts at 0 at every entry point, so in a zone cut from a larger system, whose water is already old when it enters, the water is older than the age map shows."
    ],
    "run_cost": {
     "grid": "full",
@@ -948,7 +948,7 @@
    ],
    "warnings": [
     "1 junction at elevation 0 in a model with pressure-control valves: J-16. If a 0 means 'not surveyed', the pressure there is wrong, and near a valve or a pressure-based control so are the flows. In a test on the public model ky10 (its 5 PRVs), setting every junction to one elevation moved the water age by more than 2 h at 90 of 920 junctions, by up to 47.4 h (outputs/intake/elevation_prv_ky10.json). Check these elevations in the modelling package.",
-    "2 entry points (R-1, R-2): every one is dosed at the same value, the dose you set. If they carry different residuals, the map is off near them; a residual per inlet is planned.",
+    "2 entry points (R-1, R-2): unless you give each inlet's residual, every one is dosed at the same value, the dose you set, and if they carry different residuals the map is off near them. An inlet residuals file (each inlet's node ID and its measured residual in mg/L) doses each one in proportion: on the main page, with the demo off, tick 'My zone's inlets carry different residuals' under '2. Your samples' and upload it there (free chlorine only, for now). Water age starts at 0 at every entry point, so in a zone cut from a larger system, whose water is already old when it enters, the water is older than the age map shows.",
     "Pumps but no controls: 10 of 13 pumps have no control, rule or speed pattern (open all the time: ~@Pump-1, ~@Pump-10, ~@Pump-11, ~@Pump-12, ~@Pump-2, ~@Pump-3 and 4 more), so each stays as the file starts it for all 7 days. If the real pumps cycle, the water age and the tanks' chlorine are wrong: export the model with its controls."
    ],
    "run_cost": {

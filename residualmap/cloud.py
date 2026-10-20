@@ -400,19 +400,23 @@ def prepare_upload(data: bytes, folder: str, disinfectant: str, name: str, app_r
         return None, rep
 
 
-def upload_grid(path: str, dose: float, chloramine: bool, grid: str, workers: int | None):
+def upload_grid(path: str, dose: float, chloramine: bool, grid: str, workers: int | None,
+                inlet_ratios: dict | None = None):
     """app.py's prepare for a visitor's upload in cloud mode, run in the folder (run_in_folder): the nominal model, its
-    features and the grid, built in memory (simgp.build_grid_24h) and never cached on disk.  (sc, X, (params, Z))."""
+    features and the grid, built in memory (simgp.build_grid_24h) and never cached on disk.  (sc, X, (params, Z)).
+    inlet_ratios (task 16c): a visitor's inlet residuals as dose ratios, so their grid stays in their session too (on
+    an example network as well); None is the grid before task 16c."""
     from . import chloramine as CA
     from .features import build_features
     from .simgp import build_grid_24h
     from .simulate import nominal_scenario
     sc = nominal_scenario(path, sample_hour=14, source_dose=dose)
     X = build_features(sc)
+    kw = {"inlet_ratios": inlet_ratios} if inlet_ratios else {}
     if chloramine:
-        data = build_grid_24h(sc, "chloramine", workers, CA.ca_condition())
+        data = build_grid_24h(sc, "chloramine", workers, CA.ca_condition(), **kw)
     else:
-        data = build_grid_24h(sc, grid, workers)
+        data = build_grid_24h(sc, grid, workers, **kw)
     return sc, X, data
 
 

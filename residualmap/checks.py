@@ -1,14 +1,16 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: groups task15, task15b, task16, task16b and task20, files built by residualmap/fixtures.py).
+and access (task 15 on: groups task15, task15b, task16, task16b, task20 and task16c, files built by
+residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
                                             # after task 14; 69 checks after task 14: 68 in the committed report,
                                             # plus the names check, skipped without the variable; 76 after task 15;
                                             # 102 after task 16 and its review, 101 in the committed report;
                                             # 103 after its final verification, 102 in the report; 109 after
-                                            # task 16b; 114 after task 20, 113 in the report; each run's time is
-                                            # in outputs/chem/checks_run.json)
+                                            # task 16b; 114 after task 20, 113 in the report; 120 after task
+                                            # 16c, 119 in the report; each run's time is in
+                                            # outputs/chem/checks_run.json)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
                                             # seasonal, organics and chloramine (MSX) checks (about 50 s after task 16)
     RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
@@ -140,7 +142,8 @@ def _cache_snapshot() -> dict:
     return out
 
 
-TAGGED_CACHE = re.compile(r"_(free|ca)_.*_[0-9a-f]{10}\.pkl$")   # a chemistry condition's tagged grid name
+TAGGED_CACHE = re.compile(r"_(free|ca)_.*_[0-9a-f]{10}\.pkl$"   # a chemistry condition's tagged grid name, and
+                          r"|_inlets_[0-9a-f]{10}\.pkl$")      # (task 16c) a grid at per-inlet dose ratios
 
 
 def _grid_sha256(params, Z) -> str:
@@ -2494,7 +2497,9 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "docs/templates/grab_log_template.csv", "docs/templates/grab_log_total_template.csv",
              "docs/templates/tap_map_by_id_template.csv", "docs/templates/plant_log_template.csv",
              "residualmap/cloud.py", "hosted/streamlit_app.py", "hosted/.streamlit/config.toml",       # task 20
-             "docs/deploy_streamlit_cloud.md", "docs/privacy.md", "requirements.txt")
+             "docs/deploy_streamlit_cloud.md", "docs/privacy.md", "requirements.txt",
+             "docs/templates/inlet_residuals_template.csv",                                         # task 16c
+             "outputs/intake/zone_extract_Net3.json")     # its review: the names check covers it before it is committed
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -5826,6 +5831,514 @@ def cloud_mode_uploads_leave_no_files():
 
 
 # ----------------------------------------------------------------------------- runner
+# ----------------------------------------------------------------------------- iteration 5, task 16c: zone extracts
+INTAKE_RECORD_16C = os.path.join(REPO, "outputs", "intake", "zone_extract_Net3.json")
+
+
+def _record_16c(part: str) -> dict:
+    """One part of the committed task-16c record (python -m residualmap.intake_exp zone)."""
+    with open(INTAKE_RECORD_16C) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_16c(got: dict, part: str) -> dict:
+    want = _record_16c(part)
+    diff = _json_diff(json.loads(json.dumps(_jsonable(got))), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _zone_fixtures():
+    """The task-16c fixtures built into a temporary folder."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), FX.ZONE_FIXTURES)
+
+
+@contextlib.contextmanager
+def _inlet_grids_removed():
+    """Grids at per-inlet ratios a check builds in outputs/cache (git-ignored) are removed afterwards; one that was
+    there before is moved aside first and put back, so the cache is as it was (repo_untouched watches it)."""
+    mine = lambda: {f for f in os.listdir(CACHE) if "_inlets_" in f}
+    aside = tempfile.mkdtemp(prefix="rm_t16c_aside_")
+    before = mine()
+    for f in before:
+        shutil.move(os.path.join(CACHE, f), os.path.join(aside, f))
+    built = []
+    try:
+        yield built
+    finally:
+        for f in sorted(mine()):
+            built.append(f)
+            os.remove(os.path.join(CACHE, f))
+        for f in before:
+            shutil.move(os.path.join(aside, f), os.path.join(CACHE, f))
+        shutil.rmtree(aside, ignore_errors=True)
+
+
+@check("task16c", quick=False)
+def inlet_ratios_identity():
+    """Plan task 16c's bar (pre-registered, met): Net3 with ratios (1, 1) gives the same grid as today.  The ratios,
+    and two equal residuals, normalize to None (today's code path); the cache name is today's, grid24_full_Net3.pkl;
+    one member's .inp is byte for byte today's and so are its values; a fresh 675-run grid at ratios (1, 1), built in
+    memory and never pickled, has the sha256 recorded for the cached grid (GRID24_FULL_NET3_SHA256), and equals the
+    cached file's when that git-ignored file is here.  Equals the committed record (part 'identity')."""
+    from . import intake_exp as E
+    t0 = time.time()
+    got = E.part_zone_identity()
+    secs = time.time() - t0
+    _same_as_16c(got, "identity")
+    assert got["normalized"] is None and got["equal_residuals_give_ratios"] is None, got
+    assert got["cache_name_with_ratios"] == got["cache_name_today"] == "grid24_full_Net3.pkl", got
+    assert got["member_inp_identical"] and got["member_values_identical"], got
+    assert got["fresh_grid_members"] == 675 and got["fresh_grid_sha256"] == GRID24_FULL_NET3_SHA256, got
+    f = os.path.join(CACHE, "grid24_full_Net3.pkl")
+    cached = None
+    if os.path.exists(f):
+        with open(f, "rb") as fh:
+            cached = _grid_sha256(*pickle.load(fh)) == GRID24_FULL_NET3_SHA256
+        assert cached, "the cached Net3 grid's sha256 is not the recorded one"
+    return {"bar": "pre-registered: ratios (1, 1) give the cached grid, sha256 equal; met",
+            "fresh_grid_sha256_matches_recorded": True, "cached_file_sha256_matches": cached,
+            "cache_name": got["cache_name_with_ratios"], "member_inp_identical": True,
+            "_volatile": {"seconds": secs}}
+
+
+@check("task16c")
+def inlet_ratios_superpose():
+    """Plan task 16c's bar (pre-registered, met): Net3 (two reservoirs, River and Lake) at ratios (1.0, 0.5), one
+    member (kb 0.40 per day, kw 0.70 m/day, gamma 1, demand and roughness x1, dose 1.2; its kw, the truth's default, is
+    off the grid's kw axis, though the plan said a grid member): every junction-hour equals
+    C(1, 0) + 0.5 C(0, 1) within 5e-5 mg/L at the file's quality tolerance (0.01, 1e-5 mg/L in the grid's units) and
+    within 1e-6 mg/L at 1e-9.  For information (no bar): the dose axis at fixed ratios (1.1 times the dose against 1.1
+    times the run) and how far the half residual at Lake moves the map at this member.  Equals the committed record
+    (part 'superposition').  The scored member's kw is the truth's default, not on the grid's kw axis, so the record
+    adds, after the scored run, the same test at a member on the grid (kb 0.40, kw 0.60, gamma 1), within the bars
+    too.  Also: the grid code path applies the ratios, since the 75-run 'decay' grid at (1.0, 0.5), built in memory,
+    holds that member's run exactly (ln C as float32, max |diff| 0) and its cache name is tagged '_inlets_'; ratios
+    that leave out an entry point, or name a node that is none, are refused before any run, and (since the review)
+    by SimGP24 and pilot.validate too, all ones included."""
+    from . import intake_exp as E
+    from .simgp import FLOOR, HOURS, build_grid_24h, grid_cache_path
+    from .simulate import nominal_scenario, simulate_nominal_chlorine
+    got = E.part_zone_superposition()
+    _same_as_16c(got, "superposition")
+    bt = got["by_tolerance"]
+    assert bt["default_tolerance"]["max_abs_error_mgL"] <= 5e-5 and bt["tolerance_1e-9"]["max_abs_error_mgL"] <= 1e-6, bt
+    assert got["passed"] and got["file_tolerance"] == 0.01, got
+    on = got["on_grid_member"]["by_tolerance"]
+    assert all(v["within_bar"] for v in on.values()), on
+    sc = nominal_scenario("Net3")
+    name = os.path.basename(grid_cache_path(sc, CACHE, "decay", None, E.ZONE_RATIOS))
+    assert re.fullmatch(r"grid24_decay_Net3_inlets_[0-9a-f]{10}\.pkl", name) and TAGGED_CACHE.search(name), name
+    params, Z = build_grid_24h(sc, "decay", n_jobs=4, preflight_paths=[CACHE], inlet_ratios=E.ZONE_RATIOS)
+    k = params.index((*E.ZONE_GRID_MEMBER, 1.0, 1.0))
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_") as d:
+        c = simulate_nominal_chlorine("Net3", *E.ZONE_GRID_MEMBER, 1.2, 1.0, 1.0, file_prefix=os.path.join(d, "m"),
+                                      inlet_ratios=E.ZONE_RATIOS)
+    zk = np.log(np.clip(c.loc[HOURS, sc.junctions].values, FLOOR, None)).astype(np.float32)
+    grid_diff = float(np.abs(Z[k] - zk).max())
+    assert grid_diff == 0.0, grid_diff
+    refused = []
+    for bad in ({"River": 1.0}, {"River": 1.0, "Lake": 0.5, "Tank9": 0.2}):
+        try:
+            build_grid_24h(sc, "decay", n_jobs=1, inlet_ratios=bad)
+        except ValueError as e:
+            refused.append("every entry point" in str(e))
+    assert refused == [True, True], refused
+    # the review of task 16c: SimGP24 and pilot.validate check the ratios as given too (they normalized first, so a dict
+    # of ones that left out an entry point ran as today's path there), before any grid is read
+    from .features import build_features
+    from .pilot import validate
+    from .simgp import SimGP24
+    X = build_features(sc)
+    empty_log = pd.DataFrame({"junction": pd.Series(dtype=str), "hour": pd.Series(dtype=int),
+                              "y": pd.Series(dtype=float), "month": pd.Series(dtype=str)})
+    for bad in ({"River": 1.0}, {"River": 1.0, "Lake": 1.0, "Tank9": 1.0}):
+        for fn in (lambda: SimGP24(sc, X, cache_dir=CACHE, inlet_ratios=bad),
+                   lambda: validate("Net3", empty_log, dose=1.2, cache_dir=CACHE, inlet_ratios=bad)):
+            try:
+                fn()
+                refused.append(False)
+            except ValueError as e:
+                refused.append("every entry point" in str(e))
+    assert refused == [True] * 6, refused
+    return {"bar": "pre-registered: within 5e-5 mg/L at the file's tolerance and 1e-6 mg/L at 1e-9; met",
+            "max_abs_error_mgL": {k_: v["max_abs_error_mgL"] for k_, v in bt.items()},
+            "on_grid_member_max_abs_error_mgL": {k_: v["max_abs_error_mgL"] for k_, v in on.items()},
+            "dose_axis_max_abs_diff_mgL": {k_: v["dose_axis_max_abs_diff_mgL"] for k_, v in bt.items()},
+            "decay_grid_member_equals_run_max_abs_diff": grid_diff, "tagged_name": name.startswith("grid24_decay_Net3"),
+            "bad_ratios_refused": {"grid_build": 2, "simgp24_and_validate": 4}, "effect": got["effect"]}
+
+
+PILOT_SYNTH_SCRIPT_ARGS = ("--synthetic", "Net3", "--holdout-sites", "3")
+
+
+@check("task16c", quick=False)
+def holdout_sites_fixed_route():
+    """Leave-sites-out validation (pilot --holdout-sites), no bar: on a synthetic Net3 log of a fixed route (10 taps, no
+    rotating taps, six months, the last three held out), within each held-out month its 10 sites are split into
+    seeded groups of 3 (3, 3, 3 and 1), and each group is predicted by a fit on the earlier months without any of its
+    samples, so all 30 held-out samples are predicted once by a fit that never saw their site: the 'held_out_sites'
+    table, equal to the committed record (part 'holdout').  The committed synthetic log without the flag gives the
+    committed outputs/pilot/validation_Net3.json (RMSE 0.077, coverage90 0.923, as synthetic_pilot_net3), and with it
+    every one of those rows and predictions is unchanged.  python -m residualmap.pilot --synthetic Net3
+    --holdout-sites 3, written to a temporary folder, exits 0 and names its files with '_sites3'; a group size of 0 is
+    refused.  Since the review: each group fit trains on fewer samples than the month's 30 (21 without 3 sites, 27
+    without 1), recorded as n_train_min and n_train_max, and a group size that leaves a fit no training sample (10 on
+    this route of 10 taps) is refused."""
+    from . import intake_exp as E
+    from .pilot import HELD_OUT_SITES, LEVELS, synthetic_log, validate
+    got = E.part_zone_holdout()
+    _same_as_16c(got, "holdout")
+    assert got["every_site_predicted_once"] and got["held_out_predictions"] == 30, got
+    assert got["sites_per_group"] == [1, 1, 1] + [3] * 9 and "new_taps" not in got["subsets"], got
+    assert HELD_OUT_SITES in got["subsets"], got["subsets"]
+    hos = got["by_month"][HELD_OUT_SITES]
+    assert all((r["n_train_min"], r["n_train_max"], r["n_train"]) == (21, 27, 21) for r in hos), hos
+    assert all(r["n_train"] == 30 for r in got["by_month"]["all"]), got["by_month"]["all"]
+    fixed_log, fixed_inp = synthetic_log(E.ZONE_NET, **E.FIXED_ROUTE)
+    try:
+        validate(fixed_inp, fixed_log, dose=1.2, threshold=0.2, cache_dir=CACHE, holdout_sites=10)
+        raise AssertionError("holdout_sites=10 on a route of 10 taps was taken")
+    except ValueError as e:
+        assert "leaves no training sample" in str(e), e
+    ref = json.load(open(os.path.join(REPO, "outputs", "pilot", "validation_Net3.json")))
+    log, inp = synthetic_log("Net3")
+    p0, s0 = validate(inp, log, dose=1.2, threshold=0.2, window_months=3, cache_dir=CACHE)
+    p1, s1 = validate(inp, log, dose=1.2, threshold=0.2, window_months=3, cache_dir=CACHE, holdout_sites=3)
+    mean = {}
+    for subset, g in s0.groupby("taps"):
+        w = g.n_test / g.n_test.sum()
+        mean[subset] = {"n": int(g.n_test.sum()), "rmse": float((g.rmse * w).sum()),
+                        "rmse_persistence": float((g.rmse_persistence * w).sum()),
+                        "rmse_network_mean": float((g.rmse_network_mean * w).sum()),
+                        **{f"coverage{q}": float((g[f"coverage{q}"] * w).sum()) for q in LEVELS}}
+    assert mean == ref["mean"], (mean, ref["mean"])
+    assert round(mean["all"]["rmse"], 3) == 0.077 and round(mean["all"]["coverage90"], 3) == 0.923
+    rows_same = s1[s1.taps != HELD_OUT_SITES].reset_index(drop=True)[list(s0.columns)].equals(s0)
+    preds_same = p1[p1.validation == "held_out_month"].reset_index(drop=True)[list(p0.columns)].equals(p0)
+    assert rows_same and preds_same, (rows_same, preds_same)
+    try:
+        validate(inp, log, dose=1.2, threshold=0.2, cache_dir=CACHE, holdout_sites=0)
+        raise AssertionError("holdout_sites=0 was taken")
+    except ValueError:
+        pass
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_pilot_") as d:
+        # from the checks' scratch folder, whose outputs/cache is the repo's cache (the grid is the cached one)
+        r = subprocess.run([PY, "-m", "residualmap.pilot", *PILOT_SYNTH_SCRIPT_ARGS, "--out", d], cwd=os.getcwd(),
+                           capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+        files = sorted(os.listdir(d))
+        cli = json.load(open(os.path.join(d, "validation_Net3_sites3.json"))) if r.returncode == 0 else None
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert files == ["predictions_Net3_sites3.csv", "synthetic_log_Net3.csv", "validation_Net3_sites3.csv",
+                     "validation_Net3_sites3.json"], files
+    assert cli["mean"]["all"] == ref["mean"]["all"] and HELD_OUT_SITES in cli["mean"], cli["mean"]
+    assert math.isnan(cli["mean"][HELD_OUT_SITES]["rmse_persistence"]), cli["mean"][HELD_OUT_SITES]
+    m = got["mean"]
+    return {"fixed_route": {"held_out_sites": {k: m[HELD_OUT_SITES][k] for k in ("n", "rmse", "coverage90",
+                                                                                 "n_true_below", "found_below",
+                                                                                 "false_alarms")},
+                            "all": {k: m["all"][k] for k in ("n", "rmse", "coverage90", "n_true_below", "found_below",
+                                                             "false_alarms")}},
+            "synthetic_pilot_net3_unchanged": {"rmse": mean["all"]["rmse"], "coverage90": mean["all"]["coverage90"]},
+            "flag_leaves_every_other_row": True, "committed_log_held_out_sites": cli["mean"][HELD_OUT_SITES],
+            "group_fit_training_sizes": {"min": hos[0]["n_train_min"], "max": hos[0]["n_train_max"],
+                                         "month": got["by_month"]["all"][0]["n_train"]},
+            "group_leaving_no_training_refused": True}
+
+
+@check("task16c")
+def analyzer_is_boundary_not_data():
+    """An online analyzer at a zone inlet is the boundary condition, not calibration data: analyzer_15min.csv read with
+    zone_tap_map.csv (AN-1 given the role 'inlet' at Lake) keeps AN-1's 2,880 readings out of the frame the model is
+    fitted on (S: 33 rows, AN-2 thinned to one a day and three grab samples), and their median, the fixture's own
+    median, sets Lake's residual; with River's residual from zone_inlet_residuals.csv, r_Lake is Lake's over River's
+    and the dose input is River's.  The same log with the task-16 tap map keeps AN-1 as an analyzer in S, thinned, as
+    before.  A residual file in µg/L under headers to guess reads the same residuals; an inlet missing, a node that is
+    no entry point, a residual below detection and an inlet given twice are refused in plain words.  The review's cases
+    (intake_exp._zone_review_cases): a declared inlet tap whose readings are all before the grab rows' window is
+    refused in the window (it was left out without a word) and used over the whole log, its 3 readings listed as not
+    used; read only below detection, it is refused; roles that mention an inlet but mark none ('not inlet') are read as
+    taps, with a warning; a tap marked as an inlet at a junction is refused naming the tap and its role; a µg/L value
+    with a thousands separator, a total chlorine column and a residual under a hundredth of the highest are refused.
+    Equals the committed record (part 'analyzer')."""
+    from . import intake_exp as E
+    with _zone_fixtures() as paths:
+        got = E.part_zone_analyzer(paths)
+    _same_as_16c(got, "analyzer")
+    assert got["inlet_rows_in_S"] == 0 and got["inlet_readings"] == 30 * 96, got
+    assert got["rows_in_S"] == 33 and got["other_analyzer_rows_in_S"] == 30 and got["grab_rows_in_S"] == 3, got
+    assert got["inlet_residual_mgL"] == got["expected_median_mgL"] == got["inlet_residual_in_the_window_mgL"], got
+    assert got["ratios"] == {"Lake": got["r_inlet_expected"], "River": 1.0} and got["highest_mgL"] == 1.2, got
+    assert got["without_role_column"]["inlet_tap_rows_in_S"] == 30 and got["without_role_column"]["inlets"] is None
+    assert got["ugl_file"] == {"Lake": 0.6, "River": 1.2}, got["ugl_file"]
+    assert all(got["refused"].values()), got["refused"]
+    rv = got["review"]
+    ow, bd, nm = rv["outside_window"], rv["only_below_detection"], rv["roles_that_mark_no_inlet"]
+    assert "has no usable reading in the months the map is fitted on" in ow["app_window_refused"], ow
+    assert ow["pilot_whole_log_mgL"] == ow["expected_median_mgL"] and ow["listed_not_used_in_window"] == 3, ow
+    assert "(the median over the window)" not in ow["note"] and bd["usable"] == 0 and bd["listed_not_used"] == 3, rv
+    assert "has no usable reading to set its residual" in bd["refused"] and "0 readings" not in bd["note"], bd
+    assert nm["inlet_taps"] == 0 and nm["rows_fitted"] == nm["rows_in_log"] == 9 and "not inlet" in nm["warning"], nm
+    assert "tap INL (role 'Zone inlet')" in rv["inlet_at_a_junction_refused"], rv["inlet_at_a_junction_refused"]
+    assert all(rv["files_refused"].values()) and len(rv["ugl_file_notes"]) == 2, rv
+    return {"inlet_readings": got["inlet_readings"], "inlet_rows_in_S": 0, "rows_in_S": got["rows_in_S"],
+            "inlet_residual_mgL": got["inlet_residual_mgL"], "r_lake": got["ratios"]["Lake"],
+            "refused": sorted(got["refused"]),
+            "review_cases": {"inlet_outside_window_refused": True, "inlet_only_below_detection_refused": True,
+                             "roles_marking_no_inlet_read_as_taps": len(nm["roles"]),
+                             "inlet_at_a_junction_refused": True, "inlet_files_refused": sorted(rv["files_refused"])}}
+
+
+@check("task16c", quick=False)
+def pilot_inlet_residuals():
+    """The pilot's --inlets (task 16c), on the committed example log and tap map (Net3, six months, 78 samples):
+    zone_inlets_net3.csv (River 1.20, Lake 0.60 mg/L) and no --dose gives the dose 1.2 mg/L, the highest residual,
+    says so with the residuals and that water age starts at 0 at every inlet, builds the grid at ratios (1, 0.5) under
+    its own name (removed afterwards) and names its files with '_inlets', whose predictions differ from the run
+    without --inlets (the cached grid).  With example_tap_map_inlet.csv (T10 marked as Lake's inlet tap) and River's
+    residual from a file, T10's 6 readings leave the 78 samples (72 fitted) and their median sets Lake's residual.
+    Refused before any grid is built, each in plain words: an inlet file missing Lake; inlet residuals with --plant;
+    --inlets with --synthetic; --holdout-sites 0; since the review, --inlets with --disinfectant chloramine, and the
+    total-chlorine example log with T10 marked as an inlet tap in the chloramine mode (not built for it yet)."""
+    import types as _types
+    from . import fixtures as FX
+    from .simgp import grid_cache_path
+    ex_log, ex_taps = (os.path.join(REPO, "docs", f) for f in ("example_grab_log.csv", "example_tap_map.csv"))
+    out = {}
+
+    def run(args, out_dir):
+        r = subprocess.run([PY, "-m", "residualmap.pilot", *args, "--out", out_dir], cwd=os.getcwd(),
+                           capture_output=True, text=True, env={**os.environ, "PYTHONPATH": REPO})
+        return r.returncode, r.stdout + r.stderr
+
+    name_of = lambda ratios, dose=1.2: os.path.basename(grid_cache_path(
+        _types.SimpleNamespace(wn_name="Net3", source_dose=dose), CACHE, "full", None, ratios))
+    with _zone_fixtures() as fx, tempfile.TemporaryDirectory(prefix="rm_t16c_pilot_") as d:
+        with _inlet_grids_removed() as built:
+            base = ["--inp", "Net3", "--samples", ex_log, "--taps", ex_taps]
+            rc0, t0 = run(base, os.path.join(d, "plain"))
+            rc1, t1 = run(base + ["--inlets", fx["zone_inlets_net3.csv"]], os.path.join(d, "inlets"))
+            tap_base = ["--inp", "Net3", "--samples", ex_log, "--taps", fx["example_tap_map_inlet.csv"]]
+            rc2, t2 = run(tap_base + ["--inlets", fx["zone_inlet_residuals.csv"]], os.path.join(d, "tap"))
+            built_now = {f for f in os.listdir(CACHE) if "_inlets_" in f}
+            built_before_refusals = sorted(built_now)
+            refusals = {
+                "missing": run(base + ["--inlets", fx["zone_inlets_missing.csv"]], os.path.join(d, "r1")),
+                "plant": run(base + ["--inlets", fx["zone_inlets_net3.csv"], "--plant",
+                                     os.path.join(REPO, "docs", "example_plant_log.csv")], os.path.join(d, "r2")),
+                "synthetic": run(["--synthetic", "Net3", "--inlets", fx["zone_inlets_net3.csv"]], os.path.join(d, "r3")),
+                "sites0": run(["--synthetic", "Net3", "--holdout-sites", "0"], os.path.join(d, "r4")),
+                "chloramine": run(base + ["--inlets", fx["zone_inlets_net3.csv"], "--disinfectant", "chloramine"],
+                                  os.path.join(d, "r5")),
+                "chloramine_inlet_tap": run(["--inp", "Net3", "--samples", os.path.join(REPO, "docs",
+                                                                                         "example_grab_log_total.csv"),
+                                             "--taps", fx["example_tap_map_inlet.csv"], "--disinfectant", "chloramine"],
+                                            os.path.join(d, "r6"))}
+            after_refusals = {f for f in os.listdir(CACHE) if "_inlets_" in f}
+        v0 = json.load(open(os.path.join(d, "plain", "validation_Net3.json")))
+        v1 = json.load(open(os.path.join(d, "inlets", "validation_Net3_inlets.json")))
+        v2 = json.load(open(os.path.join(d, "tap", "validation_Net3_inlets.json")))
+        p0 = pd.read_csv(os.path.join(d, "plain", "predictions_Net3.csv"))
+        p1 = pd.read_csv(os.path.join(d, "inlets", "predictions_Net3_inlets.csv"))
+        p2 = pd.read_csv(os.path.join(d, "tap", "predictions_Net3_inlets.csv"))
+        # the counts the journal quotes, read from the same files (the review of task 16c)
+        from .importers import read_grab_log as _rgl
+        g_tap = _rgl(open(ex_log, "rb").read(), "example_grab_log.csv",
+                     open(fx["example_tap_map_inlet.csv"], "rb").read(), "example_tap_map_inlet.csv")
+        g_all = _rgl(open(ex_log, "rb").read(), "example_grab_log.csv", open(ex_taps, "rb").read(), "example_tap_map.csv")
+    assert rc0 == 0 and rc1 == 0 and rc2 == 0, (t0[-1500:], t1[-1500:], t2[-1500:])
+    assert "Inlet residuals: River 1.20 mg/L, Lake 0.60 mg/L." in t1 and "taking the highest inlet residual, 1.2 mg/L" in t1
+    assert "Water age starts at 0 at every inlet" in t1 and "Inlet residuals" not in t0, t1[-2000:]
+    want = {name_of({"River": 1.0, "Lake": 0.5}), name_of({"River": 1.0, "Lake": round(1.14 / 1.2, 6)})}
+    assert set(built) == want == set(built_before_refusals), (built, want)
+    assert after_refusals == built_now, (after_refusals, built_now)
+    assert not np.allclose(p0.pred.values, p1.pred.values) and len(p0) == len(p1), "the inlets changed nothing"
+    assert "Lake 1.14 mg/L" in t2 and "tap T10" in t2 and v2["mean"]["all"]["n"] < v0["mean"]["all"]["n"], t2[-2000:]
+    assert "T10" not in set(p2.tap_id) and "T10" in set(p0.tap_id), sorted(set(p2.tap_id))
+    msg = {k: (rc, txt.strip().splitlines()[-1] if txt.strip() else "") for k, (rc, txt) in refusals.items()}
+    assert all(rc != 0 for rc, _ in msg.values()), msg
+    assert "no residual: Lake" in msg["missing"][1] and "--plant" in msg["plant"][1], msg
+    assert "--synthetic doses every inlet alike" in msg["synthetic"][1] and "1 or more" in msg["sites0"][1], msg
+    assert "not built for the chloramine mode" in msg["chloramine"][1], msg
+    assert "not built for the chloramine mode" in msg["chloramine_inlet_tap"][1] and "T10" in msg["chloramine_inlet_tap"][1]
+    assert len(g_tap.inlets) == 6 and len(g_tap.frame) == 72 and len(g_all.frame) == 78, (len(g_tap.inlets),
+                                                                                           len(g_tap.frame))
+    out.update(dose_taken="1.2", grids_built=sorted(want),
+               rmse_all={"without_inlets": v0["mean"]["all"]["rmse"], "with_inlets": v1["mean"]["all"]["rmse"],
+                         "inlet_tap": v2["mean"]["all"]["rmse"]},
+               held_out_samples={"without_inlets": v0["mean"]["all"]["n"], "inlet_tap": v2["mean"]["all"]["n"]},
+               inlet_tap_readings=int(len(g_tap.inlets)),
+               samples_in_log={"without_inlets": int(len(g_all.frame)), "inlet_tap": int(len(g_tap.frame))},
+               refused=sorted(msg))
+    return out
+
+
+APP_INLETS_SCRIPT = r"""
+import json, os, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+app, fx = sys.argv[1], json.loads(sys.argv[2])
+CLOUD = os.environ.get("RESIDUALMAP_MODE") == "cloud"
+BOX = "My zone's inlets carry different residuals"
+
+def state(at):
+    m = {x.label: x.value for x in at.metric}
+    return {"exception": [e.value for e in at.exception], "errors": [e.value for e in at.error],
+            "uploaders": [u.label for u in at.file_uploader], "checkboxes": [c.label for c in at.checkbox],
+            "numbers": [[n.label, n.value] for n in at.number_input], "info": [i.value for i in at.info],
+            "captions": [c.value for c in at.caption], "samples": m.get("Samples used"),
+            "flagged": next((v for k, v in m.items() if k.startswith("Junctions likely below")), None),
+            "decay": next((v for k, v in m.items() if k.startswith("Calibrated decay")), None),
+            "downloads": len(at.get("download_button"))}
+
+def put(at, label, name):
+    [u for u in at.file_uploader if u.label == label][0].set_value((name, open(fx[name], "rb").read(), "text/csv"))
+
+def demo_off():
+    at = AppTest.from_file(app, default_timeout=900).run()
+    [t for t in at.toggle if t.label.startswith("Demo")][0].set_value(False)
+    return at.run()
+
+res = {}
+at = demo_off()
+res["demo_off"] = state(at)
+if BOX in res["demo_off"]["checkboxes"]:
+    [c for c in at.checkbox if c.label == BOX][0].check(); at.run()
+    res["ticked"] = state(at)
+    put(at, "Inlet residuals (CSV)", "zone_inlets_net3.csv"); at.run()
+    res["inlets"] = state(at)
+    if not CLOUD:
+        put(at, "Grab log (CSV or Excel)", "example_grab_log.csv"); put(at, "Tap map (CSV)", "example_tap_map.csv")
+        at.run()
+        res["inlets_and_log"] = state(at)
+        put(at, "Inlet residuals (CSV)", "zone_inlets_missing.csv"); at.run()
+        res["missing"] = state(at)
+        at = demo_off()
+        [c for c in at.checkbox if c.label == BOX][0].check(); at.run()
+        put(at, "Grab log (CSV or Excel)", "analyzer_15min.csv"); put(at, "Tap map (CSV)", "zone_tap_map.csv")
+        put(at, "Inlet residuals (CSV)", "zone_inlet_residuals.csv"); at.run()
+        res["analyzer_inlet"] = state(at)
+        at = demo_off()
+        put(at, "Grab log (CSV or Excel)", "analyzer_15min.csv"); put(at, "Tap map (CSV)", "task16_tap_map.csv")
+        at.run()
+        res["analyzer_no_role"] = state(at)
+        # the review of task 16c: a declared inlet tap read only before the window is refused, the dose input drawn
+        at = demo_off()
+        put(at, "Grab log (CSV or Excel)", "zone_inlet_window_log.csv"); put(at, "Tap map (CSV)", "zone_window_tap_map.csv")
+        at.run()
+        res["inlet_outside_window"] = state(at)
+        at = demo_off()
+        [r for r in at.radio if r.label == "Disinfectant"][0].set_value("Chloramine (total chlorine)"); at.run()
+        [c for c in at.checkbox if c.label == BOX][0].check(); at.run()
+        res["chloramine_ticked"] = state(at)
+    elif os.environ.get("RESIDUALMAP_ALLOW_UPLOADS") == "true":
+        # the review of task 16c: the cloud's size stop, before the inlets are read, still draws the dose input
+        big = b"date,time,tap_id,free_chlorine_mgL\n" + b"2026-01-01,10:00,T1,0.50\n" * 260000
+        [u for u in at.file_uploader if u.label.startswith("Grab log")][0].set_value(("big.csv", big, "text/csv"))
+        at.run()
+        res["too_big"] = state(at)
+print("APP_INLETS_JSON " + json.dumps(res))
+"""
+
+
+@check("task16c", quick=False)
+def app_inlet_residuals():
+    """Headless AppTest of the app's inlet residuals (task 16c), Net3 example, demo off.  Before 'My zone's inlets carry
+    different residuals' is ticked the uploaders are the grab log and the tap map only, in that order, and the dose
+    input is 'Chlorine dose leaving the plant (mg/L)'; ticked, 'Inlet residuals (CSV)' follows them.  With
+    zone_inlets_net3.csv (River 1.20, Lake 0.60 mg/L) the dose input becomes 'Highest residual entering the zone
+    (mg/L)' at 1.2, the page names the residuals and says water age starts at 0 at every inlet (the water-age caption
+    too), and the grid at ratios (1, 0.5) is built under its own name and removed afterwards; with the example grab
+    log the decay is calibrated and the loss split runs at those ratios; an inlet file missing Lake stops the page
+    with the refusal.  analyzer_15min.csv with zone_tap_map.csv (AN-1 Lake's inlet analyzer) and River's residual
+    uses 33 samples, the analyzer's readings left out and its median named; with the task-16 tap map, 63, as before.
+    Cloud mode (RESIDUALMAP_MODE=cloud): with uploads off there is no such checkbox; with uploads allowed the inlet
+    file's grid is built in the visitor's session, on the example network too, and no file under outputs/ is new or
+    changed.  Since the review: a stop before the inlets are known (an inlet file missing Lake; in cloud mode a grab
+    log over the size limit) still draws the plain dose input; a tap the tap map marks as Lake's inlet whose readings
+    are all before the grab rows' window stops the page with that refusal; in the chloramine mode the ticked box says
+    inlet residuals are not available there yet and offers no uploader."""
+    from . import fixtures as FX
+    from .simgp import grid_cache_path
+    with tempfile.TemporaryDirectory(prefix="rm_t16c_app_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.ZONE_FIXTURES)
+        paths["example_grab_log.csv"] = os.path.join(REPO, "docs", "example_grab_log.csv")
+        paths["example_tap_map.csv"] = os.path.join(REPO, "docs", "example_tap_map.csv")
+        with _inlet_grids_removed() as built:
+            res, _ = _app_run(APP_INLETS_SCRIPT, [os.path.join(REPO, "app.py"), json.dumps(paths)],
+                              lambda f: False, "APP_INLETS_JSON")
+        cloud_res = {}
+        for uploads in ("false", "true"):
+            before = _outputs_snapshot()
+            with tempfile.TemporaryDirectory(prefix="rm_t16c_cwd_") as cwd:
+                r = subprocess.run([PY, "-c", APP_INLETS_SCRIPT, os.path.join(REPO, "app.py"), json.dumps(paths)],
+                                   cwd=cwd, capture_output=True, text=True,
+                                   env={**os.environ, "PYTHONPATH": REPO, "RESIDUALMAP_MODE": "cloud",
+                                        "RESIDUALMAP_ALLOW_UPLOADS": uploads})
+            after = _outputs_snapshot()
+            line = [x for x in r.stdout.splitlines() if x.startswith("APP_INLETS_JSON ")]
+            if r.returncode != 0 or not line:
+                raise RuntimeError(f"AppTest (cloud, uploads {uploads}) failed (exit {r.returncode}): {r.stderr[-3000:]}")
+            new = sorted(set(after) - set(before))
+            changed = sorted(f for f in before if after.get(f) != before[f])
+            for f in new:
+                if f.startswith(os.path.join("outputs", "cache")):
+                    with contextlib.suppress(OSError):
+                        os.remove(os.path.join(REPO, f))
+            cloud_res[uploads] = {**json.loads(line[-1][len("APP_INLETS_JSON "):]), "new": new, "changed": changed}
+    import types as _types
+    want_grid = os.path.basename(grid_cache_path(_types.SimpleNamespace(wn_name="Net3", source_dose=1.2), CACHE, "full",
+                                                 None, {"River": 1.0, "Lake": 0.5}))
+    for k, v in res.items():
+        assert not v["exception"], (k, v["exception"])
+    off, tk, inl = res["demo_off"], res["ticked"], res["inlets"]
+    assert off["uploaders"] == ["Grab log (CSV or Excel)", "Tap map (CSV)"], off["uploaders"]
+    assert off["numbers"][0] == ["Chlorine dose leaving the plant (mg/L)", 1.2], off["numbers"]
+    assert tk["uploaders"] == ["Grab log (CSV or Excel)", "Tap map (CSV)", "Inlet residuals (CSV)"], tk["uploaders"]
+    assert inl["numbers"][0] == ["Highest residual entering the zone (mg/L)", 1.2], inl["numbers"]
+    assert any(i.startswith("Inlet residuals: River 1.20 mg/L, Lake 0.60 mg/L.") and "Water age starts at 0" in i
+               for i in inl["info"]), inl["info"]
+    assert any("Water age starts at 0 at every inlet" in c for c in inl["captions"]), "water-age caption"
+    assert not inl["errors"] and inl["flagged"] != off["flagged"] and inl["downloads"] == 1, inl
+    assert want_grid in built, (want_grid, built)
+    il = res["inlets_and_log"]
+    assert str(il["samples"]) == "39" and il["decay"] and il["decay"] != "no samples yet" and not il["errors"], il
+    assert any("no residual: Lake" in e for e in res["missing"]["errors"]), res["missing"]["errors"]
+    plain = ["Chlorine dose leaving the plant (mg/L)", 1.2]
+    assert res["missing"]["numbers"][0] == plain, res["missing"]["numbers"]
+    ow = res["inlet_outside_window"]
+    assert any("has no usable reading in the months the map is fitted on" in e for e in ow["errors"]), ow["errors"]
+    assert ow["numbers"][0] == plain and not ow["exception"], ow
+    cat = res["chloramine_ticked"]
+    assert cat["uploaders"] == ["Grab log (CSV or Excel)", "Tap map (CSV)"], cat["uploaders"]
+    assert any(c.startswith("Inlet residuals are not available in the chloramine mode yet") for c in cat["captions"]), cat
+    assert not cat["exception"] and cat["numbers"][0][0] == "Total chlorine leaving the plant (mg/L as Cl2)", cat
+    an, an0 = res["analyzer_inlet"], res["analyzer_no_role"]
+    assert (str(an["samples"]), str(an0["samples"])) == ("33", "63"), (an["samples"], an0["samples"])
+    assert any("Lake 0.52 mg/L" in i and "tap AN-1" in i for i in an["info"]), an["info"]
+    assert an["numbers"][0] == ["Highest residual entering the zone (mg/L)", 1.2], an["numbers"]
+    c0, c1 = cloud_res["false"], cloud_res["true"]
+    assert "My zone's inlets carry different residuals" not in c0["demo_off"]["checkboxes"] and "ticked" not in c0, c0
+    assert c1["inlets"]["numbers"][0] == ["Highest residual entering the zone (mg/L)", 1.2], c1["inlets"]["numbers"]
+    assert not c1["inlets"]["exception"] and not c1["inlets"]["errors"], c1["inlets"]
+    assert c1["inlets"]["flagged"] == inl["flagged"], (c1["inlets"]["flagged"], inl["flagged"])
+    assert not c0["new"] and not c0["changed"] and not c1["new"] and not c1["changed"], (c0["new"], c1["new"])
+    tb = c1["too_big"]
+    assert any(e.startswith("This file is 6.5 MB.") for e in tb["errors"]) and tb["numbers"][0] == plain, tb
+    return {"uploaders_before_tick": off["uploaders"], "uploaders_after_tick": tk["uploaders"],
+            "dose_label_with_inlets": inl["numbers"][0][0], "flagged_without": off["flagged"],
+            "flagged_with_inlets": inl["flagged"], "grid_built_and_removed": want_grid,
+            "with_log_samples": int(il["samples"]), "analyzer_inlet_samples": int(an["samples"]),
+            "analyzer_no_role_samples": int(an0["samples"]), "cloud_uploads_off_checkbox": False,
+            "cloud_uploads_on_flagged": c1["inlets"]["flagged"], "cloud_files_written_under_outputs": 0,
+            "dose_input_drawn_at_stops": ["inlet file missing an inlet", "inlet tap outside the window",
+                                          "cloud file over the size limit"],
+            "inlet_outside_window_refused": True, "chloramine_offers_no_inlet_upload": True}
+
+
 def _counts(rs: list) -> dict:
     return {"all_pass": all(r["pass"] is not False for r in rs),
             "n_pass": sum(r["pass"] is True for r in rs), "n_fail": sum(r["pass"] is False for r in rs),

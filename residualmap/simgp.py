@@ -23,7 +23,9 @@ See pinn.py for the graph-PINN baseline that tests this claim rather than assert
 """
 from __future__ import annotations
 
+import hashlib
 import itertools
+import json
 import multiprocessing
 import os
 import pickle
@@ -41,7 +43,7 @@ from sklearn.gaussian_process.kernels import ConstantKernel, Matern, WhiteKernel
 
 from .chemistry import DEFAULT_THRESHOLD_MGL, Chemistry, cache_tag, remove_epanet_files
 from .features import CORE
-from .simulate import simulate_nominal_chlorine
+from .simulate import check_inlet_ratios, normalize_inlet_ratios, simulate_nominal_chlorine, source_nodes
 
 FLOOR = 0.02
 KB_GRID = [0.10, 0.25, 0.40, 0.55, 0.70]        # 1/day
@@ -129,17 +131,29 @@ def _non_default(cond: Chemistry | None) -> bool:
     return cond is not None and not cond.is_default
 
 
-def grid_cache_path(sc, cache_dir: str = "outputs/cache", grid: str = "full", cond: Chemistry | None = None) -> str:
+def inlet_tag(ratios: dict, grid: str = "full", cond: Chemistry | None = None, n_chars: int = 10) -> str:
+    """Iteration 5, task 16c: a short sha1 over a grid's per-inlet dose ratios (normalized: sorted, rounded) and
+    chemistry.cache_tag of the grid and condition, so a grid at other ratios, or of another definition, is never
+    served this one's file."""
+    payload = {"inlet_ratios": sorted(ratios.items()), "grid": cache_tag(cond if _non_default(cond) else None, grid)}
+    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:n_chars]
+
+
+def grid_cache_path(sc, cache_dir: str = "outputs/cache", grid: str = "full", cond: Chemistry | None = None,
+                    inlet_ratios: dict | None = None) -> str:
     """Cache file of a grid.  Default calls (cond None, or a condition that reproduces today's path) keep the
     committed names, so existing pickles stay valid; any other condition appends its label and
     chemistry.cache_tag (a hash of the grid definition and the condition).  A grid that is not one of
     COMMITTED_GRID_NAMES (task 13's opt-in 'full_lowkb') always carries chemistry.cache_tag, which hashes its axes,
-    so a change to its axes can never be served an old file."""
+    so a change to its axes can never be served an old file.  inlet_ratios (task 16c): per-inlet dose ratios add
+    '_inlets_<inlet_tag>'; None, or every ratio 1, adds nothing (today's name)."""
     dose_tag = "" if abs(sc.source_dose - 1.2) < 1e-9 else f"_d{sc.source_dose:g}"
     cond_tag = f"_{cond.label()}_{cache_tag(cond, grid)}" if _non_default(cond) else ""
     if not cond_tag and grid not in COMMITTED_GRID_NAMES:
         cond_tag = f"_{cache_tag(None, grid)}"
-    return os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}{cond_tag}.pkl")
+    ratios = normalize_inlet_ratios(inlet_ratios)
+    in_tag = "" if ratios is None else f"_inlets_{inlet_tag(ratios, grid, cond)}"
+    return os.path.join(cache_dir, f"grid24_{grid}_{os.path.basename(sc.wn_name)}{dose_tag}{cond_tag}{in_tag}.pkl")
 
 
 def check_grid_disinfectant(grid: str, cond: Chemistry | None) -> None:
@@ -154,7 +168,8 @@ def check_grid_disinfectant(grid: str, cond: Chemistry | None) -> None:
 
 
 def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
-                       n_jobs: int | None = None, cond: Chemistry | None = None) -> tuple[list[tuple], np.ndarray]:
+                       n_jobs: int | None = None, cond: Chemistry | None = None,
+                       inlet_ratios: dict | None = None) -> tuple[list[tuple], np.ndarray]:
     """All grid members' ln C for every hour of the last day: (params, array [members, 24, junctions]).
     params are (kb, kw, gamma, demand_mult, rough_mult).
 
@@ -165,27 +180,39 @@ def simulator_grid_24h(sc, cache_dir: str = "outputs/cache", grid: str = "full",
     properties.  Cached under grid_cache_path; a build (not a cache hit) is refused below MIN_FREE_GB free disk.
     A condition the grid cannot run (a seasonal or TOC-scaled chloramine grid, kinetics other than 'first', a
     disinfectant on the other disinfectant's grid) is refused before the cache is read, so a file under its name is
-    never served."""
+    never served.  inlet_ratios (task 16c): every entry point dosed at its ratio times the dose, under its own cache
+    name; None, or every ratio 1, is today's grid and name."""
     check_grid_disinfectant(grid, cond)
     if _non_default(cond):
         cond.sim_kwargs()      # raises for a condition that is not built
+    ratios = normalize_inlet_ratios(inlet_ratios)
+    if inlet_ratios:
+        check_inlet_ratios(inlet_ratios, source_nodes(sc.wn))
     os.makedirs(cache_dir, exist_ok=True)
-    f = grid_cache_path(sc, cache_dir, grid, cond)
+    f = grid_cache_path(sc, cache_dir, grid, cond, ratios)
     if os.path.exists(f):
         with open(f, "rb") as fh:
             return pickle.load(fh)
-    out = build_grid_24h(sc, grid, n_jobs, cond, preflight_paths=[cache_dir])
+    out = build_grid_24h(sc, grid, n_jobs, cond, preflight_paths=[cache_dir], inlet_ratios=ratios)
     with open(f, "wb") as fh:
         pickle.dump(out, fh)
     return out
 
 
 def build_grid_24h(sc, grid: str = "full", n_jobs: int | None = None, cond: Chemistry | None = None,
-                   preflight_paths=None) -> tuple[list[tuple], np.ndarray]:
+                   preflight_paths=None, inlet_ratios: dict | None = None) -> tuple[list[tuple], np.ndarray]:
     """The grid itself, without the cache (simulator_grid_24h caches it).  Every run's EPANET files are deleted
-    as soon as it is read, and the whole build is refused below MIN_FREE_GB free disk."""
+    as soon as it is read, and the whole build is refused below MIN_FREE_GB free disk.  inlet_ratios (task 16c): as
+    simulate_nominal_chlorine's, checked against the model's entry points before any run; None, or every ratio 1,
+    builds exactly today's grid."""
     check_grid_disinfectant(grid, cond)
-    extra = (cond.sim_kwargs(),) if _non_default(cond) else ()
+    ratios = normalize_inlet_ratios(inlet_ratios)
+    if inlet_ratios:
+        check_inlet_ratios(inlet_ratios, source_nodes(sc.wn))
+    if ratios is None:
+        extra = (cond.sim_kwargs(),) if _non_default(cond) else ()
+    else:
+        extra = ({**(cond.sim_kwargs() if _non_default(cond) else {}), "inlet_ratios": ratios},)
     disk_preflight(list(preflight_paths or []) + [tempfile.gettempdir()])
     params = list(itertools.product(*GRIDS[grid]))
     n_jobs = n_jobs or max(1, (os.cpu_count() or 2) - 1)
@@ -431,7 +458,7 @@ class SimGP24:
                  cache_dir: str = "outputs/cache", n_draws: int = 1024, lik: str = "t", nu: float = 3.0,
                  grid: str = "full", local_hydraulic: bool = True, doses=None, smooth_hours: bool = True,
                  threshold: float | None = None, cond: Chemistry | None = None, log_prior: np.ndarray | None = None,
-                 grid_data: tuple | None = None):
+                 grid_data: tuple | None = None, inlet_ratios: dict | None = None):
         # lik_sd, doses and threshold left as None follow the condition's disinfectant (task 12 review): free chlorine
         # (cond None) gets the committed LIK_SD, DOSE_GRID and 0.2, exactly as before; a chloramine condition gets
         # LIK_SD_CA, DOSES_CA and 0.5 (chemistry.DEFAULT_THRESHOLD_MGL), so the chloramine grid never runs on free
@@ -450,8 +477,15 @@ class SimGP24:
         # grid is kept in the visitor's session and never cached on disk; None reads or builds the cached grid as before
         if grid_data is not None:
             check_grid_disinfectant(grid, cond)
-        self.params, self.Z = (simulator_grid_24h(sc, cache_dir, grid, cond=cond) if grid_data is None
-                               else grid_data)  # members x 24 x J
+        # inlet_ratios (task 16c): a zone whose inlets carry different residuals, each dosed at its ratio times the dose
+        # (simulate_nominal_chlorine); None, or every ratio 1, is today's grid.  Kept on the model for loss_split.
+        # The review of task 16c: checked as given, before the all-ones shortcut (with a session grid too), so ratios
+        # that leave out an entry point, or name a node that is none, are refused here as in the grid build
+        if inlet_ratios:
+            check_inlet_ratios(inlet_ratios, source_nodes(sc.wn))
+        self.inlet_ratios = normalize_inlet_ratios(inlet_ratios)
+        self.params, self.Z = (simulator_grid_24h(sc, cache_dir, grid, cond=cond, inlet_ratios=self.inlet_ratios)
+                               if grid_data is None else grid_data)  # members x 24 x J
         self.n_hyd = n_hydraulic(grid) if local_hydraulic else 0
         if self.n_hyd > 1:
             check_grid_order(self.params, self.n_hyd)

@@ -37,6 +37,13 @@ The review of task 16 and its final verification add the layouts they found (par
 of that record): species in brackets, LIMS codes and analytes that cannot pick the rows, µg/L spellings, titles before
 the header, Excel dates with no time, a superscript digit in a tap ID, a two-column junction export, interleaved
 lab qualifiers, a tap map from another system, three million tiny rows, and a clock-time log for the bundled Net2.
+
+Task 16c adds the zone-inlet fixtures (ZONE_FIXTURES): the task-16 tap map with a role column that makes one online
+analyzer Lake's inlet analyzer, River's residual in an inlet residuals file, both residuals in one (and again in µg/L,
+semicolon-separated, under headers to guess), and three files the reader must refuse (an inlet missing, a node that is
+no entry point, a residual below detection).  Its review adds a declared inlet tap read outside the grab rows' window
+and one read only below detection, role cells that mention an inlet but mark none, a tap marked as an inlet at a
+junction, and three more inlet files to refuse (a thousands separator in µg/L, total chlorine, a tiny residual).
 """
 from __future__ import annotations
 
@@ -2809,6 +2816,129 @@ ENCODING_CONTROLS = (("net3_cp1252_one_pair_id.inp", "cp1252", (ONE_PAIR_ID,)),
                      ("utf8_one_id_six_stray.inp", "mixed", (ONE_CAPITAL_ID[1],)),
                      ("utf8_pasted_block.inp", "mixed", tuple(n for _, n in PASTED_BLOCK_RENAMES)),
                      ("utf8_pasted_chance_pair.inp", "mixed", tuple(n for _, n in ACCENTED_RENAMES)))
+
+
+# ----------------------------------------------------------------------------- task 16c: zone inlets
+# Written here by hand (string formatting), never by importers.read_inlet_residuals or read_grab_log.  Net3's two
+# entry points are its reservoirs River and Lake.  zone_tap_map.csv is task16_tap_map.csv with a role column: AN-1, one
+# of analyzer_15min.csv's two online analyzers, becomes Lake's inlet analyzer (its junction column names Lake); AN-2
+# stays an analyzer in the network.  The residuals are invented.
+ZONE_INLET_TAP = ("AN-1", "Lake")      # (tap, the inlet it measures) in zone_tap_map.csv
+ZONE_RIVER_MGL = 1.20                  # River's residual in zone_inlet_residuals.csv (Lake's comes from AN-1)
+ZONE_RATIOS_FILE = (("River", 1.20), ("Lake", 0.60))   # zone_inlets_net3.csv: Lake at half River's residual
+
+
+def analyzer_values(site_index: int) -> list[float]:
+    """The readings analyzer_15min() writes for one of its sites, as written (3 decimals): the expected inlet median."""
+    return [float(f"{0.55 + 0.1 * site_index + 0.08 * math.sin(2 * math.pi * step / 1440) - 0.002 * day:.3f}")
+            for day in range(1, ANALYZER_DAYS + 1) for step in range(0, 24 * 60, ANALYZER_STEP_MIN)]
+
+
+def zone_tap_map() -> bytes:
+    rows = [(t, ZONE_INLET_TAP[1], "inlet", "zone inlet analyzer, invented") if t == ZONE_INLET_TAP[0]
+            else (t, j, "route" if t.startswith("T") else "", "invented") for t, j in T16_TAPS]
+    return _csv_text("tap_id,junction_id,role,notes", rows).encode("utf-8")
+
+
+def zone_inlet_residuals() -> bytes:
+    return _csv_text("inlet_node_id,residual_mgL,notes", [("River", f"{ZONE_RIVER_MGL:.2f}", "invented")]).encode()
+
+
+def zone_inlets_net3() -> bytes:
+    return _csv_text("inlet_node_id,residual_mgL", [(n, f"{v:.2f}") for n, v in ZONE_RATIOS_FILE]).encode()
+
+
+def zone_inlets_ugl() -> bytes:
+    """The same two residuals in µg/L, under headers the reader has to guess ('Inlet', 'Residual (ug/L)'), with a
+    semicolon separator and decimal commas."""
+    return _csv_text("Inlet;Residual (ug/L)", [(n, f"{v * 1000:.1f}".replace(".", ",")) for n, v in ZONE_RATIOS_FILE],
+                     sep=";").encode()
+
+
+EXAMPLE_INLET_TAP = ("T10", "Lake")    # example_tap_map_inlet.csv: docs/example_tap_map.csv with T10 as Lake's inlet tap
+
+
+def example_tap_map_inlet() -> bytes:
+    """docs/example_tap_map.csv (read with the csv module, not the reader under test) with a role column: T10, a tap
+    of the committed example log sampled every month, becomes Lake's inlet tap, so a six-month log has an inlet tap."""
+    import csv as _csv
+    with open(os.path.join(REPO, "docs", "example_tap_map.csv"), newline="", encoding="utf-8") as fh:
+        rows = list(_csv.reader(fh))
+    out = [(r[0], EXAMPLE_INLET_TAP[1] if r[0] == EXAMPLE_INLET_TAP[0] else r[1],
+            "inlet" if r[0] == EXAMPLE_INLET_TAP[0] else "") for r in rows[1:]]
+    return _csv_text("tap_id,junction_id,role", out).encode()
+
+
+# the review of task 16c: a declared inlet tap whose readings are all before the grab rows' window (three months of
+# grab samples at two taps, April to June, and three inlet readings at INL, January to March), the same log with the
+# inlet's only readings below detection, role cells that mention an inlet but mark none, a tap marked as an inlet at a
+# junction, and inlet files the reader must refuse (a µg/L value written with a thousands separator, a total chlorine
+# column in free-chlorine mode, a residual under a hundredth of the highest)
+ZONE_WINDOW_TAPS = (("T1", "10"), ("T2", "15"))
+ZONE_WINDOW_INLET = ("INL", "Lake")
+ZONE_WINDOW_INLET_MGL = (0.90, 0.80, 0.85)      # INL's readings, January to March (median 0.85)
+
+
+def _zone_window_rows(inlet_values) -> list:
+    rows = [(f"2026-{m:02d}-1{k}", "09:00", t, f"{0.50 + 0.05 * k:.2f}")
+            for m in (4, 5, 6) for k, (t, _) in enumerate(ZONE_WINDOW_TAPS)]
+    rows += [(f"2026-{m:02d}-10", "08:00", ZONE_WINDOW_INLET[0], v) for m, v in zip((1, 2, 3), inlet_values)]
+    return sorted(rows)
+
+
+def zone_inlet_window_log() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL",
+                     _zone_window_rows([f"{v:.2f}" for v in ZONE_WINDOW_INLET_MGL])).encode()
+
+
+def zone_inlet_censored_log() -> bytes:
+    return _csv_text("date,time,tap_id,free_chlorine_mgL", _zone_window_rows(["<0.02", "ND", "<0.02"])).encode()
+
+
+def zone_window_tap_map() -> bytes:
+    return _csv_text("tap_id,junction_id,role", [(t, j, "route") for t, j in ZONE_WINDOW_TAPS]
+                     + [(*ZONE_WINDOW_INLET, "inlet")]).encode()
+
+
+ZONE_NEAR_MISS_ROLES = ("not inlet", "non-inlet", "downstream of inlet")
+
+
+def zone_tap_map_not_inlet() -> bytes:
+    """ZONE_WINDOW_TAPS and INL, with role cells that mention an inlet but mark none (and INL's own junction a
+    junction, 20, so a reader that took any cell with the word as an inlet would refuse it as no entry point)."""
+    return _csv_text("tap_id,junction_id,role", [("T1", "10", ZONE_NEAR_MISS_ROLES[0]), ("T2", "15", ZONE_NEAR_MISS_ROLES[1]),
+                                                 ("INL", "20", ZONE_NEAR_MISS_ROLES[2])]).encode()
+
+
+def zone_tap_map_wrong_node() -> bytes:
+    """INL marked as a zone inlet, but its junction column names junction 20, which is no entry point of Net3."""
+    return _csv_text("tap_id,junction_id,role", [(t, j, "route") for t, j in ZONE_WINDOW_TAPS]
+                     + [("INL", "20", "Zone inlet")]).encode()
+
+
+ZONE_FIXTURES = ("analyzer_15min.csv", "task16_tap_map.csv", "zone_tap_map.csv", "zone_inlet_residuals.csv",
+                 "zone_inlets_net3.csv", "zone_inlets_ugl.csv", "zone_inlets_missing.csv", "zone_inlets_unknown.csv",
+                 "zone_inlets_censored.csv", "example_tap_map_inlet.csv",
+                 "zone_inlet_window_log.csv", "zone_inlet_censored_log.csv", "zone_window_tap_map.csv",
+                 "zone_tap_map_not_inlet.csv", "zone_tap_map_wrong_node.csv", "zone_inlets_thousands_ugl.csv",
+                 "zone_inlets_total.csv", "zone_inlets_tiny.csv")
+FIXTURES.update({"example_tap_map_inlet.csv": example_tap_map_inlet,
+    "zone_tap_map.csv": zone_tap_map, "zone_inlet_residuals.csv": zone_inlet_residuals,
+    "zone_inlets_net3.csv": zone_inlets_net3, "zone_inlets_ugl.csv": zone_inlets_ugl,
+    "zone_inlets_missing.csv": lambda: _csv_text("inlet_node_id,residual_mgL", [("River", "1.20")]).encode(),
+    "zone_inlets_unknown.csv": lambda: _csv_text("inlet_node_id,residual_mgL",
+                                                 [("River", "1.20"), ("Lake", "0.60"), ("Tank9", "0.50")]).encode(),
+    "zone_inlets_censored.csv": lambda: _csv_text("inlet_node_id,residual_mgL",
+                                                  [("River", "1.20"), ("Lake", "<0.02")]).encode(),
+    "zone_inlet_window_log.csv": zone_inlet_window_log, "zone_inlet_censored_log.csv": zone_inlet_censored_log,
+    "zone_window_tap_map.csv": zone_window_tap_map, "zone_tap_map_not_inlet.csv": zone_tap_map_not_inlet,
+    "zone_tap_map_wrong_node.csv": zone_tap_map_wrong_node,
+    "zone_inlets_thousands_ugl.csv": lambda: _csv_text("inlet_node_id,residual_ugL",
+                                                       [("River", "1,200"), ("Lake", "850")]).encode(),
+    "zone_inlets_total.csv": lambda: _csv_text("inlet_node_id,total_chlorine_mgL",
+                                               [("River", "1.20"), ("Lake", "0.60")]).encode(),
+    "zone_inlets_tiny.csv": lambda: _csv_text("inlet_node_id,residual_mgL",
+                                              [("River", "1.20"), ("Lake", "0.005")]).encode()})
 
 
 def build(name: str, dest: str) -> str:

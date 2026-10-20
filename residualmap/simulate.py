@@ -72,6 +72,38 @@ def source_nodes(wn) -> list[str]:
     return inflow or list(wn.tank_name_list)
 
 
+INLET_RATIO_DECIMALS = 6           # iteration 5, task 16c: a per-inlet ratio is rounded to this many decimals, so the
+                                   # dose EPANET runs and the grid's cache tag are made from the same number
+
+
+def normalize_inlet_ratios(inlet_ratios) -> dict | None:
+    """Per-inlet dose ratios (iteration 5, task 16c) in the one form every caller uses: {entry point: ratio}, each
+    ratio a float rounded to INLET_RATIO_DECIMALS decimals, sorted by node ID.  None, an empty dict or every ratio
+    equal to 1 gives None: today's code path (every entry point dosed at the one dose).  A ratio must be finite and at
+    least 0 (an inlet with no chlorine entering it has ratio 0)."""
+    if not inlet_ratios:
+        return None
+    out = {}
+    for node, r in dict(inlet_ratios).items():
+        r = float(r)
+        if not math.isfinite(r) or r < 0:
+            raise ValueError(f"inlet ratio for {node!r} must be a finite number of at least 0, not {r!r}")
+        out[str(node)] = round(r, INLET_RATIO_DECIMALS)
+    if all(r == 1.0 for r in out.values()):
+        return None
+    return dict(sorted(out.items()))
+
+
+def check_inlet_ratios(ratios: dict, entry_points) -> None:
+    """Refuse ratios that do not name exactly the model's entry points (source_nodes): one ratio per entry point.
+    Callers check the ratios as given, before normalize_inlet_ratios, so a dict that leaves an entry point out is
+    refused even when every ratio in it is 1."""
+    want, got = set(map(str, entry_points)), set(map(str, ratios))
+    if want != got:
+        raise ValueError(f"inlet ratios must name every entry point of the model and nothing else: entry points "
+                         f"{sorted(want)}, ratios given for {sorted(got)}")
+
+
 def hydraulic_graph(wn) -> nx.Graph:
     g = nx.Graph()
     for lname, link in wn.links():
@@ -140,7 +172,8 @@ def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float,
                               source_dose: float = 1.2, demand_mult: float = 1.0,
                               rough_mult: float = 1.0, file_prefix: str = "temp",
                               kb_scale: float = 1.0, kw_scale: float = 1.0,
-                              temp_C: float | None = None) -> pd.DataFrame:
+                              temp_C: float | None = None, inlet_ratios: dict | None = None,
+                              quality_tolerance: float | None = None) -> pd.DataFrame:
     """Chlorine on the operator's NOMINAL model for a candidate (kb, kw, gamma).  hour x junction.
 
     demand_mult / rough_mult are the hydraulic-mismatch axes of the grid: the operator's demands and
@@ -149,7 +182,14 @@ def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float,
 
     kb_scale / kw_scale multiply the bulk and wall rates (e.g. an Arrhenius factor for this month's water,
     chemistry.Chemistry.kb_scale); temp_C multiplies the file's own VISCOSITY and DIFFUSIVITY by their ratios
-    at that temperature (chemistry.apply_water_temperature).  The defaults write an identical .inp."""
+    at that temperature (chemistry.apply_water_temperature).  The defaults write an identical .inp.
+
+    inlet_ratios (iteration 5, task 16c): {entry point: r}, each entry point dosed at r x source_dose, for a zone whose
+    inlets carry different residuals (r_i = residual_i / the largest, so source_dose is the highest residual entering
+    the zone).  None, or every ratio 1, is today's code path (normalize_inlet_ratios).  Every r is fixed, so the decay
+    stays linear in the dose and the grid's dose axis stays an exact offset in ln C.  quality_tolerance: EPANET's
+    quality tolerance in the model's units (None: the file's own; only the superposition check sets it)."""
+    ratios = normalize_inlet_ratios(inlet_ratios)
     wn = load(name)
     wn.options.quality.parameter = "CHEMICAL"
     wn.options.reaction.bulk_coeff = -kb_per_day * kb_scale / DAY
@@ -162,8 +202,13 @@ def simulate_nominal_chlorine(name: str, kb_per_day: float, kw_m_per_day: float,
         for _, j in wn.junctions():
             for ts in j.demand_timeseries_list:
                 ts.base_value = ts.base_value * demand_mult
-    for res in source_nodes(wn):
-        wn.add_source(f"src_{res}", res, "CONCEN", source_dose)
+    if quality_tolerance is not None:
+        wn.options.quality.tolerance = float(quality_tolerance)
+    entry = source_nodes(wn)
+    if inlet_ratios:
+        check_inlet_ratios(inlet_ratios, entry)
+    for res in entry:
+        wn.add_source(f"src_{res}", res, "CONCEN", source_dose if ratios is None else source_dose * ratios[res])
     q = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=file_prefix).node["quality"]
     return _last_day(q, wn.junction_name_list).clip(lower=0.0)
 
