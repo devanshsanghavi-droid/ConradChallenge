@@ -163,6 +163,18 @@ _GI = ("invariance",)
 _ZH = ("holdout", "mean")
 _ZHS = ("holdout", "by_month", "held_out_sites")
 _T16CR = ("runs", "post_task16c")               # the rerun on task 16c's tree
+T19 = "Task 19"                                  # task 19's journal section (the operator form, stopped at its bar)
+_F19 = "outputs/intake/operator_form.json"
+_B19 = "outputs/intake/boundary_valve_ky10.json"
+_FID = lambda net: f"outputs/intake/fidelity_{net}.json"
+_FS = lambda r, k: ("rungs", r, "summary", k)    # one rung's mean over the ladder's seeds
+_FC19, _FA19 = ("complete",), ("after_the_stop",)   # parts of the task-19 record
+_T19R = ("runs", "post_task19_stopped")         # the rerun on the stopped tree
+_T19RR = ("runs", "post_task19_review")         # ... and on the tree after task 19's review
+_T19RF = ("runs", "post_task19_final")          # ... and after its final verification
+_FV19 = ("final",)                              # part 'final' of the task-19 record (its final verification)
+_PM19 = ("public_models",)                      # part 'public_models' of the task-19 record (its review)
+_RV19 = ("review",)                             # part 'review' of the task-19 record
 
 
 def _age(net: str, *keys) -> tuple:
@@ -196,18 +208,33 @@ def _guide_swaps_after_task20() -> int:
 SELF_READING = ("numbers_trace_to_outputs", "numbers_scan_settles")
 
 
-def _report_counts() -> dict:
-    """The committed checks report's counts as the text quotes them: 'in_report' the checks passing in it, 'passing'
-    those and the checks kept in the git-ignored run log only (the names check, which passes in every full run that
-    sets its list), 'total' every check, 'skipped' the skipped ones.  Only the saved checks count (those checks.CHECKS
-    defines, and the run's own repo_untouched), so the probe entry numbers_scan_settles adds to a copy is left out."""
+def groups_through(last: str) -> tuple:
+    """The saved checks' groups in checks.CHECKS order, up to and including last: the groups that existed when a task's
+    text quoted its counts (task 19's review: an exclusion list of later groups broke on the next task's first check)."""
+    from .checks import CHECKS
+    seen = []
+    for c in CHECKS:
+        if c[1] not in seen:
+            seen.append(c[1])
+    return tuple(seen[:seen.index(last) + 1])
+
+
+def _report_counts(through: str) -> dict:
+    """The committed checks report's counts as a task's text quotes them, for the checks of groups_through(through):
+    'in_report' the checks passing in it, 'passing' those and the checks kept in the git-ignored run log only
+    (RUN_LOG_ONLY: the names check, which passes in every full run that sets its list, and since task 19 the cached
+    fidelity grids' sha256, which passes wherever the grids are kept), 'total' every check, 'skipped' the skipped ones.
+    Only the saved checks count (those checks.CHECKS defines, and the run's own repo_untouched), so the probe entry
+    numbers_scan_settles adds to a copy is left out, and a group added later never changes an earlier task's counts."""
     from .checks import CHECKS, RUN_LOG_ONLY
-    known = {c[0] for c in CHECKS} | {"repo_untouched"}
+    groups = set(groups_through(through))
+    known = {c[0] for c in CHECKS if c[1] in groups} | {"repo_untouched"}
+    run_log = [c[0] for c in CHECKS if c[0] in RUN_LOG_ONLY and c[1] in groups]
     report = _json(PATH_OVERRIDE.get(SELF_REPORT, SELF_REPORT))
     rows = [c for c in report["checks"] if c["name"] in known]
     in_report = sum(1 for c in rows if c["pass"] is True or c["name"] in SELF_READING)
     skipped = sum(1 for c in rows if c["pass"] is None)
-    return {"in_report": in_report, "passing": in_report + len(RUN_LOG_ONLY), "total": len(rows) + len(RUN_LOG_ONLY),
+    return {"in_report": in_report, "passing": in_report + len(run_log), "total": len(rows) + len(run_log),
             "skipped": skipped}
 
 
@@ -301,7 +328,11 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
     "t17_net3_flagged": ((SELF_REPORT,), lambda: _cd("get_started_gis_import", "net3_from_wntr_gis_flagged")),
     # the review of task 18: the saved checks' counts as the README and the journal quote them, from the committed
     # report, so a stale or failing report fails this check (a review's run had left one that failed repo_untouched)
-    **{f"t18_checks_{k}": ((SELF_REPORT,), (lambda k: lambda: _report_counts()[k])(k))
+    **{f"t18_checks_{k}": ((SELF_REPORT,), (lambda k: lambda: _report_counts("task18")[k])(k))
+       for k in ("in_report", "passing", "total", "skipped")},
+    # task 19 and its review: the saved checks' counts as its journal and the README quote them, from the committed
+    # report, for the groups up to task 19's
+    **{f"t19_checks_{k}": ((SELF_REPORT,), (lambda k: lambda: _report_counts("task19")[k])(k))
        for k in ("in_report", "passing", "total", "skipped")},
     # task 12, low-pH stress, random rule: model (c)'s RMSE over the uniform prior (b)'s at every n
     "ca_lowph_prior_cost": ((_C3,), lambda: _pct_range(
@@ -1099,6 +1130,111 @@ REGISTRY: list[tuple] = [
     ("journal", T18, "repairs to {} times its size", (_C, _CH + ("hostile_long_handle.dxf", "repaired_over_input")), ".3f"),
     ("journal", T18, "(1,900 polylines, 1,000 labels, {} pairs)", (_C, _CFV + ("label_pairs_near_limit.dxf", "pairs_within_reach")), ",d"),
     ("journal", T18, "and made {} points before it was dropped", (_C, _CFV + ("inf_polyline", "points_its_arcs_make")), ",d"),
+    # task 19 (stopped at its bar): the scored run, the characterization after the stop, the form's other parts
+    *[(doc, T19 if doc == "journal" else L15, w, (_F19, k), f) for doc, w, k, f in (
+        ("journal", "The scored run gave a water-age median of {} h", _FC19 + ("age_h", "median"), ".2f"),
+        ("journal", "and a 95th percentile of {} h, and a chlorine 95th", _FC19 + ("age_h", "p95"), ".2f"),
+        ("journal", "and a chlorine 95th percentile of {} mg/L; the chlorine median", _FC19 + ("chlorine_mgL", "p95"), ".4f"),
+        ("journal", "the chlorine median ({} mg/L) and the Jaccard", _FC19 + ("chlorine_mgL", "median"), ".4f"),
+        ("journal", "and the Jaccard ({}) met theirs", _FC19 + ("lows", "jaccard"), ".4f"),
+        ("journal", "ky4 draws three junctions {}, 0.117 and 0.601 ft", _FA19 + ("dead_ends_touching_a_main_within_1_ft", 0, "distance_ft"), ".3f"),
+        ("journal", "ky4 draws three junctions 0.104, {} and 0.601 ft", _FA19 + ("dead_ends_touching_a_main_within_1_ft", 2, "distance_ft"), ".3f"),
+        ("journal", "ky4 draws three junctions 0.104, 0.117 and {} ft", _FA19 + ("dead_ends_touching_a_main_within_1_ft", 1, "distance_ft"), ".3f"),
+        ("journal", "(age median {} h and 95th percentile 0.28 h, chlorine", _FA19 + ("joined_within_0p1_ft", "age_h", "median"), ".4f"),
+        ("journal", "(age median 0.0095 h and 95th percentile {} h, chlorine", _FA19 + ("joined_within_0p1_ft", "age_h", "p95"), ".2f"),
+        ("journal", "chlorine 95th percentile {} mg/L, Jaccard 1.0)", _FA19 + ("joined_within_0p1_ft", "chlorine_mgL", "p95"), ".4f"),
+        ("journal", "water age median 1.47 h, 95th percentile {} h, largest", _FC19 + ("age_h", "p95"), ".2f"),
+        ("journal", "95th percentile 22.58 h, largest {} h; chlorine", _FC19 + ("age_h", "max"), ".1f"),
+        ("journal", "median 0.0015 mg/L, 95th percentile {} mg/L, largest", _FC19 + ("chlorine_mgL", "p95"), ".4f"),
+        ("journal", "95th percentile 0.0923 mg/L, largest {} mg/L; junctions", _FC19 + ("chlorine_mgL", "max"), ".2f"),
+        ("journal", "daily minimum {} in the original and 898 completed", _FC19 + ("lows", "original"), "d"),
+        ("journal", "daily minimum 897 in the original and {} completed", _FC19 + ("lows", "completed"), "d"),
+        ("journal", "Completed by the form's {} rows", _FC19 + ("form", "rows"), "d"),
+        ("journal", "1,159 pipes and {} nodes in one part", _FC19 + ("skeleton", "nodes"), "d"),
+        ("journal", "the drawing gives ky4's {} pipes with no tee", _FA19 + ("joined_within_0p1_ft", "skeleton", "pipes"), ",d"),
+        ("journal", "water age moves by more than 2 h at {} of its 920 junctions", ("prvs", "prvs_missing_vs_original", "junctions_age_moved"), "d"),
+        ("journal", "(largest {} h, 95th percentile 16.4 h)", ("prvs", "prvs_missing_vs_original", "age_h", "max"), ".1f"),
+        ("journal", "(largest 84.5 h, 95th percentile {} h)", ("prvs", "prvs_missing_vs_original", "age_h", "p95"), ".1f"),
+        ("journal", "and chlorine by up to {} mg/L", ("prvs", "prvs_missing_vs_original", "chlorine_mgL", "max"), ".3f"),
+        ("journal", "differs from the closed copy by more than 2 h at {} junctions", ("boundary", "open_vs_closed_original", "junctions_age_moved"), "d"),
+        ("README", "The scored run gave {} h and 22.58 h", _FC19 + ("age_h", "median"), ".2f"),
+        ("README", "The scored run gave 1.47 h and {} h", _FC19 + ("age_h", "p95"), ".2f"),
+        ("README", "and {} and 0.0923 mg/L, so it missed", _FC19 + ("chlorine_mgL", "median"), ".4f"),
+        ("README", "and 0.0015 and {} mg/L, so it missed", _FC19 + ("chlorine_mgL", "p95"), ".4f"),
+        ("README", "what the drawn lengths alone do (95th percentile {} h)", _FA19 + ("joined_within_0p1_ft", "age_h", "p95"), ".2f"),
+        # task 19's review: the test form's demands, the reference's options, the files' diffusivity, its cases
+        ("README", "each of ky4's {} junction demands", _FC19 + ("form", "large_users"), "d"),
+        ("README", "changes its chlorine by a median of {} mg/L by itself", _FC19 + ("original_options_effect", "chlorine_mgL", "median"), ".3f"),
+        ("README", "changes the daily minimum by {} mg/L on ky4 at the 95th percentile", _PM19 + ("ky4", "at_file_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("README", "at the 95th percentile, against {} at 1.0", _PM19 + ("ky4", "at_chlorine_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("README", "would have {} of its 959 junctions below 0.2 mg/L", _PM19 + ("ky4", "at_chlorine_diffusivity", "junctions_low"), "d"),
+        ("README", "against {} at its file's setting", _PM19 + ("ky4", "at_file_diffusivity", "junctions_low"), "d"),
+        ("journal", "ky4 at its truth has {} of its 959 junctions below 0.2 mg/L at the daily minimum", _PM19 + ("ky4", "at_file_diffusivity", "junctions_low"), "d"),
+        ("journal", "and ky10 has {} of its 920 against 611", _PM19 + ("ky10", "at_file_diffusivity", "junctions_low"), "d"),
+        ("journal", "and ky10 has 362 of its 920 against {}", _PM19 + ("ky10", "at_chlorine_diffusivity", "junctions_low"), "d"),
+        ("journal", "changes their junctions' daily minima by {} mg/L on ky4", _PM19 + ("ky4", "at_file_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("journal", "mg/L on ky4 and {} on ky10 at the 95th percentile at 0.05", _PM19 + ("ky10", "at_file_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("journal", "at 0.05, against {} and 0.069 at 1.0", _PM19 + ("ky4", "at_chlorine_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("journal", "at 0.05, against 0.090 and {} at 1.0", _PM19 + ("ky10", "at_chlorine_diffusivity", "daily_min_change_mgL", "p95"), ".3f"),
+        ("journal", "its {} pipes of C 100 get 135", _PM19 + ("ky10", "c_counts", "100"), "d"),
+        ("journal", "carries a mean of {} gpm over 48 h", _RV19 + ("pumps_side_by_side", "mean_flow_gpm_48_h", "PUMP-A"), ".1f"),
+        ("journal", "the tank drains from 20.0 to {} ft in 24 h", _RV19 + ("psv_elevation_upstream", "tank_level_ft_first_last", 1), ".1f"))],
+    # task 19's review: material-only C judged on chlorine (the ladder's records)
+    *[("journal", T19, w, (_FID(net), _FS(r, k)), f) for w, net, r, k, f in (
+        ("the daily-minimum error rises from {} to 0.074 mg/L on Net3", "Net3", "r0", "after_chlorine_mae_mgL", ".3f"),
+        ("the daily-minimum error rises from 0.058 to {} mg/L on Net3", "Net3", "c_material", "after_chlorine_mae_mgL", ".3f"),
+        ("before calibration ky10's false lows go from {} to 24.6", "ky10", "r0", "before_false_lows", ".1f"),
+        ("before calibration ky10's false lows go from 15.9 to {}", "ky10", "c_material", "before_false_lows", ".1f"))],
+    *[("README", L15, w, (_FID(net), _FS(r, k)), f) for w, net, r, k, f in (
+        ("(ky4's water-age error from {} to 10.77 h)", "ky4", "r1", "age_mae_h", ".2f"),
+        ("(ky4's water-age error from 8.14 to {} h)", "ky4", "r2", "age_mae_h", ".2f"),
+        ("(from {} to 0.074 mg/L on Net3)", "Net3", "r0", "after_chlorine_mae_mgL", ".3f"),
+        ("(from 0.058 to {} mg/L on Net3)", "Net3", "c_material", "after_chlorine_mae_mgL", ".3f"))],
+    *[("journal", T19, w, (_B19, k), f) for w, k, f in (
+        ("of ky10's {} closable pipes, close each in turn", ("closable_pipes",), "d"),
+        ("{} closures keep every junction fed, 211 do not", ("fed_closures",), "d"),
+        ("359 closures keep every junction fed, {} do not", ("starving_closures",), "d"),
+        ("P-18 moves the mean age by {} h on average", ("picked", "mean_abs_change_h"), ".2f"),
+        ("(largest {} h at one junction)", ("picked", "max_abs_change_h"), ".1f"))],
+    *[("journal", T19, words.replace("{W}", "on the stopped tree)"), (_BR, _T19R + key), "d") for words, key in _REPRO_WORDS],
+    *[("journal", T19, words.replace("{W}", "on the reviewed tree)"), (_BR, _T19RR + key), "d") for words, key in _REPRO_WORDS],
+    *[("journal", T19, words.replace("{W}", "on the verified tree)"), (_BR, _T19RF + key), "d") for words, key in _REPRO_WORDS],
+    # task 19's final verification: Found 8's C-130 step restated on chlorine (the ladder's records), the grammar
+    # fuzzer's counts as copied into part 'final', and the README's median caveat (part 'public_models')
+    *[("journal", T19, w, (_FID(net), _FS(r, k)), f) for w, net, r, k, f in (
+        ("chlorine error rises from {} to 0.071 mg/L on Net3", "Net3", "r0", "after_chlorine_mae_mgL", ".3f"),
+        ("chlorine error rises from 0.058 to {} mg/L on Net3", "Net3", "r1", "after_chlorine_mae_mgL", ".3f"),
+        ("(from {} to 0.054 before calibration)", "Net3", "r0", "before_chlorine_mae_mgL", ".3f"),
+        ("(from 0.048 to {} before calibration)", "Net3", "r1", "before_chlorine_mae_mgL", ".3f"),
+        ("falls a little on ky4 ({} to 0.048)", "ky4", "r0", "after_chlorine_mae_mgL", ".3f"),
+        ("falls a little on ky4 (0.051 to {})", "ky4", "r1", "after_chlorine_mae_mgL", ".3f"),
+        ("and ky10 ({} to 0.042); before", "ky10", "r0", "after_chlorine_mae_mgL", ".3f"),
+        ("and ky10 (0.044 to {}); before", "ky10", "r1", "after_chlorine_mae_mgL", ".3f"),
+        ("the false lows rise on ky4 ({} to 36.9)", "ky4", "r0", "before_false_lows", ".1f"),
+        ("the false lows rise on ky4 (30.2 to {})", "ky4", "r1", "before_false_lows", ".1f"),
+        ("and ky10 ({} to 23.2), and after 12 samples", "ky10", "r0", "before_false_lows", ".1f"),
+        ("and ky10 (15.9 to {}), and after 12 samples", "ky10", "r1", "before_false_lows", ".1f"),
+        ("they fall (78.9 to 55.4 on ky4, {} to 22.9 on ky10)", "ky10", "r0", "after_false_lows", ".1f"),
+        ("they fall (78.9 to 55.4 on ky4, 25.2 to {} on ky10)", "ky10", "r1", "after_false_lows", ".1f"))],
+    *[("journal", T19, w, (_F19, _FV19 + ("grammar_fuzz",) + k), f) for w, k, f in (
+        ("grammar fuzzer's {} random forms, 34 had been completed", ("forms",), ",d"),
+        ("3,000 random forms, {} had been completed with nodes", ("before", "ok_but_disconnected"), "d"),
+        ("after this fix {} were, each a tank on the only path", ("after_reachability", "ok_but_disconnected"), "d"),
+        ("and {} is left: a tank on the only path", ("after_the_tank_check", "ok_but_disconnected"), "d"))],
+    *[("README", L15, w, (_F19, _PM19 + (net, d, "daily_min_change_mgL", "median")), ".3f") for w, net, d in (
+        ("larger at 0.05 ({} against 0.016 mg/L)", "ky4", "at_file_diffusivity"),
+        ("larger at 0.05 (0.021 against {} mg/L)", "ky4", "at_chlorine_diffusivity"),
+        ("ky10's median is smaller at 0.05 ({} against 0.022)", "ky10", "at_file_diffusivity"),
+        ("ky10's median is smaller at 0.05 (0.009 against {})", "ky10", "at_chlorine_diffusivity"))],
+    *[(doc, T19 if doc == "journal" else L15, words, f"t19_checks_{k}", "d") for doc, words, k in (
+        ("journal", "| {} of 158 pass and 1 is skipped (the external layer's), the thirteen", "passing"),
+        ("journal", "| 157 of {} pass and 1 is skipped (the external layer's), the thirteen", "total"),
+        ("journal", "| 157 of 158 pass and {} is skipped (the external layer's), the thirteen", "skipped"),
+        ("journal", "task-19 checks among them: {} passing in the committed report", "in_report"),
+        ("README", "The saved checks after task 19's final verification: {} of 158 passing", "passing"),
+        ("README", "The saved checks after task 19's final verification: 157 of {} passing", "total"),
+        ("README", "157 of 158 passing and {} skipped, the external layer's", "skipped"),
+        ("README", "({} passing in `outputs/chem/checks_report.json`, and the names check, run with the private list set, and the check", "in_report"))],
 ]
 
 

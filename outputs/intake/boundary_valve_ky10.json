@@ -1,0 +1,42 @@
+{
+ "about": "Task 19: the boundary valve of operator_form_boundary_valve, picked once on ky10's prepared copy (public, bundled with WNTR) by the pre-registered rule in residualmap/intake_exp.py (every closable pipe closed in turn, a 7-day water-age run each; of the closures that keep every junction fed, the one that moves the scored day's mean age the most), then pinned in fixtures.py. Written by python -m residualmap.intake_exp boundary.",
+ "closable_pipes": 570,
+ "fed_closures": 359,
+ "fed_threshold_h": 144.0,
+ "picked": {
+  "pipe": "P-18",
+  "starved_junctions": 0,
+  "mean_abs_change_h": 1.381617,
+  "max_abs_change_h": 46.242695
+ },
+ "next_four": [
+  {
+   "pipe": "P-559",
+   "starved_junctions": 0,
+   "mean_abs_change_h": 1.335875,
+   "max_abs_change_h": 29.303331
+  },
+  {
+   "pipe": "P-584",
+   "starved_junctions": 0,
+   "mean_abs_change_h": 1.240788,
+   "max_abs_change_h": 67.821068
+  },
+  {
+   "pipe": "P-146",
+   "starved_junctions": 0,
+   "mean_abs_change_h": 1.172611,
+   "max_abs_change_h": 26.673876
+  },
+  {
+   "pipe": "P-127",
+   "starved_junctions": 0,
+   "mean_abs_change_h": 1.14277,
+   "max_abs_change_h": 135.600105
+  }
+ ],
+ "starving_closures": 211,
+ "_measured": {
+  "seconds": 130.2
+ }
+}

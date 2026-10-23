@@ -9,6 +9,8 @@ readiness report says so on every CAD-built model.  Tested only as converter sel
 by our own writers (residualmap/fixtures.py); no real drawing was read.
 
     python -m residualmap.cad_read DRAWING.dxf [--unit ft|us_ft|m|in|mm|cm|yd] [--tolerance-ft 6] [--out skeleton.inp]
+    python -m residualmap.cad_read DRAWING.dxf --form FORM.csv --out completed.inp   # task 19: completed by the
+                                    # operator form (operator_form.py), each pipe's material kept
         [--layer-numbers none|in|mm|m] [--default-in 8]
 
 Reading (ezdxf 1.4.4, imported only here and only when a drawing is read, so the .inp path never loads it):
@@ -1191,6 +1193,9 @@ class CadBuild:
     layer_sizes: dict = field(default_factory=dict)
     c_of: dict = field(default_factory=dict)
     c_counts: dict = field(default_factory=dict)
+    c_material: dict = field(default_factory=dict)     # task 19: pipe ID -> the material its label or layer names
+                                                       # (topology.material_of: 'DIP' ductile iron), or None; the
+                                                       # operator form's pipe_c rows set C by it
     default_size: dict = field(default_factory=dict)   # {'size_in', 'from': 'commonest' or 'given'} when one is used
     scale_check: dict = field(default_factory=dict)
     frame: dict = field(default_factory=dict)
@@ -1537,15 +1542,16 @@ def _build(d: Drawing, opts: CadOptions, limits: dict | None = None) -> CadBuild
     classes: Counter = Counter()
     for p in net.pipes:
         f = p["feature"]
-        c, cls = T.hazen_c(line_text.get(f)) if f in line_text else (T.C_DEFAULT, None)
+        c, cls, mat = T.material_of(line_text.get(f)) if f in line_text else (T.C_DEFAULT, None, None)
         if cls is None:
-            c, cls = T.hazen_c(_LAYER_SEPARATORS.sub(" ", by_index[f].layer[:T.SIZE_TEXT_MAX]))
+            c, cls, mat = T.material_of(_LAYER_SEPARATORS.sub(" ", by_index[f].layer[:T.SIZE_TEXT_MAX]))
         if cls:
             cc["from_material"] += 1
             classes[cls] += 1
         else:
             cc["default"] += 1
         b.c_of[p["id"]] = c
+        b.c_material[p["id"]] = mat
     b.c_counts = {"from_material": int(cc["from_material"]), "default": int(cc["default"]),
                   "classes": dict(sorted(classes.items())), "uniform": len(set(b.c_of.values())) <= 1}
     # scale and location
@@ -1676,6 +1682,9 @@ def main(argv=None) -> int:
     ap.add_argument("--unit", choices=sorted(UNIT_M))
     ap.add_argument("--tolerance-ft", type=float)
     ap.add_argument("--out")
+    ap.add_argument("--form", help="an operator form (CSV or Excel): complete the skeleton with it, each pipe's "
+                                   "material and the coordinates kept, and write the completed model to --out "
+                                   "(task 19)")
     ap.add_argument("--layer-numbers", choices=("none", "in", "mm", "m"),
                     help="numbers in layer names with no unit beside them: not sizes (none), or their unit")
     ap.add_argument("--default-in", type=float, help="the size of pipes no layer name or label sizes, in inches")
@@ -1696,6 +1705,9 @@ def main(argv=None) -> int:
         print("sizes:", b.size_counts)
     for w in b.warnings:
         print("Warning:", w)
+    if b.inp_text and a.form:          # task 19's review: the form applied to the build, not to its .inp
+        from . import operator_form as OF
+        return OF.complete_from_files(OF.skeleton_from_build(b, "cad"), a.form, a.out)
     if b.inp_text and a.out:
         with open(a.out, "w", encoding="utf-8") as fh:
             fh.write(b.inp_text)

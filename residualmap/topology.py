@@ -102,6 +102,22 @@ C_SOURCE = "EPANET 2 Users Manual (Rossman 2000), Table 3.2, new pipe, middle of
 C_CLASSES_NOTE = ("the table names cast iron, concrete or concrete lined, galvanized iron, plastic, steel and vitrified "
                   "clay only; reading ductile iron, asbestos cement and PCCP as concrete lined (130) and HDPE, PE and "
                   "PEX as plastic (145) is this tool's own choice")
+# The material each word of C_TABLE names, within its class (task 19's review): one class holds several materials
+# (ductile iron, asbestos cement, PCCP and concrete are all 'concrete or concrete lined'), and an operator's own C for
+# one of them (the operator form's pipe_c rows) must not reach the others.  A word not listed names its class's material.
+MATERIAL_OF_WORD = {
+    **{w: "cast iron" for w in ("ci", "cip", "cast", "castiron", "cast iron")},
+    **{w: "ductile iron" for w in ("di", "dip", "ductile", "ductile iron", "dicl", "cl di")},
+    **{w: "concrete" for w in ("concrete", "rcp")}, "pccp": "PCCP",
+    **{w: "cement lined" for w in ("cement", "cement lined", "cl")},
+    **{w: "asbestos cement" for w in ("ac", "acp", "asbestos", "asbestos cement", "transite")},
+    "cicl": "cement-lined cast iron",
+    **{w: "galvanized iron" for w in ("gi", "galv", "galvanized", "galvanised", "gip")},
+    **{w: "PVC" for w in ("pvc", "cpvc", "pvco")},
+    **{w: "polyethylene" for w in ("hdpe", "pe", "pex", "poly", "polyethylene", "mdpe")}, "plastic": "plastic",
+    **{w: "steel" for w in ("st", "stl", "steel", "ws", "welded steel")},
+    **{w: "vitrified clay" for w in ("vc", "vcp", "clay", "vitrified clay")}}
+MATERIAL_CLASS = {MATERIAL_OF_WORD.get(w, cls): cls for cls, _, words in C_TABLE for w in words}
 
 
 class TopologyRefused(ValueError):
@@ -279,15 +295,22 @@ def to_inches(value: float, unit: str) -> float:
 def hazen_c(material) -> tuple[float, str | None]:
     """(C, the table's material class or None) for a material field's value: the new-pipe value of C_TABLE, or
     C_DEFAULT (None) for a value it does not list."""
+    return material_of(material)[:2]
+
+
+def material_of(material) -> tuple[float, str | None, str | None]:
+    """(C, class, material) for a material field's value: hazen_c's C and class, and the material the matching word
+    names (MATERIAL_OF_WORD: 'DIP' and 'ductile iron' are ductile iron, 'AC' asbestos cement, both of the class
+    'concrete or concrete lined'), or (C_DEFAULT, None, None)."""
     if material is None:
-        return C_DEFAULT, None
+        return C_DEFAULT, None, None
     s = re.sub(r"[^a-z ]+", " ", str(material).lower()).split()
     joined = " ".join(s)
     for cls, c, words in C_TABLE:
         for w in words:
             if (" " in w and w in joined) or w in s:
-                return c, cls
-    return C_DEFAULT, None
+                return c, cls, MATERIAL_OF_WORD.get(w, cls)
+    return C_DEFAULT, None, None
 
 
 # ----------------------------------------------------------------------------- IDs

@@ -4,11 +4,14 @@ gis_read.py: GIS layers of water mains read into a skeleton model (iteration 5, 
 Replies in October 2026 from people who work with small systems said those systems rarely have a hydraulic model, only
 a map of their mains, so this is the route for them: a mains layer becomes a skeleton EPANET model (pipes, their sizes
 and lengths, nodes where they meet), with a readiness report that says it is not ready until the source, tanks, pumps,
-valves, controls and demand are given (in EPANET, on the downloaded file, until the operator form is built).
+valves, controls and demand are given (in EPANET, on the downloaded file, until the operator form, built in task 19,
+is offered on the page; on the command line, --form applies it).
 Converter self-consistency on public models converted to GIS by our own writers is all that is tested; no utility's
 own layer was read.
 
     python -m residualmap.gis_read LAYER [--unit ft|us_ft|m|deg] [--tolerance-ft 6] [--out skeleton.inp]
+    python -m residualmap.gis_read LAYER --form FORM.csv --out completed.inp   # task 19: completed by the operator
+                                    # form (operator_form.py), each pipe's material and the layer's frame kept
 
 Readers, all in memory (a zip is never unpacked to disk; residualmap.importers' zip limits apply):
 - GeoPackage: sqlite3 on an in-memory copy (a step budget stops a crafted query), the GeoPackage geometry header and a
@@ -1509,6 +1512,11 @@ class GisBuild:
     diam_counts: dict = field(default_factory=dict)
     c_of: dict = field(default_factory=dict)
     c_counts: dict = field(default_factory=dict)
+    c_material: dict = field(default_factory=dict)  # task 19: pipe ID -> the material its material field names
+                                                    # (topology.material_of), or None, as for a pipe whose C came from
+                                                    # the layer's own C field (the operator form's pipe_c rows set C by
+                                                    # material and never touch a C the layer gives)
+    c_from_field: list = field(default_factory=list)   # task 19's review: the pipes whose C the layer's C field gave
     id_table: list = field(default_factory=list)
     length_check: dict = field(default_factory=dict)
     scale_check: dict = field(default_factory=dict)
@@ -1730,7 +1738,7 @@ def _build_from_layer(lay: Layer, opts: GisOptions | None, name: str, kind: str,
                               f"{counts['reducer']} reducers, {counts['two sizes']} with two sizes, "
                               f"{counts['unreadable']} unreadable, {counts['empty']} empty), and "
                               f"{'are' if len(missing) != 1 else 'is'} given {fill:g} in, "
-                              f"{'the commonest size' if opts.default_diameter_in is None else 'the size you chose'}. "
+                              f"{'the commonest size' if opts.default_diameter_in is None else 'the size you gave'}. "
                               f"Give the real sizes in the layer.")
     b.diam_counts = counts
     # Hazen-Williams C
@@ -1745,16 +1753,19 @@ def _build_from_layer(lay: Layer, opts: GisOptions | None, name: str, kind: str,
                 c = c if 40 <= c <= 160 else None
             except (TypeError, ValueError):
                 c = None
+        mat = None
         if c is not None:
             cc["from_field"] += 1
+            b.c_from_field.append(p["id"])
         else:
-            c, cls = T.hazen_c(pr.get(used["material"]) if used["material"] else None)
+            c, cls, mat = T.material_of(pr.get(used["material"]) if used["material"] else None)
             if cls:
                 cc["from_material"] += 1
                 classes[cls] = classes.get(cls, 0) + 1
             else:
                 cc["default"] += 1
         b.c_of[p["id"]] = c
+        b.c_material[p["id"]] = mat
     cc["classes"] = classes
     cc["uniform"] = len(set(b.c_of.values())) <= 1
     b.c_counts = cc
@@ -2115,6 +2126,9 @@ def main(argv=None) -> int:
     ap.add_argument("--unit", choices=sorted(T.UNIT_M) + ["deg"])
     ap.add_argument("--tolerance-ft", type=float)
     ap.add_argument("--out")
+    ap.add_argument("--form", help="an operator form (CSV or Excel): complete the skeleton with it, each pipe's "
+                                   "material and the coordinates kept, and write the completed model to --out "
+                                   "(task 19)")
     a = ap.parse_args(argv)
     with open(a.layer, "rb") as fh:
         data = fh.read()
@@ -2129,6 +2143,9 @@ def main(argv=None) -> int:
         print(json.dumps({k: v for k, v in b.net.report.items() if not k.endswith("_detail")}, indent=1))
     for w in b.warnings:
         print("Warning:", w)
+    if b.inp_text and a.form:          # task 19's review: the form applied to the build, not to its .inp
+        from . import operator_form as OF
+        return OF.complete_from_files(OF.skeleton_from_build(b, "gis"), a.form, a.out)
     if b.inp_text and a.out:
         with open(a.out, "w", encoding="utf-8") as fh:
             fh.write(b.inp_text)

@@ -44,6 +44,12 @@ semicolon-separated, under headers to guess), and three files the reader must re
 no entry point, a residual below detection).  Its review adds a declared inlet tap read outside the grab rows' window
 and one read only below detection, role cells that mention an inlet but mark none, a tap marked as an inlet at a
 junction, and three more inlet files to refuse (a thousands separator in µg/L, total chlorine, a tiny residual).
+
+Task 19 adds the operator form's fixtures (FORM_FIXTURES): ky4's mains drawn exactly as an R12 DXF (every pipe through
+its own vertices, its size and a material in its layer's name) with the form an operator who knew ky4 would fill in,
+built from the original, and the same form without its source; ky10 with its reaction orders fixed, with its five PRVs
+replaced by open pipes and the form that restores them, with its boundary pipe closed (pinned from the one search that
+picked it) and the one-row form that closes it; a form of bad rows; and the form's template, a fixture only.
 """
 from __future__ import annotations
 
@@ -5115,6 +5121,263 @@ FIXTURES.update({"ky4_r12_handwritten.dxf": ky4_r12_handwritten_dxf, "ky4_r2018_
                  **{n: globals()[n.replace(".", "_")] for n in REVIEW_18_FIXTURES if not n.startswith("ky4_cut_")},
                  **{n: globals()[n.replace(".", "_")] for n in FINAL_18_FIXTURES},
                  **{f"ky4_cut_{round(100 * s)}.dxf": functools.partial(ky4_cut_short_dxf, s) for s in CUT_SHORT_SHARES}})
+
+
+# ----------------------------------------------------------------------------- task 19: the operator form
+# ky4_clean_r12.dxf: every ky4 pipe drawn as its own POLYLINE through its exact vertices (no runs through tees, no
+# undershoots, no jitter: the form is tested here, not the topology engine, which task 18's bar tested), on a layer
+# that names its size and a material: PVC for ky4's C 150 pipes, DIP for its C 140 ones (a drawing gives no C; the
+# form's pipe_c rows give each material's).  It is joined within FORM_TOL_FT, a setting of this build fixed before the
+# scored run (the plan named none), chosen from node-to-node spacing alone: its ends are exact, and the closest two
+# distinct nodes of ky4, J-702 and J-703, are 2.2 ft apart.  That choice did not look at a node's distance from a pipe
+# it is not on: three ky4 dead ends lie 0.10 to 0.60 ft from a passing main (task 17's record had listed them,
+# gis_roundtrip.json's near_node_misses), and 1 ft joins each to that main as a tee, so the skeleton has 1,159 pipes,
+# not ky4's 1,156, and that is why the scored run missed its bar (operator_form.json, parts 'complete' and
+# 'after_the_stop').  Each pump's two ends, which ky4 draws at one point, are one node of the skeleton.
+# ky4_form_from_original.csv is the form an operator who knew ky4 would
+# fill in, built from the original: its reservoir's head, its four tanks, its two constant-power pumps at their split
+# nodes (the suction pipe given by a point at the middle of its length), its controls (pump 1 on tank T-3's level;
+# pump 2 has none and runs always), its pattern and every junction's demand as a large user (934 rows, which no
+# operator has: the test shows where the form puts each thing, not what a short form gives).  Every location is a
+# point in ky4's own coordinates (feet), as an operator would read it off the drawing.
+FORM_TOL_FT = 1.0
+FORM_MATERIALS = {150.0: "PVC", 140.0: "DIP"}
+FORM_DOSE_KY4 = 2.0                    # ky4's hidden truth's dose (experiment.NET_TRUTH), so its chlorine is in range
+BOUNDARY_PIPE_KY10 = "P-18"            # pinned from outputs/intake/boundary_valve_ky10.json (its one search, 23 October)
+
+
+def _form_csv(rows: list[dict]) -> bytes:
+    from .operator_form import form_csv
+    return form_csv(rows)
+
+
+def operator_form_template_csv() -> bytes:
+    """The operator form's template (operator_form.TEMPLATE_ROWS): a fixture, not shipped, since the app does not take
+    the form."""
+    from .operator_form import template_csv
+    return template_csv()
+
+
+def _xy(p) -> str:
+    return f"{float(p[0])!r},{float(p[1])!r}"
+
+
+def _ft(value: float, param: str) -> float:
+    from wntr.epanet.util import FlowUnits, HydParam, from_si
+    return float(from_si(FlowUnits.GPM, value, getattr(HydParam, param)))
+
+
+def _mid_point(pts) -> tuple[float, float]:
+    """The point halfway along a polyline's length."""
+    seg = _seg_len(pts)
+    half, acc = sum(seg) / 2.0, 0.0
+    for (a, b), L in zip(zip(pts, pts[1:]), seg):
+        if acc + L >= half and L > 0:
+            t = (half - acc) / L
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        acc += L
+    return tuple(pts[-1])
+
+
+def ky4_clean_r12_dxf() -> bytes:
+    pipes = _ky4_parts()[0]
+    wn = _wn("ky4")
+    ents = []
+    for pn, (s, e, pts, d, _) in pipes.items():
+        ents += _r12_polyline(pts, f"W_{d:g}_{FORM_MATERIALS[float(wn.get_link(pn).roughness)]}")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def ky4_form_rows(source: bool = True) -> list[dict]:
+    """The rows of ky4_form_from_original.csv (source False: without the source row)."""
+    wn = _wn("ky4")
+    pipes = _ky4_parts()[0]
+    rows = [{"kind": "pipe_c", "material": m, "hw_c": f"{c:g}", "note": f"ky4's C {c:g} pipes"}
+            for c, m in sorted(FORM_MATERIALS.items(), reverse=True)]
+    if source:
+        r = wn.get_node("R-1")
+        rows.append({"kind": "source", "id": "R-1", "location": _xy(r.coordinates),
+                     "head_ft": repr(_ft(r.base_head, "HydraulicHead")), "dose_mgL": f"{FORM_DOSE_KY4:g}"})
+    for t in wn.tank_name_list:
+        k = wn.get_node(t)
+        rows.append({"kind": "tank", "id": t, "location": _xy(k.coordinates),
+                     "base_elev_ft": repr(_ft(k.elevation, "Elevation")), "diameter_ft": repr(_ft(k.diameter, "TankDiameter")),
+                     "min_level_ft": repr(_ft(k.min_level, "Length")), "max_level_ft": repr(_ft(k.max_level, "Length")),
+                     "init_level_ft": repr(_ft(k.init_level, "Length"))})
+    for pn in wn.pump_name_list:
+        p = wn.get_link(pn)
+        suction = [ln for ln in wn.get_links_for_node(p.start_node_name) if ln != pn]
+        assert len(suction) == 1, (pn, suction)
+        rows.append({"kind": "pump", "id": pn, "location": _xy(p.start_node.coordinates),
+                     "pipe": _xy(_mid_point(pipes[suction[0]][2])), "power_hp": repr(_ft(p.power, "Power")),
+                     "note": "both ends at one point: the node is split, the suction pipe given by a point on it"})
+    ruled = set()
+    for cn in wn.control_name_list:
+        c = wn.get_control(cn)
+        act = c._then_actions[0]
+        pump, tank = act.target()[0].name, c._condition._source_obj.name
+        thr = _ft(c._condition._threshold, "HydraulicHead")
+        row = next((x for x in rows if x.get("kind") == "pump_rule" and x["pump"] == pump), None)
+        if row is None:
+            row = {"kind": "pump_rule", "pump": pump, "tank": tank}
+            rows.append(row)
+        row["on_below_ft" if c._condition._relation.name == "lt" else "off_above_ft"] = repr(thr)
+        ruled.add(pump)
+    for pn in wn.pump_name_list:
+        if pn not in ruled:
+            rows.append({"kind": "pump_rule", "pump": pn, "on_hours": "always", "note": "no control in ky4: open"})
+    m = list(wn.get_pattern("1").multipliers)
+    rows.append({"kind": "pattern", "multipliers": " ".join(repr(float(x)) for x in m)})
+    mean_m = float(sum(m) / len(m))
+    from .operator_form import GPD_PER_GPM, GPM_M3S
+    for j in wn.junction_name_list:
+        nd = wn.get_node(j)
+        base = float(sum(ts.base_value for ts in nd.demand_timeseries_list))
+        if base > 0:
+            rows.append({"kind": "large_user", "location": _xy(nd.coordinates),
+                         "gallons_per_day": repr(float(base / GPM_M3S * GPD_PER_GPM * mean_m))})
+    return rows
+
+
+def ky4_form_from_original_csv() -> bytes:
+    return _form_csv(ky4_form_rows())
+
+
+def ky4_form_no_source_csv() -> bytes:
+    """The same form without its source row: the completed model must never run."""
+    return _form_csv(ky4_form_rows(source=False))
+
+
+def operator_form_bad_rows_csv() -> bytes:
+    """Rows for ky4's clean skeleton that cannot be used, each for its own reason, beside one good source row: an
+    unknown kind, a PRV with no setting, a tank whose location is off the network, a rule for a pump no row gives, a
+    pattern of 12 numbers, and a large user whose use is not a number."""
+    wn = _wn("ky4")
+    r, t = wn.get_node("R-1"), wn.get_node("T-1")
+    j = wn.get_node("J-1")
+    return _form_csv([
+        {"kind": "source", "id": "R-1", "location": _xy(r.coordinates), "head_ft": "489.87", "dose_mgL": "2"},
+        {"kind": "booster_station", "location": _xy(j.coordinates), "note": "not a kind of the form"},
+        {"kind": "prv", "location": _xy(j.coordinates), "pipe": "P-1", "elevation_ft": "500",
+         "note": "no setting_psi"},
+        {"kind": "tank", "id": "T-far", "location": "1000.0,2000.0", "base_elev_ft": "646", "diameter_ft": "58",
+         "min_level_ft": "78", "max_level_ft": "103", "init_level_ft": "83", "note": "far from every node"},
+        {"kind": "pump_rule", "pump": "P-99", "on_hours": "always", "note": "no pump row has this id"},
+        {"kind": "pattern", "multipliers": " ".join(["1"] * 12), "note": "12 numbers, not 24"},
+        {"kind": "large_user", "location": _xy(t.coordinates), "gallons_per_day": "lots"}])
+
+
+def _ky10_fixed_text() -> str:
+    """ky10 with task 15b's reaction-order fix (importers.fix_reactions_text), LF line ends."""
+    from .importers import fix_reactions_text
+    return fix_reactions_text(_lib("ky10").decode("utf-8").replace("\r\n", "\n"))[0]
+
+
+def ky10_order_fixed_inp() -> bytes:
+    return _crlf(_ky10_fixed_text())
+
+
+def _ky10_valves() -> list[list[str]]:
+    toks = []
+    _section_edit(_ky10_fixed_text(), "VALVES", lambda tok, ln: toks.append(tok) or ln)
+    return toks
+
+
+def ky10_prv_removed_inp() -> bytes:
+    """ky10 (order-fixed) with each of its 5 PRVs replaced by an open pipe of 1 ft at the valve's diameter, C 130, its
+    minor loss: what a skeleton has where a drawing shows no valve."""
+    t = _ky10_fixed_text()
+    vals = _ky10_valves()
+    t = _section_edit(t, "VALVES", lambda tok, ln: None if tok[4].upper() == "PRV" else ln)
+    lines = "\n".join(f" {v[0]}\t{v[1]}\t{v[2]}\t1\t{v[3]}\t130\t{v[6] if len(v) > 6 else '0'}\tOpen\t;"
+                      for v in vals if v[4].upper() == "PRV")
+    return _crlf(_insert_after_header(t, "PIPES", lines))
+
+
+def ky10_prv_form_csv() -> bytes:
+    """5 prv rows: each in place of its pipe, upstream its I- node, its setting and its downstream (O-) node's
+    elevation, read from the file's text."""
+    elev = {}
+    _section_edit(_ky10_fixed_text(), "JUNCTIONS", lambda tok, ln: elev.__setitem__(tok[0], tok[1]) or ln)
+    return _form_csv([{"kind": "prv", "id": v[0], "pipe": v[0], "upstream": v[1], "setting_psi": v[5],
+                       "elevation_ft": elev[v[2]], "diameter_in": v[3]} for v in _ky10_valves() if v[4].upper() == "PRV"])
+
+
+def _boundary_pipe() -> str:
+    if BOUNDARY_PIPE_KY10 is not None:
+        return BOUNDARY_PIPE_KY10
+    raise RuntimeError("the boundary valve has not been pinned yet (python -m residualmap.intake_exp boundary)")
+
+
+def ky10_boundary_valve_closed_inp() -> bytes:
+    """ky10 (order-fixed) with the pinned boundary pipe closed in its [PIPES] line: the 'closed original'."""
+    p = _boundary_pipe()
+    return _crlf(_section_edit(_ky10_fixed_text(), "PIPES",
+                               lambda tok, ln: _set_token(tok, ln, 7, "Closed") if tok[0] == p else ln))
+
+
+def ky10_closed_valve_form_csv() -> bytes:
+    """One closed_valve row: the pinned pipe, given by the point halfway along it (ky10's own coordinates, feet)."""
+    wn = _wn("ky10")
+    p = wn.get_link(_boundary_pipe())
+    pts = [p.start_node.coordinates] + list(p.vertices) + [p.end_node.coordinates]
+    return _form_csv([{"kind": "closed_valve", "pipe": _xy(_mid_point([tuple(map(float, q)) for q in pts])),
+                       "note": "a normally closed valve at a zone boundary"}])
+
+
+# Task 19's review: a small drawing and a small GIS layer for the review's cases (operator_form_review_cases, part
+# 'review' of outputs/intake/operator_form.json).  The drawing, in feet: a well at (0,-800) whose main is drawn from the
+# pump station at (0,0) toward the well (the order in which a second pump's split had moved the well's end), a loop of
+# ductile iron, asbestos cement, PVC and cast iron mains on layers naming each one's size and material (two of them,
+# DIP and AC, share the C table's class), and a branch to a tank site at (4000,2000).  The gap drawing adds a part that
+# starts 20 ft beyond the tank site, which no 1 ft join reaches.  The layer, in longitude and latitude: five mains with
+# a size, a material and, on two of its three cast iron mains, a measured C (85 and 70, as from hydrant flow tests).
+FORM_REVIEW_LINES = (((0, 0), (0, -800), "W_8_PVC"), ((0, 0), (1000, 0), "W_12_DIP"), ((1000, 0), (2000, 0), "W_8_AC"),
+                     ((2000, 0), (2000, 1000), "W_8_DIP"), ((2000, 1000), (1000, 1000), "W_8_PVC"),
+                     ((1000, 1000), (1000, 0), "W_8_CI"), ((2000, 1000), (3000, 1000), "W_8_AC"),
+                     ((3000, 1000), (3000, 2000), "W_12_DIP"), ((3000, 2000), (4000, 2000), "W_8_PVC"))
+FORM_REVIEW_GAP = (((4020, 2000), (5000, 2000), "W_8_PVC"), ((5000, 2000), (5000, 3000), "W_8_PVC"))
+FORM_REVIEW_LONLAT0 = (-84.5, 38.05)           # the layer's origin (invented): longitude, latitude
+FORM_REVIEW_MAINS = (((0, 0), (1000, 0), 12, "DIP", None), ((1000, 0), (2000, 0), 8, "CI", 85),
+                     ((2000, 0), (2000, 1000), 8, "CI", 70), ((2000, 1000), (1000, 1000), 8, "PVC", None),
+                     ((1000, 1000), (1000, 0), 8, "CI", None))
+FORM_REVIEW_FT_PER_DEG_LAT = 364_000.0
+
+
+def _review_dxf(lines) -> bytes:
+    ents = []
+    for a, b, layer in lines:
+        ents += _r12_polyline([a, b], layer)
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def form_review_r12_dxf() -> bytes:
+    return _review_dxf(FORM_REVIEW_LINES)
+
+
+def form_review_gap_r12_dxf() -> bytes:
+    return _review_dxf(FORM_REVIEW_LINES + FORM_REVIEW_GAP)
+
+
+def form_review_lonlat(p) -> tuple[float, float]:
+    """A point of FORM_REVIEW_MAINS (feet east and north of the origin) as (longitude, latitude), rounded to 7 places."""
+    lon0, lat0 = FORM_REVIEW_LONLAT0
+    ft_lon = FORM_REVIEW_FT_PER_DEG_LAT * math.cos(math.radians(lat0))
+    return round(lon0 + p[0] / ft_lon, 7), round(lat0 + p[1] / FORM_REVIEW_FT_PER_DEG_LAT, 7)
+
+
+def form_review_mains_geojson() -> bytes:
+    lines = [[form_review_lonlat(a), form_review_lonlat(b)] for a, b, _, _, _ in FORM_REVIEW_MAINS]
+    props = [{"PIPE_ID": f"M{k}", "DIAMETER": d, "MATERIAL": m, "C_FACTOR": c}
+             for k, (_, _, d, m, c) in enumerate(FORM_REVIEW_MAINS)]
+    return _fc(lines, props)
+
+
+FORM_FIXTURES = ("ky4_clean_r12.dxf", "ky4_form_from_original.csv", "ky4_form_no_source.csv", "operator_form_template.csv",
+                 "operator_form_bad_rows.csv", "ky10_order_fixed.inp", "ky10_prv_removed.inp", "ky10_prv_form.csv",
+                 "ky10_boundary_valve_closed.inp", "ky10_closed_valve_form.csv", "form_review_r12.dxf",
+                 "form_review_gap_r12.dxf", "form_review_mains.geojson")
+FIXTURES.update({n: globals()[n.replace(".", "_")] for n in FORM_FIXTURES})
 
 
 def build(name: str, dest: str) -> str:

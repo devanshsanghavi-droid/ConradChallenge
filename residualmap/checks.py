@@ -1,7 +1,7 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: groups task15, task15b, task16, task16b, task20, task16c and task17, files built by
-residualmap/fixtures.py).
+and access (task 15 on: groups task15, task15b, task16, task16b, task20, task16c, task17, task18 and task19, files
+built by residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
                                             # after task 14; 69 checks after task 14: 68 in the committed report,
@@ -11,6 +11,12 @@ residualmap/fixtures.py).
                                             # task 16b; 114 after task 20, 113 in the report; 120 after task
                                             # 16c, 119 in the report; 133 after task 17 and
                                             # its final verification, 132 in the report;
+                                            # 145 after task 18, 144 in the report; 153
+                                            # after task 19, 152 in the report; 156 after
+                                            # its review, 154 in the report (the names check
+                                            # and fidelity_cached_grids_sha256 in the run
+                                            # log only); about 1,310 s after it; 158 after
+                                            # its final verification, 156 in the report;
                                             # each run's time is in
                                             # outputs/chem/checks_run.json)
     python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
@@ -2504,7 +2510,11 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "outputs/intake/zone_extract_Net3.json",     # its review: the names check covers it before it is committed
              "residualmap/gis_read.py", "residualmap/topology.py", "outputs/intake/gis_roundtrip.json",   # task 17
              "residualmap/cad_read.py", "outputs/intake/cad_roundtrip.json",                              # task 18
-             "outputs/intake/cad_mtext_timing.json")                                                # its review
+             "outputs/intake/cad_mtext_timing.json",                                                # its review
+             "residualmap/operator_form.py",                                                           # task 19
+             "outputs/intake/operator_form.json", "outputs/intake/boundary_valve_ky10.json",
+             "outputs/intake/fidelity_Net3.json", "outputs/intake/fidelity_ky4.json",
+             "outputs/intake/fidelity_ky10.json")
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -2514,7 +2524,12 @@ NAMES_ENV = "RESIDUALMAP_NAMES_CSV"   # a CSV kept outside the repository with a
 # checks recorded in outputs/chem/checks_run.json (git-ignored) only, never in the committed report, with the reason
 RUN_LOG_ONLY = {"no_listed_names_in_tracked_files":
                 f"reads a private list kept outside the repository ({NAMES_ENV}) and is skipped without it, so its result "
-                f"is in outputs/chem/checks_run.json only; a failure still fails the run"}
+                f"is in outputs/chem/checks_run.json only; a failure still fails the run",
+                # task 19's review: the ladder's ky4 and ky10 grids are git-ignored, about 0.4 GB, kept from their
+                # first build (about 35 and 17 minutes)
+                "fidelity_cached_grids_sha256":
+                "reads ky4's and ky10's fidelity-ladder grids in the git-ignored outputs/cache and is skipped when they "
+                "are not there, so its result is in outputs/chem/checks_run.json only; a failure still fails the run"}
 
 
 def _norm_ws(s: str) -> str:
@@ -4565,8 +4580,9 @@ def get_started_page_runs():
     junctions_2col.csv ('Node ID,Elevation') is a junction list too, never a tap map whose junction column is
     'Elevation', and long_paren.csv ('Chlorine (Free)', 'Chlorine (Total)', pH rows) gives its 3 free chlorine
     readings only, with no 'does not say free or total' warning.  No grid is built (outputs/cache unchanged),
-    and nothing is left in outputs/private/check_a_file or outputs/app_uploads.  The task-19 form parser does not exist
-    yet."""
+    and nothing is left in outputs/private/check_a_file or outputs/app_uploads.  The task-19 operator form template,
+    not on this page (the form is not wired into the app: task 19 stopped at its bar), is parsed by
+    form_parser_refuses_bad_rows (a fixture there, not shipped)."""
     from . import intake_exp as E
     from . import fixtures as FX
     t = E.part_templates()
@@ -7674,6 +7690,647 @@ def get_started_cad_import():
             "upload_copies_left_by_the_main_page": sorted(built["app_uploads"]), "cloud_files_under_outputs": 0,
             "cloud_drawing_over_the_limit_refused": True, "cloud_block_bomb_refused_within_s": CLOUD_PAGE_LIMIT_S,
             "cloud_no_uploads_uploaders": 0}
+
+
+# ----------------------------------------------------------------------------- iteration 5, task 19: the operator form
+INTAKE_RECORD_19 = os.path.join(REPO, "outputs", "intake", "operator_form.json")
+
+
+def _record_19(part: str) -> dict:
+    """One part of the committed task-19 record (python -m residualmap.intake_exp form)."""
+    with open(INTAKE_RECORD_19) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_19(got: dict, part: str) -> dict:
+    from .intake_exp import _r6
+    want = _record_19(part)
+    diff = _json_diff(json.loads(json.dumps(_jsonable(_r6(got)))), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _form_fixtures():
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t19_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), FX.FORM_FIXTURES)
+
+
+@check("task19", quick=False)
+def operator_form_completes_skeleton():
+    """The pre-registered scored run of task 19, rerun (plan task 19, critique 3a): the skeleton from ky4_clean_r12.dxf
+    (every ky4 pipe drawn through its exact vertices on a layer naming its size and a material, PVC for C 150 and DIP
+    for C 140, joined within 1 ft, the build's own setting: the plan named none) completed by ky4_form_from_original.csv
+    (the reservoir's head, the four tanks, the two
+    constant-power pumps at their split nodes, pump 1's rule on tank T-3 and pump 2 always on, the pattern, each
+    material's C and every junction's demand as a large user) against ky4 with the skeleton's solver and quality
+    options, at every junction and hour of the scored day.  Equals the committed record (part 'complete'), and the
+    characterization made after the stop (part 'after_the_stop', not a rescoring).  Not asserted: the bar (age median
+    at most 0.5 h and 95th percentile at most 2 h, chlorine 0.01 and 0.03 mg/L, lows Jaccard at least 0.95).  Its scored
+    run missed it (age 1.47 h and 22.6 h, chlorine 95th percentile 0.092 mg/L; the medians of chlorine and the Jaccard
+    met), so task 19 stopped; the miss stands, and no passing run of this check counts as a pass of that bar.  What is
+    asserted: everything the form gives is placed (one source, four tanks, two pumps split, two rules as controls),
+    and after the stop the cause: three ky4 dead ends lie 0.10 to 0.60 ft from a passing main, which the 1 ft join
+    connects as tees (task 17's record had listed them); joined within 0.1 ft (no tee) the same form reproduces ky4 to
+    the drawing's geometric lengths.  Since task 19's review also part 'public_models': ky4's and ky10's files set a
+    relative diffusivity of 0.05, which damps chlorine's response to a wall rate 1.59 times higher (the old-pipe factor
+    of C 130 against 150), and at chlorine's own diffusivity ky4 has the low junctions part 'complete' counts."""
+    from . import intake_exp as E
+    with _form_fixtures() as paths:
+        got = E.part_form_complete(paths)
+        after = E.part_form_after_the_stop(paths)
+        public = E.part_form_public_models(paths)
+    _same_as_19(got, "complete")
+    _same_as_19(after, "after_the_stop")
+    _same_as_19(public, "public_models")      # task 19's review: the files' diffusivity and C values, measured
+    k4 = public["ky4"]
+    assert k4["file_diffusivity"] == 0.05 and public["ky10"]["file_diffusivity"] == 0.05, public
+    assert k4["at_chlorine_diffusivity"]["junctions_low"] == got["lows"]["original"], (k4, got["lows"])
+    for net in ("ky4", "ky10"):              # the files' 0.05 damps chlorine's response to the wall rate
+        r = public[net]
+        assert r["at_file_diffusivity"]["daily_min_change_mgL"]["p95"] < r["at_chlorine_diffusivity"][
+            "daily_min_change_mgL"]["p95"], (net, r)
+    assert got["bar"] == E.FORM_BAR and got["bar_met"] is False, (got["bar"], got["bar_parts_met"])
+    sr = _record_19("scored_run")         # the scored run as its console gave it: the same verdict, part by part
+    assert sr == json.loads(json.dumps(E.SCORED_RUN_19)) and sr["bar_parts_met"] == got["bar_parts_met"], sr
+    for k in ("median", "p95"):
+        assert abs(sr["age_h"][k] - got["age_h"][k]) < 1e-3 and abs(sr["chlorine_mgL"][k] - got["chlorine_mgL"][k]) < 1e-5
+    f, c = got["form"], got["completed"]
+    assert (f["sources"], f["tanks"], f["pumps"], f["pump_rules"], f["pipe_c"]) == (1, 4, 2, 2, 2), f
+    assert (c["reservoirs"], c["tanks"], c["pumps"]) == (1, 4, 2) and c["junctions"] == 959, c
+    assert got["skeleton"]["tees_split"] == len(after["dead_ends_touching_a_main_within_1_ft"]) == 3, got["skeleton"]
+    t = after["joined_within_0p1_ft"]
+    post_hoc = t["within_the_bar_values_post_hoc"]
+    assert t["skeleton"]["tees_split"] == 0 and t["skeleton"]["pipes"] == 1156 and all(post_hoc.values()), t
+    assert "bar_met" not in t and "bar_parts_met" not in t, sorted(t)      # the review: no key that reads as a pass
+    assert abs(t["age_h"]["p95"] - after["geometric_lengths_only"]["age_h"]["p95"]) < 1e-3, (t, after)
+    return E._r6({"bar": "pre-registered: age median <= 0.5 h, p95 <= 2 h; chlorine median <= 0.01, p95 <= 0.03 mg/L; "
+                         "lows Jaccard >= 0.95; missed in its scored run, so task 19 stopped; not asserted here",
+                  "bar_parts_met": got["bar_parts_met"], "age_h": got["age_h"], "chlorine_mgL": got["chlorine_mgL"],
+                  "lows_jaccard": got["lows"]["jaccard"], "tees_at_1_ft": got["skeleton"]["tees_split"],
+                  "completed_sha1": got["completed_sha1"],
+                  "after_the_stop_0p1_ft_within_the_bar_values_post_hoc": all(post_hoc.values())})
+
+
+@check("task19", quick=False)
+def operator_form_restores_prvs_ky10():
+    """ky10_prv_removed.inp (ky10, order-fixed, with each of its 5 PRVs an open pipe of 1 ft at the valve's diameter)
+    plus ky10_prv_form.csv (5 prv rows: the pipe it replaces, its upstream node, its setting and its downstream node's
+    elevation from the file) gives the original: the same .inp as WNTR writes it and 0.0 difference in water age and
+    chlorine at every junction and hour of the scored day (the plan's bar, met).  The PRVs-missing difference is
+    recorded.  Equals the committed record (part 'prvs')."""
+    from . import intake_exp as E
+    with _form_fixtures() as paths:
+        got = E.part_form_prvs(paths)
+    _same_as_19(got, "prvs")
+    r = got["restored_vs_original"]
+    assert got["prvs_restored"] == 5 and r["same_inp_text"], got
+    assert r["age_max_abs_h"] == 0.0 and r["chlorine_max_abs_mgL"] == 0.0, r
+    m = got["prvs_missing_vs_original"]
+    assert m["junctions_age_moved"] > 0 and m["age_h"]["max"] > E.FORM_MOVE_H, m
+    return {"restored_age_max_abs_h": 0.0, "restored_chlorine_max_abs_mgL": 0.0, "same_inp_text": True,
+            "prvs_missing_junctions_age_moved": m["junctions_age_moved"],
+            "prvs_missing_age_max_h": round(m["age_h"]["max"], 6)}
+
+
+@check("task19", quick=False)
+def operator_form_boundary_valve():
+    """ky10 (order-fixed) with every pipe open, as a skeleton has it, plus ky10_closed_valve_form.csv (one
+    closed_valve row, its pipe given by the point halfway along it) equals the closed original
+    (ky10_boundary_valve_closed.inp): the same .inp and 0.0 difference in water age and chlorine (the plan's bar, met).
+    The pipe is P-18, picked once by intake_exp.boundary_valve_search (of ky10's 570 closable pipes, the closure that
+    keeps every junction fed and moves the scored day's mean age the most) and pinned in fixtures.py, so the search is
+    never repeated here.  Equals the committed record (part 'boundary')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _form_fixtures() as paths:
+        got = E.part_form_boundary(paths)
+    _same_as_19(got, "boundary")
+    with open(E.BOUNDARY_RECORD) as fh:
+        search = json.load(fh)
+    assert search["picked"]["pipe"] == FX.BOUNDARY_PIPE_KY10 == got["pipe"] == got["placed_on"], (search["picked"], got)
+    assert search["closable_pipes"] == 570 and search["picked"]["starved_junctions"] == 0, search
+    r = got["closed_vs_closed_original"]
+    assert r["same_inp_text"] and r["age_max_abs_h"] == 0.0 and r["chlorine_max_abs_mgL"] == 0.0, r
+    return {"pipe": got["pipe"], "same_inp_text": True, "age_max_abs_h": 0.0, "chlorine_max_abs_mgL": 0.0,
+            "open_vs_closed_junctions_age_moved": got["open_vs_closed_original"]["junctions_age_moved"]}
+
+
+@check("task19")
+def no_source_never_runs():
+    """ky4's clean skeleton, a model with no source, stops at the intake every model goes through (importers.
+    prepare_inp: no entry point, nothing kept); and completed by the form less its source row, the form stops with its
+    plain no-source sentence and writes no model (tanks alone are no source).  Equals the committed record (part
+    'no_source')."""
+    from . import intake_exp as E
+    from .operator_form import NO_SOURCE
+    with _form_fixtures() as paths:
+        got = E.part_form_no_source(paths)
+    _same_as_19(got, "no_source")
+    assert not got["skeleton_prepared"] and got["files_left"] == 0 and got["skeleton_blocking"], got
+    assert not got["form_ok"] and got["form_blocking"] == [NO_SOURCE] and not got["model_written"], got
+    return {"skeleton_stops": True, "form_stops_with": "NO_SOURCE", "model_written": False}
+
+
+@check("task19")
+def form_parser_refuses_bad_rows():
+    """operator_form_bad_rows.csv on ky4's clean skeleton: an unknown kind, a PRV with no setting, a tank whose location
+    is off the network, a rule for a pump no row gives, a pattern of 12 numbers and a large user whose use is no number
+    are each refused with their own reason, listed by line; the good source row is not; no model is written.  The
+    operator form's template (a fixture, operator_form_template.csv: not shipped, since the app does not take the form)
+    parses with no row refused.  Equals the committed record (part 'bad_rows')."""
+    from . import intake_exp as E
+    from .operator_form import read_operator_form
+    with _form_fixtures() as paths:
+        got = E.part_form_bad_rows(paths)
+        with open(paths["operator_form_template.csv"], "rb") as fh:
+            t = read_operator_form(fh.read(), "operator_form_template.csv")
+    _same_as_19(got, "bad_rows")
+    reasons = {r["line"]: r["reason"] for r in got["refused"]}
+    assert sorted(reasons) == [3, 4, 5, 6, 7, 8] and not got["model_written"], got
+    for line, words in ((3, "unknown kind"), (4, "missing setting_psi"), (5, "off the network"),
+                        (6, "not the id of a pump row"), (7, "24 numbers"), (8, "not a number")):
+        assert words in reasons[line], (line, reasons[line])
+    assert not t.refused and len(t.rows) == 11 and {r.kind for r in t.rows} == {
+        "source", "tank", "pump", "pump_rule", "closed_valve", "prv", "elevation", "production", "large_user",
+        "pattern", "pipe_c"}, (t.refused, len(t.rows))
+    return {"refused_lines": sorted(reasons), "template_rows": len(t.rows)}
+
+
+@check("task19", quick=False)
+def fidelity_outputs_reproduce():
+    """The fidelity ladder (python -m residualmap.intake_exp fidelity): Net3 rerun now, every grid built fresh in a
+    temporary folder, equals outputs/intake/fidelity_Net3.json value for value (run times left out); ky4 and ky10 are
+    not rerun (about 2 h): every rung's .inp rebuilt by today's code has its committed sha1.  Their cached grids'
+    sha256 is fidelity_cached_grids_sha256's, in the run log only (task 19's review: the grids are git-ignored, so a
+    cleared cache had skipped this check and changed the committed report's counts).  Since the final verification
+    this check reads nothing from the cache (grids=False: it had unpickled every cached grid, so a grid cut short by an
+    interrupted build failed a committed check): ky4's files are checked with a scratch cache holding such a grid."""
+    from . import intake_exp as E
+    with open(E.FIDELITY["Net3"]) as fh:
+        net3 = json.load(fh)
+    with tempfile.TemporaryDirectory(prefix="rm_t19_grids_") as cache:
+        got = E.fidelity_ladder("Net3", cache_dir=cache, log=lambda *a: None)
+    got.pop("_measured", None)
+    want = {k: v for k, v in net3.items() if k != "_measured"}
+    diff = _json_diff(json.loads(json.dumps(_jsonable(got))), want)
+    assert not diff, diff[:10]
+    out = {"Net3_rungs": sorted(got["rungs"])}
+    for net in ("ky4", "ky10"):
+        with open(E.FIDELITY[net]) as fh:
+            com = json.load(fh)
+        with tempfile.TemporaryDirectory(prefix="rm_t19_cut_grid_") as cut:
+            with open(os.path.join(cut, com["rungs"]["r1"]["grid_file"]), "wb") as fh:
+                fh.write(pickle.dumps(({"cut": "short"}, np.zeros(4)))[:20])     # a grid cut short
+            rep = E.fidelity_reproduce_grids(net, com, cache_dir=cut if net == "ky4" else None, grids=False)
+        assert all(v["file_sha1_same"] for v in rep.values()), (net, rep)
+        assert not any("grid_cached" in v for v in rep.values()), (net, rep)       # no grid read
+        out[f"{net}_rung_files_checked"] = len(rep)
+    return out
+
+
+@check("task19", quick=False)
+def fidelity_cached_grids_sha256():
+    """ky4's and ky10's rung grids (git-ignored, in outputs/cache, about 0.4 GB together, kept from the ladder's first
+    build: about 35 and 17 minutes to build again) have the sha256 their committed fidelity records give.  Run log
+    only (RUN_LOG_ONLY): it depends on this machine's cache, so a cleared cache skips it without changing the committed
+    report (task 19's review).  Rebuild the grids with python -m residualmap.intake_exp fidelity ky4 ky10, from a folder
+    outside the repository."""
+    from . import intake_exp as E
+    out = {}
+    for net in ("ky4", "ky10"):
+        with open(E.FIDELITY[net]) as fh:
+            com = json.load(fh)
+        rep = E.fidelity_reproduce_grids(net, com)
+        missing = [r for r, v in rep.items() if not v["grid_cached"]]
+        if missing:
+            raise SkipCheck(f"{net}'s grids for {', '.join(missing)} are not in outputs/cache (python -m "
+                            f"residualmap.intake_exp fidelity {net} builds them)")
+        assert all(v["grid_sha256_same"] for v in rep.values()), (net, rep)
+        out[f"{net}_grids_checked"] = len(rep)
+    return out
+
+
+@check("task19")
+def readiness_quotes_trace_to_outputs():
+    """Every number in the readiness text's 'why we need this' sentences (operator_form.why_sentences, read from the
+    fidelity files at run time, as capabilities.SOURCES) is a value under outputs/intake/ printed as quoted (water age
+    and false lows to one decimal, chlorine error to three), or one of the ladder's own settings (12 samples, C 130,
+    1.3 times, ky10's 5 PRVs); every FIDELITY_SOURCES name resolves; every sentence quotes ky4 and ky10 side by side
+    (the PRV one names ky10 alone, since ky4 has none) and claims no test on a utility's own system.  Since task 19's
+    review each sentence is a 'measured change', says which way each number moved (and moved that way: rose, fell or
+    stayed), quotes chlorine error for the C steps, and says when its step is on top of the ladder's earlier ones."""
+    from . import intake_exp as E
+    from . import operator_form as F
+    vals = {name: F.fidelity_value(name) for name in F.FIDELITY_SOURCES}
+    printed = {format(v, F.fidelity_format(name)) for name, v in vals.items()}
+    settings = {str(E.FID_SAMPLES), format(E.FID_C_ALL, "g"), format(E.FID_TANK_FACTOR, "g"), "5"}
+    sents = F.why_sentences()
+    assert len(sents) == 6, sents
+    bad, moves = [], 0
+    for s_ in sents:
+        for tok in re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])", s_):
+            if tok not in printed and tok not in settings:
+                bad.append((tok, s_[:80]))
+        assert ("ky4" in s_ and "ky10" in s_), s_
+        assert "not your system" in s_ or "not on your system" in s_, s_
+        assert s_.startswith("Measured change") and "cost" not in s_.lower(), s_
+        for verb, a, b_ in re.findall(r"\b(rose|fell) from (\d+(?:\.\d+)?) to (\d+(?:\.\d+)?)", s_):
+            assert (float(b_) > float(a)) == (verb == "rose") and float(a) != float(b_), (verb, a, b_, s_[:80])
+            moves += 1
+    assert not bad, bad
+    assert all("chlorine error" in s_ for s_ in (F.c_cost(), F.material_c_cost())), "C steps quote chlorine error"
+    assert all("on top of" in s_ for s_ in (F.pump_rule_cost(), F.demand_cost(), F.tank_cost(), F.prv_cost()))
+    assert "no pipe ages" in F.material_c_cost()
+    return {"sentences": len(sents), "sources": len(vals), "moves_checked": moves}
+
+
+@check("task19")
+def operator_form_review_cases():
+    """Task 19's review: each case it found, on the review's own drawing and layer (fixtures.FORM_REVIEW_*), equals the
+    committed record (part 'review' of outputs/intake/operator_form.json) and does what the fix says.  pipe_c rows
+    match a pipe's material, not its C-table class: ductile iron 140 and asbestos cement 100 each keep their own C (the
+    form had given every concrete-lined pipe the last row's), a second row for one material is refused with both
+    lines, 'plastic' gives the plastic pipes no closer row gives, 'all' the rest, and the readiness row counts pipes;
+    a GIS layer's own C field is kept (since the final verification, by an 'all' row too) and the age note counts
+    only the other pipes; two pumps side by side at one node share its split, and the well's main still reaches the
+    well; a PSV's elevation goes to its upstream node; a part no source feeds is refused in words (since the final
+    verification, with a tank in it too); a model whose clock starts at 08:00 starts a '6-22' pump open and keeps each
+    clock hour's multiplier; a form applies again to the model it completed; implausible values (a power of 0, a curve
+    whose heads rise, a design point at 0 gpm or below 0 ft, a PRV of 0 in or below 0 psi, a level below the tank's
+    bottom, a dose of -2 or 1,500 mg/L) are refused with their line; EPANET's first hour refuses two PRVs side by side;
+    a unit in brackets is read and a column not read is noted; an unnamed pump's name taken by another pump is
+    refused, and a pump the form adds with no rule is blocked with the measured change on ky4 and ky10; a PRV with
+    no elevation is refused; conflicting rows (two on one pipe, a pump splitting a source's node, a PRV at a tank)
+    are refused with both lines, and a well with its pump in place of its main runs; a point is refused a degree off
+    a model in degrees, at a tee and beside two pipes; an ID given twice is caught by task 15's scan; a PDF given as
+    the form is refused in the form's words."""
+    from . import intake_exp as E
+    with _form_fixtures() as paths:
+        got = E.part_form_review(paths)
+    want = _same_as_19(got, "review")
+    pc = want["pipe_c_by_material"]
+    assert pc["c_by_material"] == {"PVC": [150.0], "asbestos cement": [100.0], "cast iron": [90.0],
+                                   "ductile iron": [140.0]}, pc["c_by_material"]
+    assert pc["readiness"].startswith(f"{pc['pipes']} pipes given"), pc["readiness"]
+    assert "line 4" in pc["second_row_for_one_material"][0]["reason"], pc
+    assert pc["plastic_alone"]["PVC"] == [120.0] and pc["pvc_and_plastic"]["c_by_material"]["PVC"] == [150.0], pc
+    assert pc["cast_iron_then_all"]["cast iron"] == [90.0] and pc["cast_iron_then_all"]["ductile iron"] == [110.0], pc
+    g = want["layer_c_field_kept"]
+    assert g["c_after_a_cast_iron_row"]["M1"] == 85.0 and g["c_after_a_cast_iron_row"]["M2"] == 70.0, g
+    assert g["c_after_a_cast_iron_row"]["M4"] == 100.0 and "2 keep the C of the layer's own C field" in g["readiness"]
+    # the final verification: an 'all' row reaches every pipe but the two the layer's own C field gives (the 'cast iron'
+    # row alone never reached a pipe with a measured C, so the guard went unexercised)
+    ca = g["c_after_an_all_row"]
+    assert (ca["M1"], ca["M2"]) == (85.0, 70.0) and all(v == 110.0 for k, v in ca.items() if k not in ("M1", "M2")), ca
+    assert "2 keep the C of the layer's own C field" in g["readiness_after_an_all_row"], g["readiness_after_an_all_row"]
+    assert g["age_note_without_rows"][0].startswith("3 pipes") and "latitude first" in g["longitude_first"][0]["reason"]
+    p = want["pumps_side_by_side"]
+    assert p["ok"] and p["pumps"]["PUMP-A"] == p["pumps"]["PUMP-B"] and p["links_at_the_well"], p
+    assert p["mean_flow_gpm_48_h"]["PUMP-A"] > 0, p
+    v = want["psv_elevation_upstream"]
+    assert v["upstream_elevation_ft"] == 150.0 and v["downstream_elevation_ft"] == 0.0, v
+    u = want["part_without_source"]
+    assert u["components"] == 2 and not u["ok"] and not u["model_written"] and "no source" in u["blocking"][0], u
+    t_ = u["with_a_tank_there"]          # the final verification: a tank alone is no source in a part either
+    assert not t_["ok"] and not t_["model_written"] and "1 of them has no source" in t_["blocking"][0], t_
+    k = want["clock_starts_at_0800"]
+    assert k["ok"] and k["pump_starts"] == "Open" and k["pattern_first_multiplier"] == k["form_multiplier_at_08"], k
+    assert k["pump_open_by_model_hour"][:14] == [1] * 14 and k["pump_open_by_model_hour"][14:22] == [0] * 8, k
+    assert want["applied_again"]["ok"], want["applied_again"]
+    assert all(len(x) == 1 for x in want["values_refused"].values()), want["values_refused"]
+    f = want["first_hour_refuses"]
+    assert not f["ok"] and not f["model_written"] and f["blocking"][0].startswith("EPANET cannot run"), f
+    assert want["headers"]["dose_mgL"] == 1.5 and want["headers"]["notes"] == ["Columns not read: Shift."], want
+    assert "line 5" in want["unnamed_pump"]["its_name_taken"][0]["reason"], want["unnamed_pump"]
+    assert want["unnamed_pump"]["no_rule"][0].startswith("Pump with no rule") and \
+        want["unnamed_pump"]["no_rule_quotes_ky4_and_ky10"], want["unnamed_pump"]
+    assert "missing elevation_ft" in want["prv_without_elevation"][0]["reason"], want["prv_without_elevation"]
+    assert all(len(x) == 1 for x in want["conflicts_refused"].values()), want["conflicts_refused"]
+    assert want["well_and_its_pump"] == {"ok": True, "pump": ["WELL", "N0_0"]}, want["well_and_its_pump"]
+    pt = want["points"]
+    assert pt["degrees_a_degree_off"] and pt["at_a_tee"] and pt["beside_two_pipes"], pt
+    assert list(pt["degrees_on_the_pipe"].values()) == ["Pa30707c6"] and "Pa30707c6" in pt["halfway_along_a_pipe"].values()
+    m = want["model_text"]
+    assert not m["id_given_twice"]["ok"] and m["byte_order_mark"] == {"ok": True, "same_model": True}, m
+    w = want["form_words"]
+    assert "The operator form is a table" in w["pdf"] and "grab log" not in w["pdf"], w
+    assert "ground elevation" in w["elevation_row"][0]["reason"], w
+    return {"cases": len(want), "pipe_c_materials": len(pc["c_by_material"]),
+            "refusals_checked": len(want["values_refused"]) + len(want["conflicts_refused"])}
+
+
+@check("task19", quick=False)
+def operator_form_command_line():
+    """The form's three command lines, run as an operator would (task 19's review: none was tested, and the documented
+    .inp route could not apply a skeleton's materials).  cad_read with --form on ky4_clean_r12.dxf and its form writes
+    the scored run's completed model, byte for byte (its sha1 in part 'complete'); gis_read with --form completes the
+    review's layer; operator_form on ky10_prv_removed.inp and the PRV form writes the original's .inp; on the skeleton
+    .inp cad_read writes, the form's material rows are refused in words (an .inp keeps no materials), and exit 1; a
+    skeleton .inp in cp1252, in UTF-16 or with a byte-order mark completes as the UTF-8 one does, and since the final
+    verification so does one inside a zip, while a drawing given as the model is pointed to cad_read with --form; a
+    PDF given as the form is refused in words, with no traceback."""
+    import hashlib
+    import wntr
+    from . import fixtures as FX
+    from . import intake_exp as E
+    from .operator_form import form_csv, write_text
+    want_sha1 = _record_19("complete")["completed_sha1"]
+    env = {**os.environ, "PYTHONPATH": REPO}
+    with tempfile.TemporaryDirectory(prefix="rm_t19_cli_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.FORM_FIXTURES)
+
+        def run(*args):
+            r = subprocess.run([PY, "-m", *args], cwd=d, env=env, capture_output=True, text=True, timeout=600)
+            return r.returncode, r.stdout + r.stderr
+
+        out = {}
+        code, text = run("residualmap.cad_read", paths["ky4_clean_r12.dxf"], "--tolerance-ft", "1", "--form",
+                         paths["ky4_form_from_original.csv"], "--out", os.path.join(d, "ky4_completed.inp"))
+        with open(os.path.join(d, "ky4_completed.inp"), "rb") as fh:
+            sha1 = hashlib.sha1(fh.read()).hexdigest()
+        assert code == 0 and sha1 == want_sha1, (code, sha1, text[-500:])
+        out["cad_read_form_same_model"] = True
+        lon, lat = FX.form_review_lonlat((0, 0))
+        gform = os.path.join(d, "layer_form.csv")
+        with open(gform, "wb") as fh:
+            fh.write(form_csv([{"kind": "source", "id": "PLANT", "location": f"{lat:.7f},{lon:.7f}", "head_ft": "150",
+                                "dose_mgL": "1.2"}, {"kind": "production", "gallons_per_day": "300000"},
+                               {"kind": "pipe_c", "material": "cast iron", "hw_c": "100"}]))
+        code, text = run("residualmap.gis_read", paths["form_review_mains.geojson"], "--tolerance-ft", "1", "--form",
+                         gform, "--out", os.path.join(d, "layer_completed.inp"))
+        assert code == 0 and "wrote" in text and os.path.exists(os.path.join(d, "layer_completed.inp")), text[-500:]
+        out["gis_read_form_completes"] = True
+        code, text = run("residualmap.operator_form", paths["ky10_prv_removed.inp"], paths["ky10_prv_form.csv"],
+                         "--out", os.path.join(d, "ky10_restored.inp"))
+        with open(os.path.join(d, "ky10_restored.inp"), encoding="utf-8") as fh:
+            restored = fh.read()
+        assert code == 0 and restored == write_text(wntr.network.WaterNetworkModel(paths["ky10_order_fixed.inp"])), \
+            (code, text[-500:])
+        out["operator_form_restores_ky10"] = True
+        skel = os.path.join(d, "ky4_skeleton.inp")
+        code, text = run("residualmap.cad_read", paths["ky4_clean_r12.dxf"], "--tolerance-ft", "1", "--out", skel)
+        assert code == 0, text[-500:]
+        code, text = run("residualmap.operator_form", skel, paths["ky4_form_from_original.csv"])
+        assert code == 1 and "this model carries no pipe materials" in text and "Traceback" not in text, text[-500:]
+        out["inp_material_rows_refused"] = True
+        small = E._review_build(paths, "form_review_r12.dxf").inp_text
+        sform = os.path.join(d, "small_form.csv")
+        with open(sform, "wb") as fh:
+            fh.write(form_csv([E.REVIEW_SRC, E.REVIEW_USE]))
+        texts = {}
+        for name, data in (("utf8", small.encode("utf-8")),
+                           ("cp1252", small.replace("[TITLE]\n", "[TITLE]\nR\u00e9seau zone 3\n", 1).encode("cp1252")),
+                           ("utf16", small.encode("utf-16")), ("bom", b"\xef\xbb\xbf" + small.encode("utf-8"))):
+            src, dst = os.path.join(d, f"small_{name}.inp"), os.path.join(d, f"small_{name}_completed.inp")
+            with open(src, "wb") as fh:
+                fh.write(data)
+            code, text = run("residualmap.operator_form", src, sform, "--out", dst)
+            assert code == 0 and "Traceback" not in text, (name, text[-500:])
+            with open(dst, encoding="utf-8") as fh:
+                texts[name] = fh.read()
+        strip = lambda t: t[t.index("[JUNCTIONS]"):]
+        assert texts["utf16"] == texts["bom"] == texts["utf8"] and strip(texts["cp1252"]) == strip(texts["utf8"]), \
+            "a decoded skeleton completes as the UTF-8 one"
+        out["encodings_complete"] = sorted(texts)
+        # task 19's final verification: the model file is identified by its content, a zipped model read from the zip
+        # (it printed the zip's compressed bytes) and a drawing pointed to cad_read (a syntax error at line 1)
+        import zipfile
+        zpath, zdst = os.path.join(d, "small.zip"), os.path.join(d, "small_zip_completed.inp")
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("small.inp", small)
+        code, text = run("residualmap.operator_form", zpath, sform, "--out", zdst)
+        with open(zdst, encoding="utf-8") as fh:
+            assert code == 0 and fh.read() == texts["utf8"] and "Traceback" not in text, text[-500:]
+        code, text = run("residualmap.operator_form", paths["form_review_r12.dxf"], sform)
+        assert code == 1 and "residualmap.cad_read" in text and "--form" in text and "Traceback" not in text, text[-500:]
+        out["zipped_model_completes_and_drawing_pointed_to_cad_read"] = True
+        pdf = os.path.join(d, "form.pdf")
+        with open(pdf, "wb") as fh:
+            fh.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\n")
+        code, text = run("residualmap.operator_form", paths["ky10_prv_removed.inp"], pdf)
+        assert code == 1 and "The operator form is a table" in text and "Traceback" not in text, text[-500:]
+        out["pdf_form_refused"] = True
+    return out
+
+
+@check("task19")
+def operator_form_final_verification():
+    """Task 19's final verification: each confirmed issue's case (part 'final' of outputs/intake/operator_form.json,
+    intake_exp.part_form_final, on the review's own drawing) equals the committed record and does what its fix says.
+    A branch the form itself cuts off (a closed_valve row on its only pipe, a check valve or a pump pointing out of it,
+    a pump whose rule is 'never'), completed with ok before, is refused in words that name the link and its rows; the
+    same rows where they cut nothing off still complete, a pump on the clock with a warning that no tank holds water
+    while it is off.  Clock rules with minutes are refused with their line (WNTR writes 6:30 as 6.5 and cannot read it
+    back), and at 08:00 and 23:00 starts EPANET's pump status follows each whole-hour rule at every model hour.  No
+    message names a temporary file.  An id that starts with '[' is renamed, and the written model reads back whole.  A
+    point at 1e150 or beyond is refused as far off the network, with no internal error.  A pattern row no water use row
+    uses, a second elevation row for a node, an elevation row at a source and one against a PRV's elevation_ft are
+    refused with both lines.  pipe_c rows are counted over the pipes left once valves and pumps replace some, and are
+    refused on a Darcy-Weisbach model.  '490 500' is no number; a rule's levels outside its tank's range and an
+    elevation or a head beyond ELEV_RANGE_FT are refused.  On a model in degrees the snap is 50 ft east and west as
+    north and south.  A tank no source can fill (no pump, its water above every source's head), which the verifier's
+    grammar fuzzer's last disconnected models were, is refused (the fuzzer's counts are copied into the record: 34 of
+    3,000 random forms completed with nodes EPANET reports disconnected before, 1 after).  A model, a drawing or a
+    layer given as the form, and a drawing, a layer or a form given as the model, are told what to do in the form's
+    own words, and a zipped model is read."""
+    from . import intake_exp as E
+    with _form_fixtures() as paths:
+        got = E.part_form_final(paths)
+    w = _same_as_19(got, "final")
+    bh = w["bracket_header"]
+    assert bh["rows"] == 2 and not bh["refused"] and bh["notes"] == ["Columns not read: Dose ( x."], bh
+    assert [bh["headers_read"][h] for h in ("Dose (mg/L)", "Head [ft]", "Base elevation (ft)", "Dose ( mg / L )",
+                                            "Gallons per day (gpd)", "Setting (psig)")] == [
+        "dose_mgL", "head_ft", "base_elev_ft", "dose_mgL", "gallons_per_day", "setting_psi"], bh["headers_read"]
+    words = {"a closed_valve row on its only pipe": "closed by line 4's closed_valve row",
+             "a check valve pointing out of it": "a check valve that lets water through only out of them",
+             "a pump whose rule is never": "which never runs (line 4's pump row and line 5's pump_rule row)",
+             "a pump pointing out of it": "which pumps only out of them"}
+    for k, say in words.items():
+        r = w["cut_off_by_the_form"][k]
+        assert not r["ok"] and not r["model_written"] and not r["refused"], (k, r)
+        assert r["blocking"][0].startswith("2 junctions with water use (N3000_2000, N4000_2000) can get water from no "
+                                           "source") and say in r["blocking"][0], (k, r["blocking"])
+    fed = w["fed_through_open_or_one_way_links"]
+    assert all(r["ok"] and r["model_written"] for r in fed.values()), fed
+    assert [k for k, r in fed.items() if r["part_time_warning"]] == ["a pump on the clock pointing into it"], fed
+    cr = w["clock_rules"]
+    assert all(len(x) == 1 and "gives minutes" in x[0]["reason"] for x in cr["refused"].values()), cr["refused"]
+    assert all(cr["runs"].values()) and not any(cr["model_hours_where_the_pump_differs_from_its_rule"].values()), cr
+    m = w["messages_name_no_file"]
+    assert not m["any_path"] and "(Error 213) invalid option value '6.5'" in m["first_hour"], m
+    ids = w["ids_starting_with_a_bracket"]
+    assert all(v["ok"] and v["links_written_and_read_back"][0] == v["links_written_and_read_back"][1]
+               for v in ids.values()) and ids["pump [END]"]["named"] == ["END"], ids
+    fp = w["far_points"]
+    assert not any(fp["nearest_node"].values()) and all(
+        len(x) == 1 and "far off the network" in x[0]["reason"] for x in [*fp["refused"].values(), fp["pipe_refused"]])
+    sr = w["silent_rows"]
+    assert all(len(sr[k]) == 1 for k in ("a pattern row on a model with water use", "two elevation rows for one node",
+                                         "an elevation row at the source's node",
+                                         "an elevation row against a PRV's elevation_ft")), sr
+    assert "line 4 gives 120 ft" in sr["two elevation rows for one node"][0]["reason"], sr
+    assert "the PRV of line 4 (60 ft)" in sr["an elevation row against a PRV's elevation_ft"][0]["reason"], sr
+    assert sr["an elevation row that agrees with it"] and sr["an elevation row at the PRV's other side"], sr
+    pc = w["pipe_c_counted_after_step_4"]
+    assert pc["ok"] and pc["pipes"] == 7 and pc["readiness"].startswith("7 pipes given"), pc
+    dw = w["pipe_c_on_darcy_weisbach"]
+    assert len(dw["refused"]) == 1 and "Darcy-Weisbach" in dw["refused"][0]["reason"] and dw["without_the_row_ok"], dw
+    assert all(len(x) == 1 for x in w["values_refused"].values()) and all(w["values_kept"].values()), w["values_refused"]
+    assert "not a number" in w["values_refused"]["head_ft 490 500"][0]["reason"]
+    dg = w["degrees_both_ways"]
+    assert dg["45 ft east"]["placed"] == dg["45 ft north"]["placed"] is not None, dg
+    assert all("55 ft away" in dg[k]["refused"][0] for k in ("55 ft east", "55 ft north")), dg
+    tk = w["tank_no_source_can_fill"]
+    assert len(tk["refused"]) == 1 and "it would drain and never fill again" in tk["refused"][0]["reason"] and \
+        not tk["with_a_pump_to_fill_it"], tk
+    gf = w["grammar_fuzz"]
+    assert gf == json.loads(json.dumps(E.FINAL_FUZZ_19)) and gf["before"]["ok_but_disconnected"] == 34 and \
+        gf["after_the_tank_check"]["ok_but_disconnected"] == 1, gf
+    for k, v in w["files_given_as_the_form"].items():
+        assert v and "The operator form is a table" in v and "checked below and then run" not in v and \
+            "send its EPANET export" not in v, (k, v)
+    fm = w["files_given_as_the_model"]
+    assert fm["a zip holding the model"] == {"read_as_the_model": True}, fm
+    assert "residualmap.cad_read" in fm["a DXF drawing"]["refused"] and "residualmap.gis_read" in fm[
+        "a GeoJSON layer"]["refused"] and "give the model first" in fm["a form"]["refused"], fm
+    return {"cases": len(w), "cut_off_refused": len(w["cut_off_by_the_form"]), "fed_complete": len(fed),
+            "clock_rule_hours_differing": 0, "messages_naming_a_file": 0, "far_points_refused": len(fp["refused"]) + 1,
+            "silent_rows_refused": 4, "values_refused": len(w["values_refused"])}
+
+
+LINEAR_FORMS_SCRIPT = r"""
+import json, time, warnings
+warnings.filterwarnings("ignore")
+from residualmap import intake_exp as E
+from residualmap.operator_form import read_operator_form
+tail = 'source,WELL,"0,-800",200,,1.2\nproduction,,,,500000,\n'
+head = "kind,id,location,head_ft,gallons_per_day,"
+forms = {"the 6.5 KB form": E.final_long_header_form(),
+         "a header of 131,000 spaces": (head + "Dose (" + " " * 131000 + "x\n" + tail).encode(),
+         "a header of 100,000 '('": (head + "(" * 100000 + "\n" + tail).encode(),
+         "a header of 100,000 '['": (head + "[" * 100000 + "\n" + tail).encode()}
+out = {}
+for k, data in forms.items():
+    t = time.perf_counter()
+    f = read_operator_form(data, "form.csv")
+    out[k] = {"s": time.perf_counter() - t, "rows_refused_notes": [len(f.rows), len(f.refused), len(f.notes)]}
+print("LINEAR_FORMS_JSON " + json.dumps(out))
+"""
+
+
+def _load_inp_text(text: str):
+    from .operator_form import _load
+    return _load(text)
+
+
+def _count_name_lists(fn) -> tuple:
+    """(fn's result, how many times WNTR's node, link, pipe and junction name lists were built while it ran): each is
+    a property that builds a new list on every look-up."""
+    import wntr
+    cls = wntr.network.WaterNetworkModel
+    props = {n: getattr(cls, n) for n in ("node_name_list", "link_name_list", "pipe_name_list", "junction_name_list")}
+    calls = [0]
+
+    def counting(prop):
+        def get(self):
+            calls[0] += 1
+            return prop.fget(self)
+        return property(get)
+    try:
+        for n, prop in props.items():
+            setattr(cls, n, counting(prop))
+        out = fn()
+    finally:
+        for n, prop in props.items():
+            setattr(cls, n, prop)
+    return out, calls[0]
+
+
+@check("task19")
+def operator_form_reads_in_linear_time():
+    """Task 19's final verification: the form's header reader took cubic time in a run of spaces after an opening
+    bracket ('Dose (' and 1,600 spaces took 3.6 s, and a 6,477-byte form was still being read after 100 s, on every
+    command line that takes a form).  Now each of these forms is read within CLOUD_LIMIT_S, in a process of its own
+    stopped after 12 times that, so a slow reader fails the check instead of stalling the run: the final verification's
+    6.5 KB form (intake_exp.final_long_header_form), one header cell of 131,000 spaces after 'Dose (' (the csv module
+    takes 131,072 characters a cell), and headers of 100,000 '(' and of 100,000 '['.  And the review's fix for issue 9
+    (names looked up in sets: a form with a large user at every junction of a grid had taken 17.9 s), which no check
+    guarded: applying a form with 400 large users builds WNTR's name lists no more often than one with 25."""
+    from . import intake_exp as E
+    from .operator_form import apply_operator_form, form_csv, read_operator_form, skeleton_from_build
+    # the reads run in a process of their own, so a reader that takes minutes again fails this check instead of
+    # stalling the run
+    try:
+        r = subprocess.run([PY, "-c", LINEAR_FORMS_SCRIPT], capture_output=True, text=True, timeout=12 * CLOUD_LIMIT_S,
+                           env={**os.environ, "PYTHONPATH": REPO})
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"the hostile forms were still being read after {12 * CLOUD_LIMIT_S:g} s") from None
+    line = [x for x in r.stdout.splitlines() if x.startswith("LINEAR_FORMS_JSON ")]
+    assert r.returncode == 0 and line, (r.returncode, r.stderr[-800:])
+    got = json.loads(line[0].split(" ", 1)[1])
+    secs = {k: v["s"] for k, v in got.items()}
+    rows = {k: tuple(v["rows_refused_notes"]) for k, v in got.items()}
+    slow = {k: v for k, v in secs.items() if v > CLOUD_LIMIT_S}
+    assert not slow, slow
+    assert len(rows) == 4 and all(v == (2, 0, 1) for v in rows.values()), rows
+    with _form_fixtures() as paths:
+        sk = skeleton_from_build(E._review_build(paths, "form_review_r12.dxf"), "cad")
+    junctions = [j for j in sorted(_load_inp_text(sk.inp_text).junction_name_list) if j != "N0_-800"]   # not the well
+    counts = {}
+    for k in (25, 400):
+        rows_k = [E.REVIEW_SRC, E.REVIEW_USE] + [{"kind": "large_user", "location": junctions[i % len(junctions)],
+                                                  "gallons_per_day": "100"} for i in range(k)]
+        res, counts[k] = _count_name_lists(lambda: apply_operator_form(sk, read_operator_form(form_csv(rows_k), "f.csv")))
+        assert res.ok, (k, res.refused[:2], res.blocking[:2])
+    assert counts[25] == counts[400], counts
+    return {"forms_read_within_s": CLOUD_LIMIT_S, "rows_refused_notes": rows["the 6.5 KB form"],
+            "name_list_builds_25_and_400_large_users": [counts[25], counts[400]],
+            "_volatile": {"read_seconds": {k: round(v, 3) for k, v in secs.items()}}}
+
+
+GIS_DEFAULT_SIZE_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+page, fx = sys.argv[1], json.loads(sys.argv[2])
+at = AppTest.from_file(page, default_timeout=900).run()
+[u for u in at.file_uploader if u.label == "GIS layer of your water mains"][0].set_value(
+    ("kml_line_in_street.kml", open(fx["kml_line_in_street.kml"], "rb").read(), "application/octet-stream"))
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+st = lambda a: {"markdown": [m.value for m in a.markdown], "info": [i.value for i in a.info],
+                "warnings": [w.value for w in a.warning], "number_inputs": [[n.label, n.value] for n in a.number_input]}
+res = {"asked": st(at)}
+[n for n in at.number_input if n.label == "Size of every pipe (in)"][0].set_value(8.0)
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["given"] = st(at)
+print("GIS_SIZE_JSON " + json.dumps(res))
+"""
+
+
+@check("task19", quick=False)
+def get_started_gis_default_size_asked():
+    """Task 17's bug, found by task 18's review and fixed in task 19: step 4 pre-filled 'Size of every pipe (in)' with
+    8 in, built the skeleton at once and called 8 in 'the size you chose'.  Headless AppTest of the Get started page
+    with kml_line_in_street.kml (a Google Earth path with no size anywhere): the input starts empty, the question is
+    shown and nothing is built; once 8 in is given the skeleton is built and its warning says 'the size you gave', as
+    step 5 does."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t19_page_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), ["kml_line_in_street.kml"])
+        res, _ = _app_run(GIS_DEFAULT_SIZE_SCRIPT, [GET_STARTED_PAGE, json.dumps(paths)], lambda f: False,
+                          "GIS_SIZE_JSON")
+    a, g = res["asked"], res["given"]
+    assert ["Size of every pipe (in)", None] in a["number_inputs"], a["number_inputs"]
+    assert any(i.startswith("No pipe size can be read from the layer") for i in a["info"]), a["info"]
+    assert not any(m.startswith("**The layer") for m in a["markdown"]) and not any("you chose" in w for w in a["warnings"])
+    assert any(m.startswith("**The layer") for m in g["markdown"]), g["markdown"]
+    assert any("the size you gave" in w for w in g["warnings"]) and not any("you chose" in w for w in g["warnings"]), g
+    return {"starts_empty": True, "built_only_once_given": True, "warning_says": "the size you gave"}
 
 
 def _counts(rs: list) -> dict:

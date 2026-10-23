@@ -1,0 +1,1227 @@
+{
+ "about": "Task 19's operator form, converter self-consistency on public models (WNTR's bundled ky4 and ky10, rewritten by fixtures.py), never a test on a utility's own files: ky4's clean drawing completed by a form built from the original, against the pre-registered bars; ky10's PRVs restored and its boundary valve closed by the form, against the original; the refusals. Written by python -m residualmap.intake_exp form.",
+ "complete": {
+  "completed_sha1": "5a676a849b35756e94c71fde00565beb0e0e498d",
+  "skeleton": {
+   "tolerance_ft": 1.0,
+   "pipes": 1159,
+   "nodes": 962,
+   "components": 1,
+   "tees_split": 3,
+   "original_pipes": 1156,
+   "original_nodes": 964,
+   "c_classes": {
+    "concrete or concrete lined": 4,
+    "plastic": 1155
+   }
+  },
+  "form": {
+   "rows": 946,
+   "sources": 1,
+   "tanks": 4,
+   "pumps": 2,
+   "pump_rules": 2,
+   "prv": 0,
+   "psv": 0,
+   "closed_valves": 0,
+   "check_valves": 0,
+   "large_users": 934,
+   "elevations": 0,
+   "pipe_c": 2,
+   "controls": 2
+  },
+  "completed": {
+   "junctions": 959,
+   "tanks": 4,
+   "reservoirs": 1,
+   "pumps": 2,
+   "pipes": 1159,
+   "dose_mgL": 2.0
+  },
+  "member": {
+   "kb_per_day": 0.4,
+   "kw_m_per_day": 0.7,
+   "gamma": 1.0,
+   "dose_mgL": 2.0
+  },
+  "age_h": {
+   "median": 1.471684,
+   "p95": 22.577477,
+   "max": 140.577176,
+   "mean": 4.736044
+  },
+  "chlorine_mgL": {
+   "median": 0.001502,
+   "p95": 0.092337,
+   "max": 1.029479,
+   "mean": 0.019533
+  },
+  "lows": {
+   "original": 897,
+   "completed": 898,
+   "both": 897,
+   "jaccard": 0.998886
+  },
+  "bar": {
+   "age_median_h": 0.5,
+   "age_p95_h": 2.0,
+   "chlorine_median_mgL": 0.01,
+   "chlorine_p95_mgL": 0.03,
+   "lows_jaccard_at_least": 0.95
+  },
+  "bar_parts_met": {
+   "age_median_h": false,
+   "age_p95_h": false,
+   "chlorine_median_mgL": true,
+   "chlorine_p95_mgL": false,
+   "lows_jaccard": true
+  },
+  "bar_met": false,
+  "original_options_effect": {
+   "age_h": {
+    "median": 8.4e-05,
+    "p95": 0.001434,
+    "max": 2.029444,
+    "mean": 0.000767
+   },
+   "chlorine_mgL": {
+    "median": 0.287252,
+    "p95": 0.656709,
+    "max": 0.83012,
+    "mean": 0.308669
+   },
+   "aligned": {
+    "hydraulic": [
+     "trials",
+     "accuracy",
+     "checkfreq",
+     "maxcheck",
+     "damplimit",
+     "unbalanced",
+     "unbalanced_value",
+     "viscosity",
+     "specific_gravity",
+     "emitter_exponent"
+    ],
+    "quality": [
+     "diffusivity",
+     "tolerance"
+    ]
+   },
+   "ky4_own": {
+    "trials": 100,
+    "accuracy": 0.0001,
+    "diffusivity": 0.05
+   },
+   "skeleton_own": {
+    "trials": 40,
+    "accuracy": 0.001,
+    "diffusivity": 1.0
+   }
+  }
+ },
+ "prvs": {
+  "form_rows": 5,
+  "prvs_restored": 5,
+  "restored_vs_original": {
+   "same_inp_text": true,
+   "age_max_abs_h": 0.0,
+   "chlorine_max_abs_mgL": 0.0
+  },
+  "prvs_missing_vs_original": {
+   "age_h": {
+    "median": 0.124583,
+    "p95": 16.367087,
+    "max": 84.544106,
+    "mean": 2.794084
+   },
+   "chlorine_mgL": {
+    "median": 0.001283,
+    "p95": 0.073187,
+    "max": 0.465237,
+    "mean": 0.015594
+   },
+   "junctions_age_moved": 347,
+   "move_h": 2.0,
+   "junctions": 920
+  }
+ },
+ "boundary": {
+  "pipe": "P-18",
+  "placed_on": "P-18",
+  "closed_vs_closed_original": {
+   "same_inp_text": true,
+   "age_max_abs_h": 0.0,
+   "chlorine_max_abs_mgL": 0.0
+  },
+  "open_vs_closed_original": {
+   "age_h": {
+    "median": 0.196228,
+    "p95": 6.665327,
+    "max": 62.094597,
+    "mean": 1.448753
+   },
+   "chlorine_mgL": {
+    "median": 0.001042,
+    "p95": 0.094936,
+    "max": 0.462852,
+    "mean": 0.016964
+   },
+   "junctions_age_moved": 272,
+   "move_h": 2.0,
+   "junctions": 920
+  }
+ },
+ "no_source": {
+  "skeleton_prepared": false,
+  "skeleton_blocking": [
+   "No reservoir, inflow junction or tank found: the model needs a place where water enters."
+  ],
+  "files_left": 0,
+  "form_ok": false,
+  "form_blocking": [
+   "No water source: the form has no source row, so the model has nowhere for water (and chlorine) to enter and cannot run. Add a source row: the node at the plant, well or zone inlet, and the hydraulic grade it holds (head_ft)."
+  ],
+  "no_source_sentence": true,
+  "model_written": false,
+  "form_refused": 0
+ },
+ "bad_rows": {
+  "rows": 7,
+  "refused_when_read": 3,
+  "refused": [
+   {
+    "line": 3,
+    "kind": "booster_station",
+    "reason": "unknown kind 'booster_station' (the kinds are source, tank, pump, pump_rule, closed_valve, check_valve, prv, psv, elevation, production, large_user, pattern, pipe_c)"
+   },
+   {
+    "line": 4,
+    "kind": "prv",
+    "reason": "missing setting_psi"
+   },
+   {
+    "line": 5,
+    "kind": "tank",
+    "reason": "location '1000.0,2000.0' is off the network: the nearest node is 6,288,207 ft away (more than 50 ft)"
+   },
+   {
+    "line": 6,
+    "kind": "pump_rule",
+    "reason": "pump 'P-99' is not the id of a pump row (nor a pump of the model)"
+   },
+   {
+    "line": 7,
+    "kind": "pattern",
+    "reason": "multipliers must be 24 numbers of 0 or more, one for each hour from midnight"
+   },
+   {
+    "line": 8,
+    "kind": "large_user",
+    "reason": "not a number: gallons_per_day 'lots'"
+   }
+  ],
+  "model_written": false,
+  "blocking": [
+   "6 rows of the form cannot be used, so no model was built. Fix them and give the form again."
+  ]
+ },
+ "after_the_stop": {
+  "counts_as": "a characterization after the stop, not a rescoring: the scored run (part 'complete') missed its bar and the miss stands",
+  "dead_ends_touching_a_main_within_1_ft": [
+   {
+    "junction": "J-198",
+    "pipe": "P-152",
+    "distance_ft": 0.104285,
+    "junction_pipes": 1
+   },
+   {
+    "junction": "J-836",
+    "pipe": "P-9",
+    "distance_ft": 0.60116,
+    "junction_pipes": 2
+   },
+   {
+    "junction": "J-86",
+    "pipe": "P-1126",
+    "distance_ft": 0.116602,
+    "junction_pipes": 1
+   }
+  ],
+  "junctions_touching_a_main_within_6_ft": 3,
+  "geometric_lengths_only": {
+   "age_h": {
+    "median": 0.009484,
+    "p95": 0.284528,
+    "max": 43.311424,
+    "mean": 0.104244
+   },
+   "chlorine_mgL": {
+    "median": 2.6e-05,
+    "p95": 0.000948,
+    "max": 0.361192,
+    "mean": 0.000558
+   }
+  },
+  "joined_within_0p1_ft": {
+   "tolerance_ft": 0.1,
+   "skeleton": {
+    "tolerance_ft": 0.1,
+    "pipes": 1156,
+    "nodes": 962,
+    "components": 1,
+    "tees_split": 0,
+    "original_pipes": 1156,
+    "original_nodes": 964,
+    "c_classes": {
+     "concrete or concrete lined": 4,
+     "plastic": 1152
+    }
+   },
+   "age_h": {
+    "median": 0.009483,
+    "p95": 0.28453,
+    "max": 43.311447,
+    "mean": 0.104242
+   },
+   "chlorine_mgL": {
+    "median": 2.6e-05,
+    "p95": 0.000947,
+    "max": 0.361192,
+    "mean": 0.000558
+   },
+   "lows": {
+    "original": 897,
+    "completed": 897,
+    "both": 897,
+    "jaccard": 1.0
+   },
+   "within_the_bar_values_post_hoc": {
+    "age_median_h": true,
+    "age_p95_h": true,
+    "chlorine_median_mgL": true,
+    "chlorine_p95_mgL": true,
+    "lows_jaccard": true
+   }
+  }
+ },
+ "review": {
+  "pipe_c_by_material": {
+   "materials": {
+    "PVC": 3,
+    "asbestos cement": 2,
+    "cast iron": 1,
+    "ductile iron": 3
+   },
+   "c_by_material": {
+    "PVC": [
+     150.0
+    ],
+    "asbestos cement": [
+     100.0
+    ],
+    "cast iron": [
+     90.0
+    ],
+    "ductile iron": [
+     140.0
+    ]
+   },
+   "pipes": 9,
+   "readiness": "9 pipes given the C of your form's pipe_c rows (ductile iron 140: 3; asbestos cement 100: 2; PVC 150: 3; cast iron 90: 1)",
+   "second_row_for_one_material": [
+    {
+     "line": 8,
+     "kind": "pipe_c",
+     "reason": "a second pipe_c row for ductile iron (line 4 gives one): give one C a material"
+    }
+   ],
+   "plastic_alone": {
+    "PVC": [
+     120.0
+    ],
+    "asbestos cement": [
+     130.0
+    ],
+    "cast iron": [
+     135.0
+    ],
+    "ductile iron": [
+     130.0
+    ]
+   },
+   "pvc_and_plastic": {
+    "c_by_material": {
+     "PVC": [
+      150.0
+     ],
+     "asbestos cement": [
+      130.0
+     ],
+     "cast iron": [
+      135.0
+     ],
+     "ductile iron": [
+      130.0
+     ]
+    },
+    "warnings": [
+     "Line 5 (pipe_c): every plastic pipe of the model takes a row that names its material more closely, so the row gives no pipe its C; the materials the map names: PVC (3), ductile iron (3), asbestos cement (2), cast iron (1)."
+    ]
+   },
+   "cast_iron_then_all": {
+    "PVC": [
+     110.0
+    ],
+    "asbestos cement": [
+     110.0
+    ],
+    "cast iron": [
+     90.0
+    ],
+    "ductile iron": [
+     110.0
+    ]
+   }
+  },
+  "layer_c_field_kept": {
+   "c_from_field": [
+    "M1",
+    "M2"
+   ],
+   "c_before": {
+    "M0": 130.0,
+    "M1": 85.0,
+    "M2": 70.0,
+    "M3": 145.0,
+    "M4": 135.0
+   },
+   "c_after_a_cast_iron_row": {
+    "M0": 130.0,
+    "M1": 85.0,
+    "M2": 70.0,
+    "M3": 145.0,
+    "M4": 100.0
+   },
+   "c_after_an_all_row": {
+    "M0": 110.0,
+    "M1": 85.0,
+    "M2": 70.0,
+    "M3": 110.0,
+    "M4": 110.0
+   },
+   "readiness_after_an_all_row": "3 pipes given the C of your form's pipe_c rows (all 110: 3); 2 keep the C of the layer's own C field",
+   "readiness": "1 pipe given the C of your form's pipe_c rows (cast iron 100: 1); 2 keep the C of the layer's own C field",
+   "age_note_without_rows": [
+    "3 pipes of the skeleton take Hazen-Williams C from their material alone (new-pipe values, or 130 where the map names none), so a decades-old cast iron main gets more than a new ductile iron one, and the model's old-pipe factor, which scales wall decay by C, cannot see the pipe's age. Give your own C for each material (pipe_c rows) if you have them. The 2 pipes whose C the layer's own C field gives keep it."
+   ],
+   "longitude_first": [
+    {
+     "line": 2,
+     "kind": "source",
+     "reason": "location '-84.5000000,38.0500000' is off the network: the nearest node is 15,703,464 ft away (more than 50 ft); read as longitude,latitude it is on the network: give the latitude first, as Google Earth copies a place"
+    }
+   ]
+  },
+  "pumps_side_by_side": {
+   "ok": true,
+   "pumps": {
+    "PUMP-A": [
+     "N0_0_in",
+     "N0_0"
+    ],
+    "PUMP-B": [
+     "N0_0_in",
+     "N0_0"
+    ]
+   },
+   "links_at_the_well": [
+    "P42273fe1"
+   ],
+   "mean_flow_gpm_48_h": {
+    "PUMP-A": 385.698257,
+    "PUMP-B": 0.0
+   }
+  },
+  "psv_elevation_upstream": {
+   "ok": true,
+   "valve": [
+    "N3000_1000",
+    "N3000_2000"
+   ],
+   "upstream_elevation_ft": 150.0,
+   "downstream_elevation_ft": 0.0,
+   "psv_mean_flow_gpm_24_h": 0.0,
+   "tank_level_ft_first_last": [
+    20.0,
+    16.14572
+   ]
+  },
+  "part_without_source": {
+   "components": 2,
+   "ok": false,
+   "blocking": [
+    "The model is in 2 parts that no pipe, pump or valve joins (sizes 9, 3), and 1 of them has no source (for example the part of N4020_2000, 3 nodes), so no water reaches it and the model cannot run. Add a source row in each such part, or join it to the rest: the pipe the map lacks, or a larger joining distance where the map's lines stop short of each other."
+   ],
+   "model_written": false,
+   "with_a_tank_there": {
+    "ok": false,
+    "blocking": [
+     "The model is in 2 parts that no pipe, pump or valve joins (sizes 9, 3), and 1 of them has no source (for example the part of N4020_2000, 3 nodes), so no water reaches it and the model cannot run. Add a source row in each such part, or join it to the rest: the pipe the map lacks, or a larger joining distance where the map's lines stop short of each other."
+    ],
+    "model_written": false
+   }
+  },
+  "clock_starts_at_0800": {
+   "ok": true,
+   "start_clocktime_h": 8.0,
+   "pump_starts": "Open",
+   "pattern_first_multiplier": 0.8478,
+   "form_multiplier_at_08": 0.8478,
+   "notes": [
+    "The model's clock starts at 08:00: the form's pattern, given from midnight, is shifted so each clock hour keeps its multiplier."
+   ],
+   "pump_open_by_model_hour": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ]
+  },
+  "applied_again": {
+   "ok": true,
+   "closed": {
+    "2": "Pa30707c6"
+   },
+   "blocking": []
+  },
+  "values_refused": {
+   "power_hp 0": [
+    {
+     "line": 4,
+     "kind": "pump",
+     "reason": "power_hp must be more than 0"
+    }
+   ],
+   "three curve points with heads rising": [
+    {
+     "line": 4,
+     "kind": "pump",
+     "reason": "three curve points need flows rising from 0 or more and heads falling to 0 or more (EPANET reads no other pump curve)"
+    }
+   ],
+   "a design point at 0 gpm": [
+    {
+     "line": 4,
+     "kind": "pump",
+     "reason": "a design point needs a flow (flow_gpm) and a head (head_ft) above 0"
+    }
+   ],
+   "a design point with a negative head": [
+    {
+     "line": 4,
+     "kind": "pump",
+     "reason": "a design point needs a flow (flow_gpm) and a head (head_ft) above 0"
+    }
+   ],
+   "a PRV of 0 in": [
+    {
+     "line": 4,
+     "kind": "prv",
+     "reason": "diameter_in must be more than 0"
+    }
+   ],
+   "a PRV set at -20 psi": [
+    {
+     "line": 4,
+     "kind": "prv",
+     "reason": "setting_psi must be 0 or more"
+    }
+   ],
+   "a tank level below its bottom": [
+    {
+     "line": 4,
+     "kind": "tank",
+     "reason": "tank levels are feet of water above the tank's bottom, 0 or more"
+    }
+   ],
+   "a dose of -2 mg/L": [
+    {
+     "line": 2,
+     "kind": "source",
+     "reason": "dose_mgL and residual_mgL must lie between 0 and 10 mg/L (a thousands separator reads '1,500' as 1500: write 1.5)"
+    }
+   ],
+   "a dose written 1,500": [
+    {
+     "line": 2,
+     "kind": "source",
+     "reason": "dose_mgL and residual_mgL must lie between 0 and 10 mg/L (a thousands separator reads '1,500' as 1500: write 1.5)"
+    }
+   ]
+  },
+  "first_hour_refuses": {
+   "ok": false,
+   "blocking": [
+    "EPANET cannot run the completed model: its first hour stops with (Error 200) one or more errors in the model. Check the form's pumps (their curves and powers), valves (their sizes and settings; EPANET joins no pressure valve straight to a tank, nor two in series or side by side) and tanks (their levels), and that water can reach every junction."
+   ],
+   "model_written": false
+  },
+  "headers": {
+   "ok": true,
+   "dose_mgL": 1.5,
+   "notes": [
+    "Columns not read: Shift."
+   ]
+  },
+  "unnamed_pump": {
+   "its_name_taken": [
+    {
+     "line": 6,
+     "kind": "pump",
+     "reason": "id 'PUMP1' is the name the form gives the pump of line 5, which has no id: give that pump an id, or this one another"
+    }
+   ],
+   "no_rule": [
+    "Pump with no rule: PUMP1. Say when it runs, with a pump_rule row (a tank's levels, its hours, or 'always'), and give the pump row an id for its rule to name."
+   ],
+   "no_rule_quotes_ky4_and_ky10": true
+  },
+  "prv_without_elevation": [
+   {
+    "line": 4,
+    "kind": "prv",
+    "reason": "missing elevation_ft (the valve's elevation)"
+   }
+  ],
+  "conflicts_refused": {
+   "two PRVs in place of one pipe": [
+    {
+     "line": 5,
+     "kind": "prv",
+     "reason": "pipe Pa30707c6 is given by line 4 too (a prv): one row a pipe, except pumps or valves side by side at one node, which give the same node and pipe"
+    }
+   ],
+   "a PRV and a closed valve on one pipe": [
+    {
+     "line": 5,
+     "kind": "closed_valve",
+     "reason": "pipe Pa30707c6 is given by line 4 too (a prv): one row a pipe, except pumps or valves side by side at one node, which give the same node and pipe"
+    }
+   ],
+   "a pump splitting the well's node": [
+    {
+     "line": 4,
+     "kind": "pump",
+     "reason": "location '0,-800' is the source of line 2: a source's node cannot be split. For a well and its pump at one point, give the pump in place of the first pipe out of the well (pipe, and upstream the well's node)"
+    }
+   ],
+   "a PRV splitting the tank's node": [
+    {
+     "line": 5,
+     "kind": "prv",
+     "reason": "location '4000,2000' is a tank or a source: EPANET joins no PRV straight to one (give it in place of a pipe beside it)"
+    }
+   ],
+   "a PRV in place of the tank's pipe": [
+    {
+     "line": 5,
+     "kind": "prv",
+     "reason": "pipe '3500,2000' (Pa0e4cb06) ends at a tank or a source: EPANET joins no PRV straight to one (give a pipe one further along)"
+    }
+   ],
+   "a pump splitting the model's own reservoir": [
+    {
+     "line": 2,
+     "kind": "pump",
+     "reason": "location 'WELL' is the model's reservoir WELL: a source's node cannot be split. For a well and its pump at one point, give the pump in place of the first pipe out of the well (pipe, and upstream the well's node)"
+    }
+   ]
+  },
+  "well_and_its_pump": {
+   "ok": true,
+   "pump": [
+    "WELL",
+    "N0_0"
+   ]
+  },
+  "points": {
+   "degrees_a_degree_off": [
+    {
+     "line": 2,
+     "kind": "closed_valve",
+     "reason": "pipe '-85.4947917,38.0500000' is off the network: the nearest pipe is 286,458 ft away (more than 50 ft; the model's coordinates read as degrees)"
+    }
+   ],
+   "degrees_on_the_pipe": {
+    "2": "Pa30707c6"
+   },
+   "at_a_tee": [
+    {
+     "line": 4,
+     "kind": "closed_valve",
+     "reason": "pipe '1000,0' is about as near to pipe Paf9b5f66 (0.0 ft away) as to pipe Pa30707c6 (0.0 ft): give a point along the pipe, away from its ends and other pipes, or its ID"
+    }
+   ],
+   "beside_two_pipes": [
+    {
+     "line": 4,
+     "kind": "closed_valve",
+     "reason": "pipe '999,1' is about as near to pipe Pe66bc232 (1.0 ft away) as to pipe Paf9b5f66 (1.0 ft): give a point along the pipe, away from its ends and other pipes, or its ID"
+    }
+   ],
+   "halfway_along_a_pipe": {
+    "2": "WELL",
+    "4": "Pa30707c6"
+   }
+  },
+  "model_text": {
+   "id_given_twice": {
+    "ok": false,
+    "blocking": [
+     "1 ID is used more than once among the nodes (junctions, reservoirs, tanks): N0_-800 (2 times in [JUNCTIONS]). WNTR would keep only the later of two lines in one section, without a word. Export the model with IDs, not labels."
+    ]
+   },
+   "byte_order_mark": {
+    "ok": true,
+    "same_model": true
+   }
+  },
+  "form_words": {
+   "pdf": "This file is a PDF (a map book, drawing set or report): PDF version 1.4. The operator form is a table: CSV, or an Excel workbook (.xlsx). Fill in the operator form's template, one row per item (a source, a tank, a pump and so on), in a spreadsheet and save it as CSV or as an Excel workbook (.xlsx).",
+   "elevation_row": [
+    {
+     "line": 4,
+     "kind": "elevation",
+     "reason": "missing elevation_ft (the ground elevation there, in feet)"
+    }
+   ]
+  }
+ },
+ "public_models": {
+  "kw_step": 1.587401,
+  "threshold_mgL": 0.2,
+  "Net3": {
+   "c_counts": {
+    "199": 3,
+    "141": 12,
+    "140": 4,
+    "130": 97,
+    "110": 1
+   },
+   "material_only_c": {
+    "199": 145.0,
+    "141": 130.0,
+    "140": 130.0,
+    "130": 135.0,
+    "110": 135.0
+   },
+   "file_diffusivity": 1.0,
+   "junctions": 92
+  },
+  "ky4": {
+   "c_counts": {
+    "150": 1152,
+    "140": 4
+   },
+   "material_only_c": {
+    "150": 145.0,
+    "140": 130.0
+   },
+   "file_diffusivity": 0.05,
+   "junctions": 959,
+   "truth": {
+    "kb_per_day": 0.4,
+    "kw_m_per_day": 0.7,
+    "source_dose": 2.0
+   },
+   "at_file_diffusivity": {
+    "diffusivity": 0.05,
+    "daily_min_change_mgL": {
+     "median": 0.021426,
+     "p95": 0.040799
+    },
+    "junctions_low": 376
+   },
+   "at_chlorine_diffusivity": {
+    "diffusivity": 1.0,
+    "daily_min_change_mgL": {
+     "median": 0.016287,
+     "p95": 0.09032
+    },
+    "junctions_low": 897
+   }
+  },
+  "ky10": {
+   "c_counts": {
+    "150": 555,
+    "140": 97,
+    "100": 391
+   },
+   "material_only_c": {
+    "150": 145.0,
+    "140": 130.0,
+    "100": 135.0
+   },
+   "file_diffusivity": 0.05,
+   "junctions": 920,
+   "truth": {
+    "kb_per_day": 0.4,
+    "kw_m_per_day": 0.7,
+    "source_dose": 1.2
+   },
+   "at_file_diffusivity": {
+    "diffusivity": 0.05,
+    "daily_min_change_mgL": {
+     "median": 0.009257,
+     "p95": 0.028833
+    },
+    "junctions_low": 362
+   },
+   "at_chlorine_diffusivity": {
+    "diffusivity": 1.0,
+    "daily_min_change_mgL": {
+     "median": 0.022126,
+     "p95": 0.068736
+    },
+    "junctions_low": 611
+   }
+  }
+ },
+ "final": {
+  "bracket_header": {
+   "form_bytes": 6501,
+   "rows": 2,
+   "refused": [],
+   "notes": [
+    "Columns not read: Dose ( x."
+   ],
+   "headers_read": {
+    "Dose (mg/L)": "dose_mgL",
+    "Head [ft]": "head_ft",
+    "Base elevation (ft)": "base_elev_ft",
+    "Dose(mg/L)": "dose_mgL",
+    "Dose ( mg / L )": "dose_mgL",
+    "Gallons per day (gpd)": "gallons_per_day",
+    "Setting (psig)": "setting_psi",
+    "Dose (                                        x": null,
+    "Dose ((mg/L))": null
+   }
+  },
+  "cut_off_by_the_form": {
+   "a closed_valve row on its only pipe": {
+    "ok": false,
+    "refused": [],
+    "blocking": [
+     "2 junctions with water use (N3000_2000, N4000_2000) can get water from no source: they are joined to the sources only through pipe P11fb70bb, closed by line 4's closed_valve row. The water use there would be met by nothing (EPANET reports such junctions disconnected), so the model is not written. Open the link or turn it round, give the pump a rule that runs it, or add a source row on their side."
+    ],
+    "model_written": false
+   },
+   "a check valve pointing out of it": {
+    "ok": false,
+    "refused": [],
+    "blocking": [
+     "2 junctions with water use (N3000_2000, N4000_2000) can get water from no source: they are joined to the sources only through pipe P11fb70bb, a check valve that lets water through only out of them (line 4's check_valve row). The water use there would be met by nothing (EPANET reports such junctions disconnected), so the model is not written. Open the link or turn it round, give the pump a rule that runs it, or add a source row on their side."
+    ],
+    "model_written": false
+   },
+   "a pump whose rule is never": {
+    "ok": false,
+    "refused": [],
+    "blocking": [
+     "2 junctions with water use (N3000_2000, N4000_2000) can get water from no source: they are joined to the sources only through pump BP, which never runs (line 4's pump row and line 5's pump_rule row). The water use there would be met by nothing (EPANET reports such junctions disconnected), so the model is not written. Open the link or turn it round, give the pump a rule that runs it, or add a source row on their side."
+    ],
+    "model_written": false
+   },
+   "a pump pointing out of it": {
+    "ok": false,
+    "refused": [],
+    "blocking": [
+     "2 junctions with water use (N3000_2000, N4000_2000) can get water from no source: they are joined to the sources only through pump BP, which pumps only out of them (line 4's pump row and line 5's pump_rule row). The water use there would be met by nothing (EPANET reports such junctions disconnected), so the model is not written. Open the link or turn it round, give the pump a rule that runs it, or add a source row on their side."
+    ],
+    "model_written": false
+   }
+  },
+  "fed_through_open_or_one_way_links": {
+   "a check valve pointing into it": {
+    "ok": true,
+    "refused": [],
+    "blocking": [],
+    "model_written": true,
+    "part_time_warning": []
+   },
+   "an always-on pump pointing into it": {
+    "ok": true,
+    "refused": [],
+    "blocking": [],
+    "model_written": true,
+    "part_time_warning": []
+   },
+   "a pump on the clock pointing into it": {
+    "ok": true,
+    "refused": [],
+    "blocking": [],
+    "model_written": true,
+    "part_time_warning": [
+     "2 junctions with water use (N3000_2000, N4000_2000) get water only through BP, which its rule turns off at times, and no tank on their side holds water for those hours: while it is off, EPANET reports them disconnected. Give the pump a rule that keeps it running, or add the tank that feeds them."
+    ]
+   },
+   "a closed valve on a loop's pipe": {
+    "ok": true,
+    "refused": [],
+    "blocking": [],
+    "model_written": true,
+    "part_time_warning": []
+   }
+  },
+  "clock_rules": {
+   "refused": {
+    "6:30-22:00": [
+     {
+      "line": 6,
+      "kind": "pump_rule",
+      "reason": "on_hours '6:30-22:00' gives minutes: the form takes whole clock hours only, such as '6-22' or '06:00-22:00' (round each time to its hour)"
+     }
+    ],
+    "6:15-22": [
+     {
+      "line": 6,
+      "kind": "pump_rule",
+      "reason": "on_hours '6:15-22' gives minutes: the form takes whole clock hours only, such as '6-22' or '06:00-22:00' (round each time to its hour)"
+     }
+    ],
+    "06:00-22:30": [
+     {
+      "line": 6,
+      "kind": "pump_rule",
+      "reason": "on_hours '06:00-22:30' gives minutes: the form takes whole clock hours only, such as '6-22' or '06:00-22:00' (round each time to its hour)"
+     }
+    ]
+   },
+   "runs": {
+    "06:00-22:00": true,
+    "6 to 22": true
+   },
+   "model_hours_where_the_pump_differs_from_its_rule": {
+    "8:00 AM 0-6": [],
+    "8:00 AM 18-24": [],
+    "8:00 AM 22-6": [],
+    "8:00 AM 6-22": [],
+    "11:00 PM 0-6": [],
+    "11:00 PM 18-24": [],
+    "11:00 PM 22-6": [],
+    "11:00 PM 6-22": []
+   }
+  },
+  "messages_name_no_file": {
+   "first_hour": "EPANET cannot run the completed model: its first hour stops with (Error 213) invalid option value '6.5'. Check the form's pumps (their curves and powers), valves (their sizes and settings; EPANET joins no pressure valve straight to a tank, nor two in series or side by side) and tanks (their levels), and that water can reach every junction.",
+   "last_guard": [
+    "The form could not be applied to this model (EpanetException: (Error 213) invalid option value '6.5'): a case this tool does not handle yet, in the model or in the form. Check the model and the rows the error names."
+   ],
+   "any_path": false
+  },
+  "ids_starting_with_a_bracket": {
+   "pump [END]": {
+    "ok": true,
+    "named": [
+     "END"
+    ],
+    "links_written_and_read_back": [
+     10,
+     10
+    ]
+   },
+   "pump [P1]": {
+    "ok": true,
+    "named": [
+     "P1"
+    ],
+    "links_written_and_read_back": [
+     10,
+     10
+    ]
+   },
+   "prv [END]": {
+    "ok": true,
+    "named": [
+     "END"
+    ],
+    "links_written_and_read_back": [
+     9,
+     9
+    ]
+   }
+  },
+  "far_points": {
+   "nearest_node": {
+    "1e+150": null,
+    "1e+160": null,
+    "1e+200": null
+   },
+   "refused": {
+    "0,1e150": [
+     {
+      "line": 4,
+      "kind": "large_user",
+      "reason": "location '0,1e150' is far off the network: more than 1,000,000,000 ft from every node (check the point's digits)"
+     }
+    ],
+    "0,1e160": [
+     {
+      "line": 4,
+      "kind": "large_user",
+      "reason": "location '0,1e160' is far off the network: more than 1,000,000,000 ft from every node (check the point's digits)"
+     }
+    ],
+    "2000,1000000000000000000": [
+     {
+      "line": 4,
+      "kind": "large_user",
+      "reason": "location '2000,10000000000000000000000000000000000...' is far off the network: more than 1,000,000,000 ft from every node (check the point's digits)"
+     }
+    ]
+   },
+   "pipe_refused": [
+    {
+     "line": 4,
+     "kind": "closed_valve",
+     "reason": "pipe '0,1e160' is far off the network: more than 1,000,000,000 ft from every node (check the point's digits)"
+    }
+   ]
+  },
+  "silent_rows": {
+   "a pattern row on a model with water use": [
+    {
+     "line": 2,
+     "kind": "pattern",
+     "reason": "a pattern row shapes the form's own water use (its production and large_user rows), and the form gives none: a model's own water use keeps its own patterns. Leave the row out, or give the water use in the form"
+    }
+   ],
+   "two elevation rows for one node": [
+    {
+     "line": 5,
+     "kind": "elevation",
+     "reason": "a second elevation row for the node N1000_0 (line 4 gives 120 ft): give one elevation a node"
+    }
+   ],
+   "an elevation row at the source's node": [
+    {
+     "line": 4,
+     "kind": "elevation",
+     "reason": "location '0,-800' is the source of line 2, which takes no ground elevation (a source holds its head_ft, a tank stands at its base_elev_ft): leave the row out"
+    }
+   ],
+   "an elevation row against a PRV's elevation_ft": [
+    {
+     "line": 5,
+     "kind": "elevation",
+     "reason": "the node N2000_0 takes the elevation_ft of the PRV of line 4 (60 ft), not 5 ft: give the node one elevation"
+    }
+   ],
+   "an elevation row that agrees with it": true,
+   "an elevation row at the PRV's other side": true
+  },
+  "pipe_c_counted_after_step_4": {
+   "ok": true,
+   "pipes": 7,
+   "readiness": "7 pipes given the C of your form's pipe_c rows (all 110: 7)"
+  },
+  "pipe_c_on_darcy_weisbach": {
+   "refused": [
+    {
+     "line": 4,
+     "kind": "pipe_c",
+     "reason": "this model's headloss formula is Darcy-Weisbach (D-W), where a pipe's roughness is a roughness height, not a Hazen-Williams C: a pipe_c row cannot be used on it (give the roughness in the model itself)"
+    }
+   ],
+   "without_the_row_ok": true
+  },
+  "values_refused": {
+   "head_ft 490 500": [
+    {
+     "line": 2,
+     "kind": "source",
+     "reason": "not a number: head_ft '490 500'"
+    }
+   ],
+   "gallons_per_day 1_500": [
+    {
+     "line": 3,
+     "kind": "production",
+     "reason": "not a number: gallons_per_day '1_500'"
+    }
+   ],
+   "on below 2 ft, the tank's minimum 5 ft": [
+    {
+     "line": 6,
+     "kind": "pump_rule",
+     "reason": "on_below_ft 2 and off_above_ft 25 must lie inside the tank's range, above its minimum level (5 ft) and below its maximum (30 ft): its level never falls below the minimum nor rises above the maximum, so the pump would never start"
+    }
+   ],
+   "off above 40 ft, the tank full at 30 ft": [
+    {
+     "line": 6,
+     "kind": "pump_rule",
+     "reason": "on_below_ft 10 and off_above_ft 40 must lie inside the tank's range, above its minimum level (5 ft) and below its maximum (30 ft): its level never falls below the minimum nor rises above the maximum, so the pump would never stop"
+    }
+   ],
+   "a tank's base at 646000 ft": [
+    {
+     "line": 4,
+     "kind": "tank",
+     "reason": "base_elev_ft 646,000 ft is outside -1,500 to 20,000 ft, beyond any ground or water level a system has (a slip in the digits or the unit)"
+    }
+   ],
+   "a source's head at 490500 ft": [
+    {
+     "line": 2,
+     "kind": "source",
+     "reason": "head_ft 490,500 ft is outside -1,500 to 20,000 ft, beyond any ground or water level a system has (a slip in the digits or the unit)"
+    }
+   ]
+  },
+  "values_kept": {
+   "head_ft 1,200": true,
+   "a rule inside the tank's range": true
+  },
+  "degrees_both_ways": {
+   "45 ft east": {
+    "placed": "N2000_1000",
+    "refused": []
+   },
+   "45 ft north": {
+    "placed": "N2000_1000",
+    "refused": []
+   },
+   "55 ft east": {
+    "placed": null,
+    "refused": [
+     "location '-84.492864583,38.052747253' is off the network: the nearest node is 55 ft away (more than 50 ft; the model's coordinates read as degrees)"
+    ]
+   },
+   "55 ft north": {
+    "placed": null,
+    "refused": [
+     "location '-84.493055556,38.052898352' is off the network: the nearest node is 55 ft away (more than 50 ft; the model's coordinates read as degrees)"
+    ]
+   }
+  },
+  "tank_no_source_can_fill": {
+   "refused": [
+    {
+     "line": 4,
+     "kind": "tank",
+     "reason": "the tank's water stands at 305 ft or more (base_elev_ft plus min_level_ft), above the highest head a source holds (200 ft, line 2), and no pump lifts water to it: it would drain and never fill again. Check both elevations (each is a height in feet on one datum), or add the pump that fills it"
+    }
+   ],
+   "with_a_pump_to_fill_it": []
+  },
+  "grammar_fuzz": {
+   "what": "the final verifier's grammar fuzzer, seed 11, 3,000 random well-formed forms, as its console gave it; a completed model is counted 'disconnected' when EPANET's 24 h report names a node disconnected",
+   "forms": 3000,
+   "before": {
+    "ok": 285,
+    "ok_but_disconnected": 34,
+    "refused": 2457,
+    "blocked": 223,
+    "form_refused": 1
+   },
+   "after_reachability": {
+    "ok": 258,
+    "ok_but_disconnected": 8,
+    "refused": 2521,
+    "blocked": 212,
+    "form_refused": 1
+   },
+   "after_the_tank_check": {
+    "ok": 255,
+    "ok_but_disconnected": 1,
+    "refused": 2537,
+    "blocked": 206,
+    "form_refused": 1
+   },
+   "left": "a tank on the only path to a branch, low enough to fill, fills to its maximum and then closes, so EPANET cuts the branch off: when a tank fills or empties is not checked"
+  },
+  "files_given_as_the_form": {
+   "an EPANET model": "This file is an EPANET model (.inp): 25 EPANET sections found in the first 64 KB, text in utf-8. The operator form is a table: CSV, or an Excel workbook (.xlsx). It is a model, not the form: the form is a table, one row per item (a source, a tank, a pump and so on), that completes a model. On the command line the model comes first and the form second.",
+   "a DXF drawing": "This file is a CAD drawing (DXF, text): group codes and values. The operator form is a table: CSV, or an Excel workbook (.xlsx). It is a map of the mains, not the form: the form is a table, one row per item (a source, a tank, a pump and so on), that completes the model built from the map (on the command line, cad_read or gis_read with --form, the map first and the form after --form).",
+   "a GeoJSON layer": "This file is a GIS layer (GeoJSON): 5 features, lon/lat coordinates (WGS84). The operator form is a table: CSV, or an Excel workbook (.xlsx). It is a map of the mains, not the form: the form is a table, one row per item (a source, a tank, a pump and so on), that completes the model built from the map (on the command line, cad_read or gis_read with --form, the map first and the form after --form)."
+  },
+  "files_given_as_the_model": {
+   "a zip holding the model": {
+    "read_as_the_model": true
+   },
+   "a DXF drawing": {
+    "refused": "This file is a CAD drawing (DXF, text): group codes and values. This command completes an EPANET model (.inp). A drawing is completed by its own command, which keeps each pipe's material and the drawing's coordinates: python -m residualmap.cad_read DRAWING.dxf --form FORM.csv --out completed.inp."
+   },
+   "a GeoJSON layer": {
+    "refused": "This file is a GIS layer (GeoJSON): 5 features, lon/lat coordinates (WGS84). This command completes an EPANET model (.inp). A GIS layer is completed by its own command, which keeps each pipe's material and the layer's coordinates: python -m residualmap.gis_read LAYER --form FORM.csv --out completed.inp (a GeoPackage, a zipped shapefile, GeoJSON, KML or KMZ)."
+   },
+   "a form": {
+    "refused": "This file is a table in text form (CSV or similar): separated by commas; first row: kind, id, location, pipe, upstream, head_ft, dose_mgL, residual_mgL. This command completes an EPANET model (.inp): give the model first and the form second."
+   }
+  }
+ },
+ "scored_run": {
+  "what": "operator_form_completes_skeleton's pre-registered scored run, as its console output gave it",
+  "changes_since": [
+   "the skeleton's zero-demand entries are cleared before the form's demands are added, so each junction carries the form's demand alone (the scored run had a zero entry beside it)",
+   "only a pump the form adds needs a pump_rule row (ky4's two are both the form's)",
+   "WNTR's header comments are left out of the written model",
+   "task 19's review fixed cases ky4's form does not use (part 'review'): the completed model's text is the same byte for byte after the fixes as before them"
+  ],
+  "age_h": {
+   "median": 1.471684,
+   "p95": 22.577524,
+   "max": 140.577175,
+   "mean": 4.736041
+  },
+  "chlorine_mgL": {
+   "median": 0.001502,
+   "p95": 0.092337,
+   "max": 1.029479,
+   "mean": 0.019533
+  },
+  "lows": {
+   "original": 897,
+   "completed": 898,
+   "both": 897,
+   "jaccard": 0.998886
+  },
+  "bar_parts_met": {
+   "age_median_h": false,
+   "age_p95_h": false,
+   "chlorine_median_mgL": true,
+   "chlorine_p95_mgL": false,
+   "lows_jaccard": true
+  },
+  "bar_met": false
+ }
+}

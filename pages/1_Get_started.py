@@ -332,9 +332,13 @@ def gis_step(data: bytes, name: str) -> None:
                 if DIAMETER_UNITS[du]:
                     opts.bare_unit, changed = DIAMETER_UNITS[du], True
             elif q["key"] == "default_diameter_in":
-                opts.default_diameter_in = st.number_input("Size of every pipe (in)", 1.0, 120.0, 8.0, 1.0,
-                                                           help=q["text"])
-                changed = True
+                # empty until the operator answers (as step 5 since task 18's review): the question stays open and
+                # nothing is built at a size nobody gave (it started at 8 in and was then called the size you chose)
+                size = st.number_input("Size of every pipe (in)", 1.0, 120.0, None, 1.0, key=f"gis_default_{tag}",
+                                       help=q["text"], placeholder="the size, in inches")
+                if size is not None:
+                    opts.default_diameter_in = float(size)
+                    changed = True
             elif q["key"] == "to_scale":
                 ans = st.radio("Is the layer drawn to scale?", ["not sure", "yes", "no"], horizontal=True,
                                help=q["text"])

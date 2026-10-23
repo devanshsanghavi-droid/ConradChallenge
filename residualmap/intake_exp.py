@@ -14,6 +14,12 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
     python -m residualmap.intake_exp zone         # task 16c: outputs/intake/zone_extract_Net3.json (not part of 'all';
                                                   # run it from outside the repository too: the pilot's validation
                                                   # writes EPANET's temp.inp, .rpt and .bin to the working directory)
+    python -m residualmap.intake_exp fidelity [Net3 ky10 ky4]   # task 19: the fidelity ladder, outputs/intake/
+                                                  # fidelity_<net>.json (Net3 minutes, ky10 about 17, ky4 about 35;
+                                                  # from outside the repository, as EPANET writes scratch files)
+    python -m residualmap.intake_exp boundary     # task 19: ky10's boundary valve, picked once (about 2 minutes),
+                                                  # outputs/intake/boundary_valve_ky10.json
+    python -m residualmap.intake_exp form         # task 19: the operator form's record, outputs/intake/operator_form.json
 
 - elevation_prv_ky10.json: ky10 (five PRVs) with its own junction elevations and with every junction at one elevation
   (the mean of its junctions'), 7-day water-age runs set up as every run is: how many junctions have an hour of the
@@ -46,6 +52,13 @@ intake_exp.py: the iteration-5 intake experiments and their records under output
   group fit's training size recorded; an online analyzer at a zone inlet read as a boundary condition, with the
   refusals and the review's cases (a declared inlet with no usable reading in the window, roles that mark no inlet);
   the task16c checks rerun each part.
+
+- operator_form.json (task 19, stopped at its pre-registered bar): ky4's clean drawing completed by the operator form
+  against the original (part 'complete', the scored run, which missed), the characterization after the stop (part
+  'after_the_stop', not a rescoring), ky10's PRVs restored and its boundary valve closed by the form (parts 'prvs' and
+  'boundary'), and the refusals (parts 'no_source' and 'bad_rows'); boundary_valve_ky10.json, the one search that
+  picked the boundary pipe; fidelity_<net>.json, the fidelity ladder (its protocol is written above its code, before
+  the scored runs), Net3 rerun by the saved check, ky4's and ky10's grids checked by sha256.
 
 Every file is built from public models (WNTR's bundled networks, edited by fixtures.py), so the results are converter
 self-consistency on public models, never a test on a utility's own files.
@@ -3433,6 +3446,1306 @@ def cad_record() -> dict:
                 "review": part_cad_review(paths), "final": _unmeasured(part_cad_final(paths))}
 
 
+# ----------------------------------------------------------------------------- task 19: the operator form's record
+# operator_form_completes_skeleton's pre-registered bars (plan task 19, written before its scored run): the skeleton
+# from ky4_clean_r12.dxf (joined within fixtures.FORM_TOL_FT, 1 ft: the build's own setting, fixed before the scored
+# run; the plan named no joining distance, and task 17's record, gis_roundtrip.json's near_node_misses, already listed
+# the three ky4 dead ends that 1 ft joins as tees) completed by ky4_form_from_original.csv against the
+# original, at every junction of the original and every hour of the scored day (the last of a 7-day run): water age's
+# median absolute difference at most 0.5 h and 95th percentile at most 2 h; chlorine (one grid member, kb 0.40 per day,
+# kw 0.70 m per day, gamma 1, at ky4's truth dose of 2.0 mg/L) median at most 0.01 mg/L and 95th percentile at most
+# 0.03 mg/L; the junctions whose daily minimum is below 0.2 mg/L the same set, Jaccard at least 0.95.  A drawing and the
+# form carry no solver or quality options, so 'the original' is ky4 with the skeleton's options (FORM_ALIGN: ky4's own
+# file has 100 trials, an accuracy of 0.0001 and a diffusivity of 0.05); the difference those options make on the
+# original itself is recorded beside the bars, not barred.
+RECORD_19 = os.path.join(OUT, "operator_form.json")
+# The scored run itself, as its console output gave it (23 October 2026, run from the build's scratch folder outside
+# the repository).  Part 'complete' is that setup rerun after changes that do not touch what it measures, so its
+# numbers differ in the fifth significant digit; the verdict, part by part, is the same.  Copied, not rerun.  A first
+# attempt stopped before any score: its comparison could not map the three junctions the skeleton had joined to a
+# passing main (their nodes sit a fraction of a foot from ky4's), and it then took the nearest node within the joining
+# distance, the run scored here.
+SCORED_RUN_19 = {"what": "operator_form_completes_skeleton's pre-registered scored run, as its console output gave it",
+                 "changes_since": ["the skeleton's zero-demand entries are cleared before the form's demands are added, "
+                                   "so each junction carries the form's demand alone (the scored run had a zero entry "
+                                   "beside it)",
+                                   "only a pump the form adds needs a pump_rule row (ky4's two are both the form's)",
+                                   "WNTR's header comments are left out of the written model",
+                                   "task 19's review fixed cases ky4's form does not use (part 'review'): the completed "
+                                   "model's text is the same byte for byte after the fixes as before them"],
+                 "age_h": {"median": 1.471684, "p95": 22.577524, "max": 140.577175, "mean": 4.736041},
+                 "chlorine_mgL": {"median": 0.001502, "p95": 0.092337, "max": 1.029479, "mean": 0.019533},
+                 "lows": {"original": 897, "completed": 898, "both": 897, "jaccard": 0.998886},
+                 "bar_parts_met": {"age_median_h": False, "age_p95_h": False, "chlorine_median_mgL": True,
+                                   "chlorine_p95_mgL": False, "lows_jaccard": True}, "bar_met": False}
+FORM_BAR = {"age_median_h": 0.5, "age_p95_h": 2.0, "chlorine_median_mgL": 0.01, "chlorine_p95_mgL": 0.03,
+            "lows_jaccard_at_least": 0.95}
+FORM_MEMBER = (0.40, 0.70, 1.0)        # kb 1/day, kw m/day, gamma
+FORM_ALIGN = {"hydraulic": ("trials", "accuracy", "checkfreq", "maxcheck", "damplimit", "unbalanced",
+                            "unbalanced_value", "viscosity", "specific_gravity", "emitter_exponent"),
+              "quality": ("diffusivity", "tolerance")}
+FORM_MOVE_H = 2.0                      # the PRVs-missing record: a junction 'moves' above this, as elevation_prv_ky10
+
+
+def _form_runs(path: str, dose: float) -> tuple:
+    """(water age, chlorine) on the scored day, hour x junction, of one file."""
+    from .simulate import simulate_nominal_chlorine
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d:
+        cl = simulate_nominal_chlorine(path, *FORM_MEMBER, source_dose=dose, file_prefix=os.path.join(d, "c"))
+    return _fid_age(path), cl
+
+
+def _write_wn(wn, d: str, name: str) -> str:
+    import wntr
+    p = os.path.join(d, name)
+    wntr.network.write_inpfile(wn, p, units="GPM")
+    return p
+
+
+def _diff(a, b) -> dict:
+    x = np.abs(np.asarray(a, float) - np.asarray(b, float)).ravel()
+    return {"median": float(np.median(x)), "p95": float(np.quantile(x, 0.95)), "max": float(x.max()),
+            "mean": float(x.mean())}
+
+
+def _lows(cl, cols) -> set:
+    m = cl[cols].min()
+    return set(m.index[m < FID_THRESHOLD])
+
+
+def _jaccard(a: set, b: set) -> float:
+    return len(a & b) / len(a | b) if a | b else 1.0
+
+
+def _form(paths: dict, name: str):
+    from .operator_form import read_operator_form
+    with open(paths[name], "rb") as fh:
+        return read_operator_form(fh.read(), name)
+
+
+def ky4_clean_skeleton(paths: dict):
+    """The CAD skeleton of ky4_clean_r12.dxf, joined within fixtures.FORM_TOL_FT."""
+    from . import cad_read as CAD
+    from . import fixtures as FX
+    from . import topology as T
+    with open(paths["ky4_clean_r12.dxf"], "rb") as fh:
+        d = CAD.read_drawing(fh.read(), "ky4_clean_r12.dxf")
+    return CAD.build_from_drawing(d, CAD.CadOptions(tolerance_m=FX.FORM_TOL_FT * T.FT))
+
+
+def part_form_complete(paths: dict) -> dict:
+    """operator_form_completes_skeleton: the clean ky4 drawing's skeleton and the operator's form against the original
+    (with the skeleton's options), on the pre-registered bars."""
+    import wntr
+    from scipy.spatial import cKDTree
+    from .experiment import NET_TRUTH
+    from .operator_form import apply_operator_form, skeleton_from_build
+    from .simulate import LIB
+    _quiet()
+    dose = float(NET_TRUTH["ky4"]["source_dose"])
+    b = ky4_clean_skeleton(paths)
+    res = apply_operator_form(skeleton_from_build(b, "cad"), _form(paths, "ky4_form_from_original.csv"))
+    assert res.ok, (res.refused_lines()[:5], res.blocking)
+    orig = wntr.network.WaterNetworkModel(os.path.join(LIB, "ky4.inp"))
+    comp = res.wn
+    aligned = wntr.network.WaterNetworkModel(os.path.join(LIB, "ky4.inp"))
+    for sec, keys in FORM_ALIGN.items():
+        for k in keys:
+            setattr(getattr(aligned.options, sec), k, getattr(getattr(comp.options, sec), k))
+    # the original's junctions on the completed model: the nearest node within the joining distance (a node the
+    # skeleton joined to a passing line sits where the ends met, a fraction of a foot away), and the two ends of each
+    # pump, which share one place, by the pump
+    from . import fixtures as FX
+    names = comp.node_name_list
+    tree = cKDTree(np.array([comp.get_node(n).coordinates for n in names], float))
+    node_of = {}
+    for j in orig.junction_name_list:
+        dist, i = tree.query(orig.get_node(j).coordinates)
+        if dist <= FX.FORM_TOL_FT:
+            node_of[j] = names[int(i)]
+    for pn in orig.pump_name_list:
+        p, q = orig.get_link(pn), comp.get_link(pn)
+        node_of[p.start_node_name], node_of[p.end_node_name] = q.start_node_name, q.end_node_name
+    js = orig.junction_name_list
+    assert all(j in node_of for j in js), [j for j in js if j not in node_of][:5]
+    with tempfile.TemporaryDirectory(prefix="rm_form_") as d:
+        a_age, a_cl = _form_runs(_write_wn(aligned, d, "aligned.inp"), dose)
+        o_age, o_cl = _form_runs(os.path.join(LIB, "ky4.inp"), dose)
+        c_path = os.path.join(d, "completed.inp")
+        with open(c_path, "w", encoding="utf-8") as fh:
+            fh.write(res.inp_text)
+        c_age, c_cl = _form_runs(c_path, dose)
+    cols = [node_of[j] for j in js]
+    age, cl = _diff(c_age[cols].values, a_age[js].values), _diff(c_cl[cols].values, a_cl[js].values)
+    lows_a = _lows(a_cl, js)
+    lows_c = {j for j in js if node_of[j] in _lows(c_cl, cols)}
+    jac = _jaccard(lows_a, lows_c)
+    bar = {"age_median_h": age["median"] <= FORM_BAR["age_median_h"], "age_p95_h": age["p95"] <= FORM_BAR["age_p95_h"],
+           "chlorine_median_mgL": cl["median"] <= FORM_BAR["chlorine_median_mgL"],
+           "chlorine_p95_mgL": cl["p95"] <= FORM_BAR["chlorine_p95_mgL"],
+           "lows_jaccard": jac >= FORM_BAR["lows_jaccard_at_least"]}
+    r = b.net.report
+    import hashlib
+    return {"completed_sha1": hashlib.sha1(res.inp_text.encode("utf-8")).hexdigest(),
+            "skeleton": {"tolerance_ft": FX.FORM_TOL_FT, "pipes": r["pipes"], "nodes": r["nodes"], "components": r["components"],
+                         "tees_split": r["tees_split"], "original_pipes": len(orig.pipe_name_list),
+                         "original_nodes": len(orig.node_name_list), "c_classes": b.c_counts["classes"]},
+            "form": {"rows": res.counts["rows"], **{k: v for k, v in res.counts.items() if k != "rows"}},
+            "completed": {"junctions": len(comp.junction_name_list), "tanks": len(comp.tank_name_list),
+                          "reservoirs": len(comp.reservoir_name_list), "pumps": len(comp.pump_name_list),
+                          "pipes": len(comp.pipe_name_list), "dose_mgL": res.dose_mgL},
+            "member": {"kb_per_day": FORM_MEMBER[0], "kw_m_per_day": FORM_MEMBER[1], "gamma": FORM_MEMBER[2],
+                       "dose_mgL": dose},
+            "age_h": age, "chlorine_mgL": cl,
+            "lows": {"original": len(lows_a), "completed": len(lows_c), "both": len(lows_a & lows_c), "jaccard": jac},
+            "bar": FORM_BAR, "bar_parts_met": bar, "bar_met": all(bar.values()),
+            "original_options_effect": {"age_h": _diff(o_age[js].values, a_age[js].values),
+                                        "chlorine_mgL": _diff(o_cl[js].values, a_cl[js].values),
+                                        "aligned": {s: list(k) for s, k in FORM_ALIGN.items()},
+                                        "ky4_own": {"trials": orig.options.hydraulic.trials,
+                                                    "accuracy": orig.options.hydraulic.accuracy,
+                                                    "diffusivity": orig.options.quality.diffusivity},
+                                        "skeleton_own": {"trials": comp.options.hydraulic.trials,
+                                                         "accuracy": comp.options.hydraulic.accuracy,
+                                                         "diffusivity": comp.options.quality.diffusivity}}}
+
+
+AFTER_STOP_TOL_FT = 0.1                # the after-the-stop characterization's joining distance, chosen after the scored
+                                       # run, just under the 0.104 ft at which the nearest of the dead ends the 1 ft join
+                                       # met passes its main: not a rescoring
+PRODUCT_TOL_FT = 6.0                   # the CAD step's default joining distance, for the count of such dead ends there
+
+
+def _near_touches(wn, within_ft: float) -> list:
+    """Junctions of a model that end within within_ft of a pipe they are not on (a dead end drawn touching a passing
+    main): what a drawing of ky4 joins as a tee though ky4 does not."""
+    out = []
+    geo_segs = []
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        pts = [p.start_node.coordinates] + list(p.vertices) + [p.end_node.coordinates]
+        for a, b in zip(pts, pts[1:]):
+            geo_segs.append((pn, a, b))
+    S = np.array([(a[0], a[1], b[0], b[1]) for _, a, b in geo_segs], float)
+    owner = [pn for pn, _, _ in geo_segs]
+    A, B = S[:, :2], S[:, 2:]
+    AB = B - A
+    L2 = np.where((AB ** 2).sum(1) > 0, (AB ** 2).sum(1), 1)
+    for j in wn.junction_name_list:
+        P = np.array(wn.get_node(j).coordinates, float)
+        own = set(wn.get_links_for_node(j))
+        t = np.clip(((P - A) * AB).sum(1) / L2, 0, 1)
+        d = np.hypot(*(A + AB * t[:, None] - P).T)
+        for i in np.argsort(d)[:8]:
+            if owner[i] not in own and d[i] <= within_ft and 0 < t[i] < 1:
+                out.append({"junction": j, "pipe": owner[i], "distance_ft": float(d[i]),
+                            "junction_pipes": len(own)})
+                break
+    return sorted(out, key=lambda x: x["junction"])
+
+
+def part_form_after_the_stop(paths: dict) -> dict:
+    """After operator_form_completes_skeleton missed its bar (a characterization, not a rescoring): ky4's dead ends
+    that the clean drawing puts within the 1 ft join of a passing main, which the skeleton joins as tees though ky4
+    does not; what the drawing's geometric lengths alone do to the original; and the same form on the same drawing
+    joined within AFTER_STOP_TOL_FT, where none of those tees is made, scored the same way."""
+    import math as _m
+    import wntr
+    from . import cad_read as CAD
+    from . import fixtures as FX
+    from . import topology as T
+    from .simulate import LIB
+    _quiet()
+    orig = wntr.network.WaterNetworkModel(os.path.join(LIB, "ky4.inp"))
+    touches = _near_touches(orig, FX.FORM_TOL_FT)
+    comp_opts = None
+    b = ky4_clean_skeleton(paths)
+    from .operator_form import apply_operator_form, skeleton_from_build
+    res = apply_operator_form(skeleton_from_build(b, "cad"), _form(paths, "ky4_form_from_original.csv"))
+    comp_opts = res.wn.options
+
+    def aligned():
+        wn = wntr.network.WaterNetworkModel(os.path.join(LIB, "ky4.inp"))
+        for sec, keys in FORM_ALIGN.items():
+            for k in keys:
+                setattr(getattr(wn.options, sec), k, getattr(getattr(comp_opts, sec), k))
+        return wn
+    geo = aligned()
+    for pn in geo.pipe_name_list:
+        p = geo.get_link(pn)
+        pts = [p.start_node.coordinates] + list(p.vertices) + [p.end_node.coordinates]
+        p.length = sum(_m.hypot(q[0] - o[0], q[1] - o[1]) for o, q in zip(pts, pts[1:])) * T.FT
+    with tempfile.TemporaryDirectory(prefix="rm_form_") as d:
+        a_age, a_cl = _form_runs(_write_wn(aligned(), d, "aligned.inp"), 2.0)
+        g_age, g_cl = _form_runs(_write_wn(geo, d, "geometric.inp"), 2.0)
+    js = orig.junction_name_list
+    lengths_only = {"age_h": _diff(g_age[js].values, a_age[js].values),
+                    "chlorine_mgL": _diff(g_cl[js].values, a_cl[js].values)}
+    keep = FX.FORM_TOL_FT
+    try:
+        FX.FORM_TOL_FT = AFTER_STOP_TOL_FT
+        tight = part_form_complete(paths)
+    finally:
+        FX.FORM_TOL_FT = keep
+    return {"counts_as": "a characterization after the stop, not a rescoring: the scored run (part 'complete') "
+                         "missed its bar and the miss stands",
+            "dead_ends_touching_a_main_within_1_ft": touches,
+            "junctions_touching_a_main_within_6_ft": len(_near_touches(orig, PRODUCT_TOL_FT)),
+            "geometric_lengths_only": lengths_only,
+            "joined_within_0p1_ft": {"tolerance_ft": AFTER_STOP_TOL_FT, "skeleton": tight["skeleton"],
+                                     "age_h": tight["age_h"], "chlorine_mgL": tight["chlorine_mgL"],
+                                     "lows": tight["lows"],
+                                     # the bar's values applied after the stop, at a joining distance chosen after
+                                     # the scored run (the review: a key 'bar_met' read as a pass of the bar)
+                                     "within_the_bar_values_post_hoc": tight["bar_parts_met"]}}
+
+
+def _same_model(a_path: str, b_wn) -> dict:
+    """Whether a model written by WNTR from b_wn is the file a_path's model writes, and the runs' largest differences."""
+    import wntr
+    from .operator_form import write_text
+    a_wn = wntr.network.WaterNetworkModel(a_path)
+    with tempfile.TemporaryDirectory(prefix="rm_form_") as d:
+        bp = _write_wn(b_wn, d, "b.inp")
+        a_age, a_cl = _form_runs(a_path, 1.2)
+        b_age, b_cl = _form_runs(bp, 1.2)
+    return {"same_inp_text": write_text(a_wn) == write_text(b_wn),
+            "age_max_abs_h": float(np.abs(a_age.values - b_age.values).max()),
+            "chlorine_max_abs_mgL": float(np.abs(a_cl.values - b_cl.values).max())}
+
+
+def _moved(a_path: str, b_path: str) -> dict:
+    a_age, a_cl = _form_runs(a_path, 1.2)
+    b_age, b_cl = _form_runs(b_path, 1.2)
+    d = (a_age - b_age).abs()
+    return {"age_h": _diff(a_age.values, b_age.values), "chlorine_mgL": _diff(a_cl.values, b_cl.values),
+            "junctions_age_moved": int((d.max() > FORM_MOVE_H).sum()), "move_h": FORM_MOVE_H,
+            "junctions": len(d.columns)}
+
+
+def part_form_prvs(paths: dict) -> dict:
+    """operator_form_restores_prvs_ky10: ky10_prv_removed.inp (each PRV an open pipe of 1 ft) and ky10_prv_form.csv
+    against the order-fixed original: the same .inp text and 0.0 difference; and what the PRVs' loss moves."""
+    from .operator_form import Skeleton, apply_operator_form
+    _quiet()
+    with open(paths["ky10_prv_removed.inp"], encoding="utf-8") as fh:
+        sk = Skeleton(inp_text=fh.read(), name="ky10_prv_removed.inp")
+    res = apply_operator_form(sk, _form(paths, "ky10_prv_form.csv"))
+    assert res.ok, (res.refused_lines()[:5], res.blocking)
+    return {"form_rows": res.counts["rows"], "prvs_restored": res.counts["prv"],
+            "restored_vs_original": _same_model(paths["ky10_order_fixed.inp"], res.wn),
+            "prvs_missing_vs_original": _moved(paths["ky10_order_fixed.inp"], paths["ky10_prv_removed.inp"])}
+
+
+def part_form_boundary(paths: dict) -> dict:
+    """operator_form_boundary_valve: the order-fixed ky10 (the pinned pipe open, as a skeleton has it) and
+    ky10_closed_valve_form.csv (the pipe given by a point on it) against the closed original."""
+    from . import fixtures as FX
+    from .operator_form import Skeleton, apply_operator_form
+    _quiet()
+    with open(paths["ky10_order_fixed.inp"], encoding="utf-8") as fh:
+        sk = Skeleton(inp_text=fh.read(), name="ky10_boundary_valve_open.inp")
+    res = apply_operator_form(sk, _form(paths, "ky10_closed_valve_form.csv"))
+    assert res.ok, (res.refused_lines()[:5], res.blocking)
+    placed = list(res.placed.values())
+    return {"pipe": FX.BOUNDARY_PIPE_KY10, "placed_on": placed[0] if placed else None,
+            "closed_vs_closed_original": _same_model(paths["ky10_boundary_valve_closed.inp"], res.wn),
+            "open_vs_closed_original": _moved(paths["ky10_order_fixed.inp"], paths["ky10_boundary_valve_closed.inp"])}
+
+
+def part_form_no_source(paths: dict) -> dict:
+    """no_source_never_runs: ky4's clean skeleton stops at the main page's intake (no entry point), and with the form
+    less its source row the form stops with NO_SOURCE and writes no model."""
+    from .importers import prepare_inp
+    from .operator_form import NO_SOURCE, apply_operator_form, skeleton_from_build
+    _quiet()
+    b = ky4_clean_skeleton(paths)
+    with tempfile.TemporaryDirectory(prefix="rm_form_") as d:
+        path, rep = prepare_inp(b.inp_text.encode("utf-8"), d, name="ky4_clean_skeleton.inp")
+        left = os.listdir(d)
+    res = apply_operator_form(skeleton_from_build(b, "cad"), _form(paths, "ky4_form_no_source.csv"))
+    return {"skeleton_prepared": path is not None, "skeleton_blocking": rep.blocking, "files_left": len(left),
+            "form_ok": res.ok, "form_blocking": res.blocking, "no_source_sentence": NO_SOURCE in res.blocking,
+            "model_written": res.inp_text is not None, "form_refused": len(res.refused)}
+
+
+def part_form_bad_rows(paths: dict) -> dict:
+    """form_parser_refuses_bad_rows: every row of operator_form_bad_rows.csv that cannot be used, with its reason, on
+    ky4's clean skeleton, and no model."""
+    from .operator_form import apply_operator_form, skeleton_from_build
+    _quiet()
+    b = ky4_clean_skeleton(paths)
+    form = _form(paths, "operator_form_bad_rows.csv")
+    res = apply_operator_form(skeleton_from_build(b, "cad"), form)
+    return {"rows": len(form.rows) + len(form.refused), "refused_when_read": len(form.refused),
+            "refused": res.refused, "model_written": res.inp_text is not None, "blocking": res.blocking}
+
+
+# ----------------------------------------------------------------------------- task 19's review: the form's cases
+# Each case the review of task 19 found, on the review's own drawings and layer (fixtures.FORM_REVIEW_*), with what
+# the fixed form does now (part 'review' of operator_form.json, operator_form_review_cases).  None of them is in ky4's
+# form, so the scored run's model is the same byte for byte (part 'complete', completed_sha1).
+REVIEW_SRC = {"kind": "source", "id": "WELL", "location": "0,-800", "head_ft": "200", "dose_mgL": "1.2"}
+REVIEW_USE = {"kind": "production", "gallons_per_day": "500000"}
+REVIEW_TANK = {"kind": "tank", "id": "TANK", "location": "4000,2000", "base_elev_ft": "120", "diameter_ft": "40",
+               "min_level_ft": "5", "max_level_ft": "30", "init_level_ft": "20"}
+REVIEW_PUMP = {"kind": "pump", "location": "0,0", "pipe": "0,-400", "power_hp": "30"}
+REVIEW_PRV = {"kind": "prv", "pipe": "1500,0", "upstream": "1000,0", "setting_psi": "40", "elevation_ft": "10"}
+REVIEW_PATTERN = tuple(round(0.5 + h / 23.0, 4) for h in range(24))   # 24 distinct multipliers, so a shift shows
+REVIEW_DEG = (-84.5, 38.05, 288_000.0, 364_000.0)    # a completed model put in degrees: lon0, lat0, ft per degree
+
+
+def _review_build(paths: dict, name: str):
+    """The skeleton of one of the review's drawings, joined within fixtures.FORM_TOL_FT, its layer names' bare numbers
+    in inches (W_8_AC: AC cues no size, being also a common CAD abbreviation, so the step asks)."""
+    from . import cad_read as CAD
+    from . import fixtures as FX
+    from . import topology as T
+    with open(paths[name], "rb") as fh:
+        d = CAD.read_drawing(fh.read(), name)
+    b = CAD.build_from_drawing(d, CAD.CadOptions(tolerance_m=FX.FORM_TOL_FT * T.FT, layer_numbers="in"))
+    assert b.inp_text, [q["key"] for q in b.questions]
+    return b
+
+
+def _review_form(rows):
+    from .operator_form import form_csv, read_operator_form
+    return read_operator_form(form_csv(rows), "form.csv")
+
+
+def _review_run(text: str, hours: int):
+    """EPANET hydraulics of a completed model's text for hours, reported hourly, in a temporary folder."""
+    import wntr
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d:
+        p = os.path.join(d, "m.inp")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        wn = wntr.network.WaterNetworkModel(p)
+        wn.options.time.duration = hours * 3600
+        wn.options.time.report_timestep = 3600
+        wn.options.quality.parameter = "NONE"
+        return wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "r"))
+
+
+def _node_at(wn, xy) -> str:
+    return min(wn.node_name_list, key=lambda n: math.dist(wn.get_node(n).coordinates, xy))
+
+
+def _c_by_material(res, sk) -> dict:
+    out = {}
+    for pn in sorted(res.wn.pipe_name_list):
+        out.setdefault((sk.material or {}).get(pn) or "none", set()).add(float(res.wn.get_link(pn).roughness))
+    return {m: sorted(v) for m, v in sorted(out.items())}
+
+
+def _first_sentence(blocking: list) -> list:
+    """Blocking sentences without the measured change a no-rule sentence quotes (read from the ladder's files)."""
+    return [b.split(" Measured change")[0] for b in blocking]
+
+
+def part_form_review(paths: dict) -> dict:
+    """Task 19's review (operator_form_review_cases): each case it found, and what the form does now."""
+    from collections import Counter
+    from . import fixtures as FX
+    from . import gis_read as G
+    from . import topology as T
+    from .operator_form import (GPM_M3S, PATTERN_NAME, FormRefused, Skeleton, _load, apply_operator_form,
+                                read_operator_form, skeleton_from_build, write_text)
+    _quiet()
+    out = {}
+    b = _review_build(paths, "form_review_r12.dxf")
+    sk = skeleton_from_build(b, "cad")
+    base = [REVIEW_SRC, REVIEW_USE]
+
+    def apply(rows, s=sk):
+        return apply_operator_form(s, _review_form(rows))
+
+    def gpm(series) -> float:
+        return float(series.mean()) / GPM_M3S
+
+    # 1. pipe_c rows by material: DIP and AC share the C table's class, and each keeps its own C
+    pc = lambda m, c: {"kind": "pipe_c", "material": m, "hw_c": c}
+    rows_c = base + [pc("DIP", "140"), pc("AC", "100"), pc("PVC", "150"), pc("CI", "90")]
+    rc = apply(rows_c)
+    pvc_plastic = apply(base + [pc("PVC", "150"), pc("plastic", "120")])
+    out["pipe_c_by_material"] = {
+        "materials": dict(sorted(Counter(v or "none" for v in sk.material.values()).items())),
+        "c_by_material": _c_by_material(rc, sk), "pipes": len(rc.wn.pipe_name_list),
+        "readiness": next(v for i, v, _ in rc.rows if i == "Hazen-Williams C"),
+        "second_row_for_one_material": apply(rows_c + [pc("ductile iron", "130")]).refused,
+        "plastic_alone": _c_by_material(apply(base + [pc("plastic", "120")]), sk),
+        "pvc_and_plastic": {"c_by_material": _c_by_material(pvc_plastic, sk),
+                            "warnings": [w for w in pvc_plastic.warnings if "(pipe_c)" in w]},
+        "cast_iron_then_all": _c_by_material(apply(base + [pc("CI", "90"), pc("all", "110")]), sk)}
+
+    # 2. a layer's own C field (GIS, in longitude and latitude): kept by a pipe_c row, and by the age note
+    with open(paths["form_review_mains.geojson"], "rb") as fh:
+        layers, kind = G.read_layers(fh.read(), "form_review_mains.geojson")
+    gb = G.build_from_layer(layers[0], G.GisOptions(tolerance_m=FX.FORM_TOL_FT * T.FT), "form_review_mains.geojson",
+                            kind, layers)
+    gsk = skeleton_from_build(gb, "gis")
+    lon, lat = FX.form_review_lonlat((0, 0))
+    gsrc = {"kind": "source", "id": "PLANT", "location": f"{lat:.7f},{lon:.7f}", "head_ft": "150", "dose_mgL": "1.2"}
+    guse = {"kind": "production", "gallons_per_day": "300000"}
+    g1 = apply([gsrc, guse, pc("cast iron", "100")], gsk)
+    g0 = apply([gsrc, guse], gsk)
+    g_all = apply([gsrc, guse, pc("all", "110")], gsk)     # the final verification: an 'all' row reaches M1 and M2 too
+    out["layer_c_field_kept"] = {
+        "c_from_field": sorted(gsk.c_kept), "c_before": {pn: gb.c_of[pn] for pn in sorted(gb.c_of)},
+        "c_after_a_cast_iron_row": {pn: g1.wn.get_link(pn).roughness for pn in sorted(g1.wn.pipe_name_list)},
+        "c_after_an_all_row": {pn: g_all.wn.get_link(pn).roughness for pn in sorted(g_all.wn.pipe_name_list)},
+        "readiness_after_an_all_row": next(v for i, v, _ in g_all.rows if i == "Hazen-Williams C"),
+        "readiness": next(v for i, v, _ in g1.rows if i == "Hazen-Williams C"),
+        "age_note_without_rows": [w for w in g0.warnings if "Hazen-Williams" in w],
+        "longitude_first": apply([dict(gsrc, location=f"{lon:.7f},{lat:.7f}"), guse], gsk).refused}
+
+    # 3. two pumps side by side at one station, the well's main drawn from the station toward the well
+    rp = apply(base + [REVIEW_TANK, dict(REVIEW_PUMP, id="PUMP-A"), dict(REVIEW_PUMP, id="PUMP-B"),
+                       {"kind": "pump_rule", "pump": "PUMP-A", "on_hours": "always"},
+                       {"kind": "pump_rule", "pump": "PUMP-B", "tank": "TANK", "on_below_ft": "10",
+                        "off_above_ft": "25"}])
+    fl = _review_run(rp.inp_text, 48).link["flowrate"]
+    out["pumps_side_by_side"] = {
+        "ok": rp.ok, "pumps": {p: [rp.wn.get_link(p).start_node_name, rp.wn.get_link(p).end_node_name]
+                               for p in sorted(rp.wn.pump_name_list)},
+        "links_at_the_well": sorted(rp.wn.get_links_for_node("WELL")),
+        "mean_flow_gpm_48_h": {p: gpm(fl[p]) for p in sorted(rp.wn.pump_name_list)}}
+
+    # 4. a PSV in place of a pipe: its elevation at the node its setting holds, upstream
+    rv = apply(base + [dict(REVIEW_TANK, base_elev_ft="100", min_level_ft="2"),
+                       {"kind": "psv", "id": "V1", "pipe": "3000,1500", "upstream": "3000,1000", "setting_psi": "40",
+                        "elevation_ft": "150"}])
+    up, dn = _node_at(rv.wn, (3000, 1000)), _node_at(rv.wn, (3000, 2000))
+    run = _review_run(rv.inp_text, 24)
+    lvl = run.node["pressure"]["TANK"] / FT_M
+    out["psv_elevation_upstream"] = {
+        "ok": rv.ok, "valve": [rv.wn.get_link("V1").start_node_name, rv.wn.get_link("V1").end_node_name],
+        "upstream_elevation_ft": rv.wn.get_node(up).elevation / FT_M, "downstream_elevation_ft":
+            rv.wn.get_node(dn).elevation / FT_M, "psv_mean_flow_gpm_24_h": gpm(run.link["flowrate"]["V1"]),
+        "tank_level_ft_first_last": [float(lvl.iloc[0]), float(lvl.iloc[-1])]}
+
+    # 5. a drawing in two parts, one source
+    bg = _review_build(paths, "form_review_gap_r12.dxf")
+    ru = apply(base, skeleton_from_build(bg, "cad"))
+    # the final verification: a tank alone is no source in a part either (a tank in the far part, no source there)
+    rt = apply(base + [{"kind": "tank", "id": "T2", "location": "5000,3000", "base_elev_ft": "120", "diameter_ft": "40",
+                        "min_level_ft": "5", "max_level_ft": "30", "init_level_ft": "20"}], skeleton_from_build(bg, "cad"))
+    out["part_without_source"] = {"components": bg.net.report["components"], "ok": ru.ok, "blocking": ru.blocking,
+                                  "model_written": ru.inp_text is not None,
+                                  "with_a_tank_there": {"ok": rt.ok, "blocking": _first_sentence(rt.blocking),
+                                                        "model_written": rt.inp_text is not None}}
+
+    # 6. an EPANET model whose clock starts at 08:00: a '6-22' pump starts on, and the pattern keeps each clock hour's
+    # multiplier
+    text8 = re.sub(r"(Start ClockTime\s+)12 am", r"\g<1>8:00 AM", sk.inp_text)
+    assert text8 != sk.inp_text
+    r8 = apply(base + [REVIEW_TANK, dict(REVIEW_PUMP, id="PUMP-A"),
+                       {"kind": "pump_rule", "pump": "PUMP-A", "on_hours": "6-22"},
+                       {"kind": "pattern", "multipliers": " ".join(f"{x:g}" for x in REVIEW_PATTERN)}],
+               Skeleton(inp_text=text8, name="zone_0800.inp"))
+    st = _review_run(r8.inp_text, 30).link["status"]["PUMP-A"]
+    out["clock_starts_at_0800"] = {
+        "ok": r8.ok, "start_clocktime_h": r8.wn.options.time.start_clocktime / 3600.0,
+        "pump_starts": str(r8.wn.get_link("PUMP-A").initial_status),
+        "pattern_first_multiplier": r8.wn.get_pattern(PATTERN_NAME).multipliers[0],
+        "form_multiplier_at_08": REVIEW_PATTERN[8], "notes": r8.notes,
+        "pump_open_by_model_hour": [int(x) for x in st.values]}
+
+    # 7. a form applied to a model the form completed
+    rr = apply([{"kind": "closed_valve", "pipe": "1500,0"}], Skeleton(inp_text=rc.inp_text, name="completed.inp"))
+    out["applied_again"] = {"ok": rr.ok, "closed": rr.placed, "blocking": rr.blocking}
+
+    # 8. values every earlier check passed that EPANET refuses or that mean nothing
+    rule = {"kind": "pump_rule", "pump": "PA", "on_hours": "always"}
+    head = dict(REVIEW_PUMP, id="PA", power_hp="")
+    values = {"power_hp 0": [dict(REVIEW_PUMP, id="PA", power_hp="0"), rule],
+              "three curve points with heads rising": [dict(head, flow_gpm="0 500 1000", head_ft="100 150 200"), rule],
+              "a design point at 0 gpm": [dict(head, flow_gpm="0", head_ft="100"), rule],
+              "a design point with a negative head": [dict(head, flow_gpm="500", head_ft="-100"), rule],
+              "a PRV of 0 in": [dict(REVIEW_PRV, id="V1", diameter_in="0")],
+              "a PRV set at -20 psi": [dict(REVIEW_PRV, id="V1", setting_psi="-20")],
+              "a tank level below its bottom": [dict(REVIEW_TANK, min_level_ft="-10", init_level_ft="-5")]}
+    got = {k: apply(base + v).refused for k, v in values.items()}
+    for k, dose in (("a dose of -2 mg/L", "-2"), ("a dose written 1,500", "1,500")):
+        got[k] = apply([dict(REVIEW_SRC, dose_mgL=dose), REVIEW_USE]).refused
+    out["values_refused"] = got
+
+    # 9. what no row check sees, EPANET's first hour does: two PRVs side by side at one node
+    side = {"kind": "prv", "location": "2000,0", "pipe": "1500,0", "setting_psi": "40", "elevation_ft": "10"}
+    r9 = apply(base + [dict(side, id="V1"), dict(side, id="V2")])
+    out["first_hour_refuses"] = {"ok": r9.ok, "blocking": r9.blocking, "model_written": r9.inp_text is not None}
+
+    # 10. a header with its unit in brackets, and a column the form does not read
+    f10 = read_operator_form(b'kind,id,location,head_ft,Dose (mg/L),gallons_per_day,Shift\n'
+                             b'source,WELL,"0,-800",200,1.5,,night\nproduction,,,,,500000,\n', "form.csv")
+    r10 = apply_operator_form(sk, f10)
+    out["headers"] = {"ok": r10.ok, "dose_mgL": r10.dose_mgL, "notes": r10.notes}
+
+    # 11. an unnamed pump's name taken by another pump, and an unnamed pump with no rule
+    r11 = apply(base + [REVIEW_TANK, dict(REVIEW_PUMP),
+                        {"kind": "pump", "id": "PUMP1", "location": "1000,0", "pipe": "500,0", "power_hp": "30"},
+                        {"kind": "pump_rule", "pump": "PUMP1", "tank": "TANK", "on_below_ft": "10",
+                         "off_above_ft": "25"}])
+    r11b = apply(base + [REVIEW_TANK, dict(REVIEW_PUMP)])
+    out["unnamed_pump"] = {"its_name_taken": r11.refused, "no_rule": _first_sentence(r11b.blocking),
+                           "no_rule_quotes_ky4_and_ky10": any("Measured change when pump rules are lost" in b_
+                                                              and "ky4" in b_ and "ky10" in b_ for b_ in r11b.blocking)}
+    # a PRV or PSV with no elevation is refused when the form is read (its setting means nothing without one)
+    out["prv_without_elevation"] = _review_form(base + [{k: v for k, v in dict(REVIEW_PRV, id="V1").items()
+                                                         if k != "elevation_ft"}]).refused
+
+    # 12. rows that cannot all hold at once, and a well with its pump entered the way the form says
+    conflicts = {"two PRVs in place of one pipe": [dict(REVIEW_PRV, id="V1"), dict(REVIEW_PRV, id="V2")],
+                 "a PRV and a closed valve on one pipe": [dict(REVIEW_PRV, id="V1"),
+                                                          {"kind": "closed_valve", "pipe": "1500,0"}],
+                 "a pump splitting the well's node": [{"kind": "pump", "id": "WP", "location": "0,-800",
+                                                       "pipe": "0,-400", "power_hp": "40"},
+                                                      {"kind": "pump_rule", "pump": "WP", "on_hours": "always"}],
+                 "a PRV splitting the tank's node": [REVIEW_TANK, {"kind": "prv", "id": "V1", "location": "4000,2000",
+                                                                   "pipe": "3500,2000", "setting_psi": "40",
+                                                                   "elevation_ft": "10"}],
+                 "a PRV in place of the tank's pipe": [REVIEW_TANK, {"kind": "prv", "id": "V1", "pipe": "3500,2000",
+                                                                     "upstream": "3000,2000", "setting_psi": "40",
+                                                                     "elevation_ft": "10"}]}
+    out["conflicts_refused"] = {k: apply(base + v).refused for k, v in conflicts.items()}
+    out["conflicts_refused"]["a pump splitting the model's own reservoir"] = apply(
+        [{"kind": "pump", "id": "WP", "location": "WELL", "pipe": "0,-400", "power_hp": "40"},
+         {"kind": "pump_rule", "pump": "WP", "on_hours": "always"}],
+        Skeleton(inp_text=rc.inp_text, name="completed.inp")).refused
+    rw = apply(base + [{"kind": "pump", "id": "WP", "pipe": "0,-400", "upstream": "0,-800", "power_hp": "40"},
+                       {"kind": "pump_rule", "pump": "WP", "on_hours": "always"}])
+    out["well_and_its_pump"] = {"ok": rw.ok, "pump": [rw.wn.get_link("WP").start_node_name,
+                                                      rw.wn.get_link("WP").end_node_name]}
+
+    # 13. points: on a model whose coordinates are degrees, at a tee, beside two pipes
+    lon0, lat0, fx, fy = REVIEW_DEG
+    wdeg = _load(rc.inp_text)
+    for n in wdeg.node_name_list:
+        x, y = wdeg.get_node(n).coordinates
+        wdeg.get_node(n).coordinates = (lon0 + x / fx, lat0 + y / fy)
+    sdeg = Skeleton(inp_text=write_text(wdeg), name="degrees.inp")
+    mid = (lon0 + 1500 / fx, lat0)
+    cv = lambda pt, s=sk: apply([{"kind": "closed_valve", "pipe": pt}], s) if s is sdeg else \
+        apply(base + [{"kind": "closed_valve", "pipe": pt}], s)
+    far_deg, on_deg = cv(f"{mid[0] - 1:.7f},{mid[1]:.7f}", sdeg), cv(f"{mid[0]:.7f},{mid[1]:.7f}", sdeg)
+    out["points"] = {"degrees_a_degree_off": far_deg.refused, "degrees_on_the_pipe": on_deg.placed,
+                     "at_a_tee": cv("1000,0").refused, "beside_two_pipes": cv("999,1").refused,
+                     "halfway_along_a_pipe": cv("1500,0").placed}
+
+    # 14. the model's text: an ID given twice (task 15's scan), and a byte-order mark
+    lines = sk.inp_text.split("\n")
+    i = lines.index("[JUNCTIONS]") + 1
+    while lines[i].startswith(";") or not lines[i].strip():
+        i += 1
+    dup = "\n".join(lines[:i + 1] + [lines[i]] + lines[i + 1:])
+    rd = apply(base, Skeleton(inp_text=dup, name="duplicate.inp"))
+    rb = apply(base, Skeleton(inp_text="﻿" + sk.inp_text, name="bom.inp"))
+    out["model_text"] = {"id_given_twice": {"ok": rd.ok, "blocking": rd.blocking},
+                         "byte_order_mark": {"ok": rb.ok, "same_model": rb.inp_text == apply(base, Skeleton(
+                             inp_text=sk.inp_text, name="plain.inp")).inp_text}}
+
+    # 15. the form's own words: a PDF given as the form, an elevation row with no elevation
+    try:
+        read_operator_form(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\n", "form.pdf")
+        pdf = None
+    except FormRefused as e:
+        pdf = str(e)
+    out["form_words"] = {"pdf": pdf, "elevation_row": _review_form(base + [{"kind": "elevation",
+                                                                             "location": "1000,0"}]).refused}
+    return out
+
+
+def _outcome(r) -> dict:
+    """What a form gave, as the final verification's record keeps it."""
+    return {"ok": r.ok, "refused": r.refused, "blocking": _first_sentence(r.blocking),
+            "model_written": r.inp_text is not None}
+
+
+FINAL_LONG_HEADER = 6400               # the final verification's form: 'Dose (', this many spaces, 'x' (6,477 bytes)
+# The final verifier's grammar fuzzer (seed 11: 3,000 random well-formed forms, on the review's drawing and its gap
+# drawing, each completed model run for 24 h in EPANET and its report searched for disconnected nodes), as its console
+# gave it before this pass's fixes, after the fix that counts junctions reachable from a source, and after the tank no
+# source can fill was refused too.  Copied from the run logs (a scratch script, not part of the repository), not rerun.
+FINAL_FUZZ_19 = {"what": "the final verifier's grammar fuzzer, seed 11, 3,000 random well-formed forms, as its console "
+                         "gave it; a completed model is counted 'disconnected' when EPANET's 24 h report names a node "
+                         "disconnected",
+                 "forms": 3000,
+                 "before": {"ok": 285, "ok_but_disconnected": 34, "refused": 2457, "blocked": 223, "form_refused": 1},
+                 "after_reachability": {"ok": 258, "ok_but_disconnected": 8, "refused": 2521, "blocked": 212,
+                                        "form_refused": 1},
+                 "after_the_tank_check": {"ok": 255, "ok_but_disconnected": 1, "refused": 2537, "blocked": 206,
+                                          "form_refused": 1},
+                 "left": "a tank on the only path to a branch, low enough to fill, fills to its maximum and then "
+                         "closes, so EPANET cuts the branch off: when a tank fills or empties is not checked"}
+
+
+def final_long_header_form(n: int = FINAL_LONG_HEADER) -> bytes:
+    """The final verification's slow form: one header cell with an opening bracket, n spaces and no closing bracket
+    (it took over 100 s to read before the fix)."""
+    return ("kind,id,location,head_ft,gallons_per_day,Dose (" + " " * n + "x\n" + 'source,WELL,"0,-800",200,,1.2\n'
+            "production,,,,500000,\n").encode()
+
+
+def part_form_final(paths: dict) -> dict:
+    """Task 19's final verification (operator_form_final_verification): each confirmed issue's case, on the review's
+    own drawing (fixtures.FORM_REVIEW_*), and what the form does now.  Timings are not kept here (the check times the
+    slow form itself)."""
+    import io
+    import zipfile
+    from .operator_form import (FormRefused, Skeleton, _canonical, _Geometry, _load, apply_operator_form,
+                                first_hour_error, form_csv, read_model_file, read_operator_form, skeleton_from_build,
+                                write_text)
+    from . import fixtures as FX
+    _quiet()
+    out = {}
+    b = _review_build(paths, "form_review_r12.dxf")
+    sk = skeleton_from_build(b, "cad")
+    base = [REVIEW_SRC, REVIEW_USE]
+
+    def apply(rows, s=sk):
+        return apply_operator_form(s, _review_form(rows))
+
+    # 1. a header with an opening bracket and a run of spaces (three competing runs of spaces took cubic time)
+    f1 = read_operator_form(final_long_header_form(), "form.csv")
+    out["bracket_header"] = {
+        "form_bytes": len(final_long_header_form()), "rows": len(f1.rows), "refused": f1.refused, "notes": f1.notes,
+        "headers_read": {h: _canonical(h) for h in ("Dose (mg/L)", "Head [ft]", "Base elevation (ft)", "Dose(mg/L)",
+                                                    "Dose ( mg / L )", "Gallons per day (gpd)", "Setting (psig)",
+                                                    "Dose (" + " " * 40 + "x", "Dose ((mg/L))")}}
+
+    # 2. a branch the form itself cuts off (its only pipe, (3000,1000)-(3000,2000), given by its midpoint), and the
+    # same rows where they cut nothing off
+    pump = {"kind": "pump", "id": "BP", "pipe": "3000,1500", "power_hp": "10"}
+    cut = {"a closed_valve row on its only pipe": [{"kind": "closed_valve", "pipe": "3000,1500"}],
+           "a check valve pointing out of it": [{"kind": "check_valve", "pipe": "3000,1500", "upstream": "3000,2000"}],
+           "a pump whose rule is never": [dict(pump, upstream="3000,1000"),
+                                          {"kind": "pump_rule", "pump": "BP", "on_hours": "never"}],
+           "a pump pointing out of it": [dict(pump, upstream="3000,2000"),
+                                         {"kind": "pump_rule", "pump": "BP", "on_hours": "always"}]}
+    out["cut_off_by_the_form"] = {k: _outcome(apply(base + v)) for k, v in cut.items()}
+    fed = {"a check valve pointing into it": [{"kind": "check_valve", "pipe": "3000,1500", "upstream": "3000,1000"}],
+           "an always-on pump pointing into it": [dict(pump, upstream="3000,1000"),
+                                                  {"kind": "pump_rule", "pump": "BP", "on_hours": "always"}],
+           "a pump on the clock pointing into it": [dict(pump, upstream="3000,1000"),
+                                                    {"kind": "pump_rule", "pump": "BP", "on_hours": "6-22"}],
+           "a closed valve on a loop's pipe": [{"kind": "closed_valve", "pipe": "1500,0"}]}
+    fed_r = {k: apply(base + v) for k, v in fed.items()}
+    out["fed_through_open_or_one_way_links"] = {k: {**_outcome(r), "part_time_warning": [
+        w for w in r.warnings if "holds water for those hours" in w]} for k, r in fed_r.items()}
+
+    # 3. clock rules: minutes are refused (WNTR writes 'AT CLOCKTIME 6.5', which its reader refuses); whole hours,
+    # '06:00-22:00' among them, run, and at 08:00 and 23:00 starts EPANET's pump status follows each rule hour by hour
+    pa = dict(REVIEW_PUMP, id="PA")
+    rule = lambda h: {"kind": "pump_rule", "pump": "PA", "on_hours": h}
+    out["clock_rules"] = {"refused": {h: apply(base + [REVIEW_TANK, pa, rule(h)]).refused
+                                      for h in ("6:30-22:00", "6:15-22", "06:00-22:30")},
+                          "runs": {h: apply(base + [REVIEW_TANK, pa, rule(h)]).ok for h in ("06:00-22:00", "6 to 22")}}
+    edges = {}
+    for start, start_h in (("8:00 AM", 8.0), ("11:00 PM", 23.0)):
+        s = Skeleton(inp_text=re.sub(r"(Start ClockTime\s+)12 am", rf"\g<1>{start}", sk.inp_text), name="zone.inp")
+        for h in ("0-6", "18-24", "22-6", "6-22"):
+            r = apply(base + [REVIEW_TANK, pa, rule(h)], s)
+            st = [int(x) for x in _review_run(r.inp_text, 48).link["status"]["PA"].values]
+            a, z = (int(x) % 24 for x in h.split("-"))
+            want = [int((a <= (start_h + k) % 24 < z) if a < z else ((start_h + k) % 24 >= a or (start_h + k) % 24 < z))
+                    for k in range(len(st))]
+            edges[f"{start} {h}"] = [k for k, (x, y) in enumerate(zip(st, want)) if x != y]
+    out["clock_rules"]["model_hours_where_the_pump_differs_from_its_rule"] = edges
+
+    # 4. messages that named a temporary file: WNTR's reader failing in the first hour and in the last guard
+    p0 = sorted(_load(sk.inp_text).pipe_name_list)[0]
+    half = sk.inp_text.replace("[CONTROLS]", f"[CONTROLS]\nLINK {p0} OPEN AT CLOCKTIME 6.5", 1)
+    assert half != sk.inp_text
+    fh_msg = first_hour_error(half)
+    guard = apply(base, Skeleton(inp_text=half, name="half.inp"))
+    out["messages_name_no_file"] = {
+        "first_hour": fh_msg, "last_guard": guard.blocking,
+        "any_path": any(x in m for m in [fh_msg or ""] + guard.blocking for x in ("/var/", "/tmp", "rm_form", ".inp'"))}
+
+    # 5. ids that start with '[' (a data line that starts with '[' is a section header to WNTR and EPANET)
+    ids = {}
+    for label, rows in (("pump [END]", [REVIEW_TANK, dict(REVIEW_PUMP, id="[END]"), {"kind": "pump_rule", "pump": "[END]",
+                                                                                     "on_hours": "always"}]),
+                        ("pump [P1]", [REVIEW_TANK, dict(REVIEW_PUMP, id="[P1]"), {"kind": "pump_rule", "pump": "[P1]",
+                                                                                   "on_hours": "always"}]),
+                        ("prv [END]", [dict(REVIEW_PRV, id="[END]")])):
+        r = apply(base + rows)
+        back = _load(r.inp_text) if r.inp_text else None
+        ids[label] = {"ok": r.ok, "named": sorted(set(r.wn.pump_name_list) | set(r.wn.valve_name_list)) if r.wn else None,
+                      "links_written_and_read_back": [len(r.wn.link_name_list) if r.wn else None,
+                                                      len(back.link_name_list) if back else None]}
+    out["ids_starting_with_a_bracket"] = ids
+
+    # 6. a point with an enormous coordinate (the KD-tree found no neighbour, and its index was one past the last node)
+    geo = _Geometry(_load(sk.inp_text))
+    out["far_points"] = {
+        "nearest_node": {f"{y:g}": geo.node((0.0, y))[0] for y in (1e150, 1e160, 1e200)},
+        "refused": {loc[:24]: apply(base + [{"kind": "large_user", "location": loc, "gallons_per_day": "100"}]).refused
+                    for loc in ("0,1e150", "0,1e160", "2000," + "1" + "0" * 180)},
+        "pipe_refused": apply(base + [{"kind": "closed_valve", "pipe": "0,1e160"}]).refused}
+
+    # 7. rows taken with ok that changed nothing or that another row overrode
+    done = apply(base)
+    completed = Skeleton(inp_text=done.inp_text, name="completed.inp")
+    el = lambda loc, ft: {"kind": "elevation", "location": loc, "elevation_ft": ft}
+    prv60 = dict(REVIEW_PRV, id="V1", elevation_ft="60")
+    out["silent_rows"] = {
+        "a pattern row on a model with water use": apply(
+            [{"kind": "pattern", "multipliers": " ".join(f"{x:g}" for x in REVIEW_PATTERN)}], completed).refused,
+        "two elevation rows for one node": apply(base + [el("1000,0", "120"), el("1000,0", "20")]).refused,
+        "an elevation row at the source's node": apply(base + [el("0,-800", "35")]).refused,
+        "an elevation row against a PRV's elevation_ft": apply(base + [prv60, el("2000,0", "5")]).refused,
+        "an elevation row that agrees with it": _outcome(apply(base + [prv60, el("2000,0", "60")]))["ok"],
+        "an elevation row at the PRV's other side": _outcome(apply(base + [prv60, el("1000,0", "5")]))["ok"]}
+
+    # 8. pipe_c rows counted over the pipes still in the model, once a PRV and a pump replace two of them
+    r8 = apply(base + [{"kind": "pipe_c", "material": "all", "hw_c": "110"}, dict(REVIEW_PRV, id="V1"),
+                       {"kind": "pump", "id": "PA", "pipe": "0,-400", "upstream": "0,-800", "power_hp": "30"},
+                       rule("always")])
+    out["pipe_c_counted_after_step_4"] = {"ok": r8.ok, "pipes": len(r8.wn.pipe_name_list),
+                                          "readiness": next(v for i, v, _ in r8.rows if i == "Hazen-Williams C")}
+
+    # 9. pipe_c rows on a model whose headloss formula is Darcy-Weisbach (its roughness is a height, not a C)
+    wd = _load(re.sub(r"(Headloss\s+)H-W", r"\1D-W", sk.inp_text))
+    for pn in wd.pipe_name_list:
+        wd.get_link(pn).roughness = 0.0015 * FT_M
+    sdw = Skeleton(inp_text=write_text(wd), name="dw.inp")
+    out["pipe_c_on_darcy_weisbach"] = {"refused": apply(base + [{"kind": "pipe_c", "material": "all", "hw_c": "110"}],
+                                                        sdw).refused, "without_the_row_ok": apply(base, sdw).ok}
+
+    # 10. values the row checks had not covered
+    tank_rule = lambda on, off: [REVIEW_TANK, pa, {"kind": "pump_rule", "pump": "PA", "tank": "TANK",
+                                                   "on_below_ft": on, "off_above_ft": off}]
+    out["values_refused"] = {
+        "head_ft 490 500": apply([dict(REVIEW_SRC, head_ft="490 500"), REVIEW_USE]).refused,
+        "gallons_per_day 1_500": apply([REVIEW_SRC, {"kind": "production", "gallons_per_day": "1_500"}]).refused,
+        "on below 2 ft, the tank's minimum 5 ft": apply(base + tank_rule("2", "25")).refused,
+        "off above 40 ft, the tank full at 30 ft": apply(base + tank_rule("10", "40")).refused,
+        "a tank's base at 646000 ft": apply(base + [dict(REVIEW_TANK, base_elev_ft="646000")]).refused,
+        "a source's head at 490500 ft": apply([dict(REVIEW_SRC, head_ft="490500"), REVIEW_USE]).refused}
+    out["values_kept"] = {"head_ft 1,200": apply([dict(REVIEW_SRC, head_ft="1,200"), REVIEW_USE]).ok,
+                          "a rule inside the tank's range": apply(base + tank_rule("10", "25")).ok}
+
+    # 11. a model in degrees: 50 ft in every direction, on a tangent plane (east and west it had been about 40 ft)
+    lon0, lat0, fx, fy = REVIEW_DEG
+    wg = _load(sk.inp_text)
+    for n in wg.node_name_list:
+        x, y = wg.get_node(n).coordinates
+        wg.get_node(n).coordinates = (lon0 + x / fx, lat0 + y / fy)
+    sdeg = Skeleton(inp_text=write_text(wg), name="degrees.inp")
+    src_deg = dict(REVIEW_SRC, location=f"{lon0:.9f},{lat0 - 800 / fy:.9f}")
+    at = (lon0 + 2000 / fx, lat0 + 1000 / fy)              # the junction at (2000,1000) ft
+    deg = {}
+    for label, (dx, dy) in (("45 ft east", (45, 0)), ("45 ft north", (0, 45)), ("55 ft east", (55, 0)),
+                            ("55 ft north", (0, 55))):
+        r = apply([src_deg, REVIEW_USE, {"kind": "large_user", "location": f"{at[0] + dx / fx:.9f},{at[1] + dy / fy:.9f}",
+                                         "gallons_per_day": "1000"}], sdeg)
+        deg[label] = {"placed": r.placed.get(4), "refused": [x["reason"] for x in r.refused]}
+    out["degrees_both_ways"] = deg
+
+    # 11b. a tank no source can fill (no pump, its water above the source's head), which the grammar fuzzer's last
+    # disconnected models were: it drains and never fills, and what only it feeds is then cut off
+    hi = dict(REVIEW_TANK, base_elev_ft="300")
+    out["tank_no_source_can_fill"] = {"refused": apply(base + [hi]).refused,
+                                      "with_a_pump_to_fill_it": _outcome(apply(base + [hi, pa, rule("always")]))["refused"]}
+    out["grammar_fuzz"] = FINAL_FUZZ_19
+
+    # 12. other files given as the form, or as the model on the command line
+    zb = io.BytesIO()
+    with zipfile.ZipFile(zb, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("zone.inp", sk.inp_text)
+    words = {}
+    for label, (name, data) in (("an EPANET model", ("model.inp", sk.inp_text.encode())),
+                                ("a DXF drawing", ("mains.dxf", FX.form_review_r12_dxf())),
+                                ("a GeoJSON layer", ("mains.geojson", FX.form_review_mains_geojson()))):
+        try:
+            read_operator_form(data, name)
+            words[label] = None
+        except FormRefused as e:
+            words[label] = str(e)
+    model = {}
+    for label, (name, data) in (("a zip holding the model", ("zone.zip", zb.getvalue())),
+                                ("a DXF drawing", ("mains.dxf", FX.form_review_r12_dxf())),
+                                ("a GeoJSON layer", ("mains.geojson", FX.form_review_mains_geojson())),
+                                ("a form", ("form.csv", form_csv(base)))):
+        try:
+            model[label] = {"read_as_the_model": read_model_file(data, name) == sk.inp_text}
+        except FormRefused as e:
+            model[label] = {"refused": str(e)}
+    out["files_given_as_the_form"] = words
+    out["files_given_as_the_model"] = model
+    return out
+
+
+FT_M = 0.3048
+# Task 19's review: the public models' own C values and relative diffusivity, which the ladder's material-only C rung
+# and every committed ky4 and ky10 chlorine result inherit (part 'public_models').  The wall-rate step is the old-pipe
+# factor of C 130 against C 150 at gamma 1, 2^(20/30), applied to every pipe's wall rate with the hydraulics unchanged.
+DIFF_KW_STEP = 2.0 ** ((150.0 - 130.0) / 30.0)
+
+
+def part_form_public_models(paths: dict) -> dict:
+    """Net3's, ky4's and ky10's Hazen-Williams C values (how many pipes carry each, and the new-pipe C the ladder's
+    c_material rung gives each, intake_exp.material_only_c) and their files' relative diffusivity; and, for ky4 and
+    ky10 at their truths (experiment.NET_TRUTH), at the file's diffusivity and at chlorine's own (1.0): how far a wall
+    rate DIFF_KW_STEP times higher moves each junction's daily minimum on the scored day, and how many junctions are
+    below 0.2 mg/L at the daily minimum."""
+    from collections import Counter
+    import wntr
+    from .experiment import NET_TRUTH
+    from .simulate import LIB, simulate_nominal_chlorine
+    _quiet()
+    out = {"kw_step": DIFF_KW_STEP, "threshold_mgL": FID_THRESHOLD}
+    for net, path in (("Net3", os.path.join(LIB, "Net3.inp")), ("ky4", os.path.join(LIB, "ky4.inp")),
+                      ("ky10", paths["ky10_order_fixed.inp"])):
+        wn = wntr.network.WaterNetworkModel(path)
+        cs = Counter(f"{p.roughness:g}" for _, p in wn.pipes())
+        row = {"c_counts": dict(sorted(cs.items(), key=lambda kv: -float(kv[0]))),
+               "material_only_c": {c: material_only_c(float(c)) for c in sorted(cs, key=float, reverse=True)},
+               "file_diffusivity": wn.options.quality.diffusivity, "junctions": len(wn.junction_name_list)}
+        if net != "Net3":
+            t = {"kb_per_day": 0.40, "kw_m_per_day": 0.70, "source_dose": 1.2, **NET_TRUTH.get(net, {})}
+            row["truth"] = t
+            with tempfile.TemporaryDirectory(prefix="rm_diff_") as d:
+                for label, dif in (("at_file_diffusivity", row["file_diffusivity"]), ("at_chlorine_diffusivity", 1.0)):
+                    w = wntr.network.WaterNetworkModel(path)
+                    w.options.quality.diffusivity = dif
+                    p = _write_wn(w, d, f"{net}_{label}.inp")
+                    mins = [simulate_nominal_chlorine(p, t["kb_per_day"], t["kw_m_per_day"], 1.0,
+                                                      source_dose=t["source_dose"], kw_scale=k,
+                                                      file_prefix=os.path.join(d, f"c{i}")).min()
+                            for i, k in enumerate((1.0, DIFF_KW_STEP))]
+                    ch = (mins[0] - mins[1]).abs()
+                    row[label] = {"diffusivity": dif, "daily_min_change_mgL": {"median": float(ch.median()),
+                                                                               "p95": float(ch.quantile(0.95))},
+                                  "junctions_low": int((mins[0] < FID_THRESHOLD).sum())}
+        out[net] = row
+    return out
+
+
+def form_record() -> dict:
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t19_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.FORM_FIXTURES)
+        out = {"about": "Task 19's operator form, converter self-consistency on public models (WNTR's bundled ky4 and "
+                        "ky10, rewritten by fixtures.py), never a test on a utility's own files: ky4's clean drawing "
+                        "completed by a form built from the original, against the pre-registered bars; ky10's PRVs "
+                        "restored and its boundary valve closed by the form, against the original; the refusals. "
+                        "Written by python -m residualmap.intake_exp form.",
+               "complete": part_form_complete(paths), "prvs": part_form_prvs(paths),
+               "boundary": part_form_boundary(paths), "no_source": part_form_no_source(paths),
+               "bad_rows": part_form_bad_rows(paths), "after_the_stop": part_form_after_the_stop(paths),
+               "review": part_form_review(paths), "public_models": part_form_public_models(paths),
+               "final": part_form_final(paths), "scored_run": SCORED_RUN_19}
+    return _r6(out)
+
+
+# ----------------------------------------------------------------------------- task 19: the fidelity ladder
+# Pre-registered on 23 October 2026, before any scored run (plan task 19 and its lead note on material-only C).
+# The ladder measures what each thing a map of the mains lacks costs the product's own model (SimGP24: the 675-run
+# grid with its demand and roughness axes and the GP, or its 225-run fixed-gamma slice where every pipe has one C, as
+# importers.grid_for gives a file), on Net3, ky4 and ky10 (ky10 through task 15b's reaction-order fix, its prepared
+# copy).  Each rung removes one more thing, cumulatively, from the network as the product reads it (rung r0):
+#   r1 C 130 on every pipe; r2 plus demand by pipe length (the day's water use kept, one pattern: the one most
+#   junctions carry, operator_form.length_shares); r3 plus one constant elevation on every junction (their mean, as
+#   task 15b's elevation record); r4 plus every control and rule lost (pumps stay as the file starts them); r5 plus
+#   every tank 1.3 times as wide; r6 (ky10 only) plus its 5 PRVs lost (each an open pipe of 1 ft at its diameter).
+#   Beside the ladder, c_material (the lead note): from r0, each pipe's C replaced by the new-pipe C of the material its
+#   C suggests (145 or more: plastic, topology.C_TABLE's 145; above 130: ductile iron, its 130; 130 or less: old cast
+#   iron, its 135), so a skeleton's material-only C, blind to age, is measured on its own.
+# The truth is always the full network's (experiment.NET_TRUTH; build_scenario with truth_age), seeds 0 to 7.  Each
+# seed's 12 samples are drawn as experiment.run_scenario_time draws its first ones (default_rng(2000 + seed): 12
+# junctions without replacement, hours from 07:00 to 17:00, the truth at that hour plus N(0, 0.03) mg/L, clipped at
+# 0.01), the same samples on every rung.  Measured on every rung and seed: water-age MAE (h) of the model's nominal
+# age against the truth's, over every junction and hour of the scored day (calibration does not change the model's
+# age, so it is one number), and its MAE against the full model's own age; then before calibration (the prior,
+# fit_prior) and after (the 12 samples), on the junctions not sampled: the daily minimum's MAE (mg/L), low spots
+# found (truth's daily minimum below 0.2 mg/L and P(below) above 0.5) and false lows (P(below) above 0.5, truth not
+# low).  The summary is the mean over the seeds.  Simulation on public models only.
+FIDELITY = {n: os.path.join(OUT, f"fidelity_{n}.json") for n in ("Net3", "ky4", "ky10")}
+FID_SEEDS = tuple(range(8))
+FID_SAMPLES = 12
+FID_NOISE_MGL = 0.03
+FID_SAMPLE_HOUR = 14
+FID_THRESHOLD = 0.2
+FID_SAMPLE_RNG = 2000
+FID_TANK_FACTOR = 1.3
+FID_PRV_PIPE_FT = 1.0
+FID_C_ALL = 130.0
+FID_RUNGS = {"Net3": ("r0", "r1", "r2", "r3", "r4", "r5", "c_material"),
+             "ky4": ("r0", "r1", "r2", "r3", "r4", "r5", "c_material"),
+             "ky10": ("r0", "r1", "r2", "r3", "r4", "r5", "r6", "c_material")}
+FID_WHAT = {"r0": "the network as the product reads it (the full model)",
+            "r1": "C 130 on every pipe",
+            "r2": "plus demand by pipe length (the day's water use kept, one pattern)",
+            "r3": "plus one constant elevation on every junction (their mean)",
+            "r4": "plus every control and rule lost (pump rules; pumps stay as the file starts them)",
+            "r5": "plus every tank 1.3 times as wide",
+            "r6": "plus its PRVs lost (each an open pipe of 1 ft)",
+            "c_material": "beside the ladder, from the full model: C from the material alone (new-pipe values, blind "
+                          "to age)"}
+
+
+def _fid_c130(wn) -> None:
+    for _, p in wn.pipes():
+        p.roughness = FID_C_ALL
+
+
+def _fid_demand(wn) -> None:
+    from collections import Counter
+    from .operator_form import length_shares
+    total, count = 0.0, Counter()
+    for _, j in wn.junctions():
+        for ts in j.demand_timeseries_list:
+            m = ts.pattern.multipliers if ts.pattern is not None else [1.0]
+            total += ts.base_value * float(np.mean(m))
+            count[ts.pattern_name] += 1
+    main = count.most_common(1)[0][0]
+    mean_m = float(np.mean(wn.get_pattern(main).multipliers)) if main is not None else 1.0
+    shares = length_shares(wn)
+    for name, j in wn.junctions():
+        j.demand_timeseries_list.clear()
+        j.add_demand(total * shares.get(name, 0.0) / mean_m, main)
+
+
+def _fid_elevation(wn) -> None:
+    e = float(np.mean([j.elevation for _, j in wn.junctions()]))
+    for _, j in wn.junctions():
+        j.elevation = e
+
+
+def _fid_controls(wn) -> None:
+    for c in list(wn.control_name_list):
+        wn.remove_control(c)
+
+
+def _fid_tanks(wn) -> None:
+    for _, t in wn.tanks():
+        t.diameter = t.diameter * FID_TANK_FACTOR
+
+
+def _fid_prvs(wn) -> None:
+    for v in [v for v in wn.valve_name_list if str(wn.get_link(v).valve_type) == "PRV"]:
+        lk = wn.get_link(v)
+        s, e, d, ml = lk.start_node_name, lk.end_node_name, lk.diameter, lk.minor_loss
+        wn.remove_link(v)
+        wn.add_pipe(v, s, e, length=FID_PRV_PIPE_FT * 0.3048, diameter=d, roughness=FID_C_ALL, minor_loss=ml)
+
+
+def material_only_c(c: float) -> float:
+    """The new-pipe C (topology.C_TABLE) of the material a C suggests: plastic for 145 or more, ductile iron above
+    130, old cast iron for 130 or less (the lead note's case: an old iron main given cast iron's new-pipe value)."""
+    from . import topology as T
+    word = "PVC" if c >= 145 else "DIP" if c > 130 else "CI"
+    return T.hazen_c(word)[0]
+
+
+def _fid_material(wn) -> None:
+    for _, p in wn.pipes():
+        p.roughness = material_only_c(p.roughness)
+
+
+# The first builds' times, copied from the ladder's run log (23 October 2026, this Mac, 11 workers, other work running at
+# times): later runs read every grid from the cache, so their own times are 0.  Not rerun; run costs, not records.
+# Rung r0's grids were cached already for Net3 (built 21 September) and ky4 (the committed 'full' grid, about 15
+# minutes when it was built); ky10's r0 is its prepared copy's first grid.
+FID_FIRST_BUILD = {"what": "seconds per grid in the first build, and for the truths, copied from the ladder's run log",
+                   "Net3": {"r0": "cached", "r1": 4.1, "r2": 4.0, "r3": 4.0, "r4": 4.0, "r5": 4.2, "c_material": 8.1,
+                            "truths_8_seeds": 1.0},
+                   "ky10": {"r0": 218.9, "r1": 67.1, "r2": 80.1, "r3": 75.6, "r4": 73.4, "r5": 75.2, "r6": 73.8,
+                            "c_material": 228.3, "truths_8_seeds": 53.9},
+                   "ky4": {"r0": "cached", "r1": 270.8, "r2": 316.8, "r3": 237.1, "r4": 193.6, "r5": 170.4,
+                           "c_material": 709.4, "truths_8_seeds": 98.1}}
+FID_EDITS = {"r1": _fid_c130, "r2": _fid_demand, "r3": _fid_elevation, "r4": _fid_controls, "r5": _fid_tanks,
+             "r6": _fid_prvs, "c_material": _fid_material}
+
+
+def _sha1_text(text: str) -> str:
+    import hashlib
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def fidelity_original(net: str, work: str) -> tuple[str, str]:
+    """(the name the product reads the full network by, its .inp path): Net3 and ky4 as bundled (so ky4's committed
+    grid serves rung r0), ky10 as task 15b's prepared copy (its reaction orders set to 1)."""
+    from .simulate import LIB
+    if net == "ky10":
+        path, rep = _prepare(os.path.join(LIB, "ky10.inp"), os.path.join(work, "prepared"))
+        assert path is not None and rep.ok, rep.blocking
+        return path, path
+    return net, os.path.join(LIB, f"{net}.inp")
+
+
+def fidelity_rung_files(net: str, work: str) -> dict:
+    """Every rung's .inp, written by WNTR into work under a content name (fid_<sha1[:8]>_<net>_<rung>.inp, so a grid
+    cache name never serves another file's grid): {rung: {'name': what the product reads, 'path', 'sha1',
+    'uniform_c'}}, and the WNTR rewrite of r0 with no edit (rewrite_r0), whose water age is checked against r0's."""
+    import wntr
+    name0, path0 = fidelity_original(net, work)
+    out = {}
+    with open(path0, encoding="utf-8", errors="replace") as fh:
+        t0 = fh.read()
+    wn0 = wntr.network.WaterNetworkModel(path0)
+    out["r0"] = {"name": name0, "path": path0, "sha1": _sha1_text(t0), "uniform_c": _uniform_c(wn0)}
+    rungs = FID_RUNGS[net]
+    for r in [x for x in rungs if x != "r0"] + ["rewrite_r0"]:
+        wn = wntr.network.WaterNetworkModel(path0)
+        edits = [] if r == "rewrite_r0" else ["c_material"] if r == "c_material" else \
+            [x for x in rungs if x not in ("r0", "c_material") and int(x[1:]) <= int(r[1:])]
+        for e in edits:
+            FID_EDITS[e](wn)
+        tmp = os.path.join(work, f"tmp_{net}_{r}.inp")
+        wntr.network.write_inpfile(wn, tmp, units="GPM")
+        with open(tmp, encoding="utf-8") as fh:
+            # WNTR's header comments name the file it read and the time it wrote: left out (operator_form.WNTR_HEADER),
+            # so a rung's file, its sha1 and its grid's cache name are the same on every run
+            from .operator_form import WNTR_HEADER
+            text = "".join(ln for ln in fh if not ln.startswith(WNTR_HEADER))
+        h = _sha1_text(text)
+        p = os.path.join(work, f"fid_{h[:8]}_{net}_{r}.inp")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.remove(tmp)
+        out[r] = {"name": p, "path": p, "sha1": h, "uniform_c": _uniform_c(wn), "edits": edits}
+    return out
+
+
+def _uniform_c(wn) -> bool:
+    return len({float(f"{p.roughness:.6g}") for _, p in wn.pipes()}) == 1
+
+
+def _fid_age(path: str) -> "np.ndarray":
+    """Water age (h) of a file on the scored day, hour x junction, run in a temporary folder."""
+    import wntr
+    from .simulate import _last_day, load
+    wn = load(path)
+    wn.options.quality.parameter = "AGE"
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d:
+        r = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "a"))
+    return (_last_day(r.node["quality"], wn.junction_name_list) / 3600.0)
+
+
+def _fid_samples(truth, seed: int):
+    import pandas as pd
+    from .simgp import DAY_HOURS
+    rng = np.random.default_rng(FID_SAMPLE_RNG + seed)
+
+    def observe(js, hs):
+        t = np.array([truth.truth_by_hour.loc[h, j] for j, h in zip(js, hs)])
+        return np.clip(t + rng.normal(0, FID_NOISE_MGL, len(js)), 0.01, None)
+    js = list(rng.choice(truth.junctions, FID_SAMPLES, replace=False))
+    hs = [int(h) for h in rng.choice(DAY_HOURS, FID_SAMPLES)]
+    return pd.DataFrame({"junction": js, "hour": hs, "y": list(observe(js, hs))})
+
+
+def _fid_metrics(pred, truth, mask) -> dict:
+    t, m = truth.truth_daily_min.loc[mask], pred.loc[mask]
+    tv, pv = t < FID_THRESHOLD, m["p_below"] > 0.5
+    return {"chlorine_mae_mgL": float(np.mean(np.abs(m["median"] - t))), "lows_found": int((tv & pv).sum()),
+            "false_lows": int((~tv & pv).sum()), "n_true_lows": int(tv.sum()), "flagged": int(pv.sum())}
+
+
+def _r6(x):
+    if isinstance(x, dict):
+        return {k: _r6(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_r6(v) for v in x]
+    if isinstance(x, (float, np.floating)):
+        return round(float(x), 6)
+    if isinstance(x, np.integer):
+        return int(x)
+    return x
+
+
+def fidelity_ladder(net: str, cache_dir: str | None = None, seeds=FID_SEEDS, log=print) -> dict:
+    """The ladder on one network (the pre-registered protocol above): every rung's file, grid (its cache file and
+    sha256) and scores, per seed and averaged.  cache_dir: where the grids are read or built (default outputs/cache;
+    the Net3 rerun of the saved check builds its own in a temporary folder).  Run times go to '_measured' only."""
+    import time
+    import pandas as pd
+    import types
+    from .experiment import NET_TRUTH
+    from .features import build_features
+    from .importers import grid_for
+    from .simgp import SimGP24, grid_cache_path, simulator_grid_24h
+    from .simulate import build_scenario, nominal_scenario
+    _quiet()
+    cache_dir = cache_dir or os.path.join(REPO, "outputs", "cache")
+    truth_kw = dict(NET_TRUTH.get(net, {}))
+    dose = float(truth_kw.get("source_dose", 1.2))
+    measured = {"grid_s": {}, "score_s": {}, "truth_s": None,
+                "first_build": {"what": FID_FIRST_BUILD["what"], **FID_FIRST_BUILD.get(net, {})}}
+    work = tempfile.mkdtemp(prefix=f"rm_fid_{net}_")
+    try:
+        files = fidelity_rung_files(net, work)
+        # the WNTR rewrite of r0 with no edit must not move the water age (every rung is a WNTR rewrite)
+        a0, aw = _fid_age(files["r0"]["path"]), _fid_age(files["rewrite_r0"]["path"])
+        rewrite = {"max_abs_age_change_h": float((a0 - aw).abs().values.max()),
+                   "sha1_r0": files["r0"]["sha1"], "sha1_rewrite": files["rewrite_r0"]["sha1"]}
+        t0 = time.time()
+        truths = {s: build_scenario(files["r0"]["name"], seed=s, sample_hour=FID_SAMPLE_HOUR, truth_age=True,
+                                    **truth_kw) for s in seeds}
+        measured["truth_s"] = round(time.time() - t0, 1)
+        samples = {s: _fid_samples(truths[s], s) for s in seeds}
+        log(f"{net}: truths for {len(seeds)} seeds in {measured['truth_s']} s")
+        age_full = None
+        rungs = {}
+        for r in FID_RUNGS[net]:
+            f = files[r]
+            sc = nominal_scenario(f["name"], sample_hour=FID_SAMPLE_HOUR, source_dose=dose)
+            X = build_features(sc)
+            grid = grid_for("free_chlorine", f["uniform_c"])
+            gpath = grid_cache_path(types.SimpleNamespace(wn_name=f["name"], source_dose=dose), cache_dir, grid)
+            t0 = time.time()
+            params, Z = simulator_grid_24h(sc, cache_dir, grid)
+            measured["grid_s"][r] = round(time.time() - t0, 1)
+            log(f"{net} {r}: grid {grid} ({len(params)} runs) in {measured['grid_s'][r]} s")
+            age = sc.age_by_hour_h
+            if r == "r0":
+                age_full = age
+            t0 = time.time()
+            per_seed = []
+            for s in seeds:
+                tr = truths[s]
+                assert list(tr.junctions) == list(sc.junctions), (net, r)
+                S = samples[s]
+                mask = [j for j in sc.junctions if j not in set(S.junction)]
+                m0 = SimGP24(sc, X, seed=s, cache_dir=cache_dir, grid=grid, threshold=FID_THRESHOLD,
+                             grid_data=(params, Z)).fit_prior()
+                b = _fid_metrics(m0.predict_daily_min(), tr, mask)
+                m1 = SimGP24(sc, X, seed=s, cache_dir=cache_dir, grid=grid, threshold=FID_THRESHOLD,
+                             grid_data=(params, Z)).fit(S)
+                a = _fid_metrics(m1.predict_daily_min(), tr, mask)
+                per_seed.append({"seed": s, "age_mae_h": float((age - tr.truth_age_by_hour_h[sc.junctions]).abs()
+                                                               .values.mean()),
+                                 "age_mae_vs_full_model_h": float((age - age_full).abs().values.mean()),
+                                 "before": b, "after": a, "map_params": list(m1.map_params_),
+                                 "map_dose": m1.map_dose_})
+            measured["score_s"][r] = round(time.time() - t0, 1)
+            mean = lambda f_: float(np.mean([f_(x) for x in per_seed]))
+            summary = {"age_mae_h": mean(lambda x: x["age_mae_h"]),
+                       "age_mae_vs_full_model_h": mean(lambda x: x["age_mae_vs_full_model_h"]),
+                       "n_true_lows": mean(lambda x: x["after"]["n_true_lows"])}
+            for when in ("before", "after"):
+                for k in ("chlorine_mae_mgL", "lows_found", "false_lows", "flagged"):
+                    summary[f"{when}_{k}"] = mean(lambda x: x[when][k])
+            rungs[r] = {"what": FID_WHAT[r], "edits": f.get("edits", []), "file_sha1": f["sha1"],
+                        "uniform_c": f["uniform_c"], "grid": grid, "runs": len(params),
+                        "grid_file": os.path.basename(gpath), "grid_sha256": _grid_sha256(params, Z),
+                        "per_seed": per_seed, "summary": summary}
+            log(f"{net} {r}: age MAE {summary['age_mae_h']:.2f} h, after false lows {summary['after_false_lows']:.1f}, "
+                f"found {summary['after_lows_found']:.1f} of {summary['n_true_lows']:.1f} ({measured['score_s'][r]} s)")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return _r6({"about": f"Task 19's fidelity ladder on {net}: what each thing a map of the mains lacks costs the "
+                         f"product's own model (SimGP24 and its grid), removed one more at each rung, before and after "
+                         f"calibration on 12 samples, mean over seeds {seeds[0]} to {seeds[-1]}. Simulation on a public "
+                         f"model (WNTR's bundled network), never a test on a utility's own system. Written by python "
+                         f"-m residualmap.intake_exp fidelity {net}.",
+                "network": net, "truth": {**truth_kw, "seeds": list(seeds)},
+                "protocol": {"samples": FID_SAMPLES, "noise_mgL": FID_NOISE_MGL, "sample_hours": "07:00 to 17:00",
+                             "sample_rng": f"default_rng({FID_SAMPLE_RNG} + seed)", "threshold_mgL": FID_THRESHOLD,
+                             "scored_on": "the junctions not sampled, against the truth's daily minimum",
+                             "age_scored_on": "every junction and hour of the scored day",
+                             "tank_factor": FID_TANK_FACTOR, "c_everywhere": FID_C_ALL,
+                             "prv_pipe_ft": FID_PRV_PIPE_FT},
+                "rewrite_check": rewrite, "rungs": rungs, "_measured": measured})
+
+
+# The boundary valve of operator_form_boundary_valve, picked once (pre-registered 23 October 2026, before the search
+# ran): among ky10's closable pipes (simulate.closable_pipes on its prepared copy: closing one keeps the network
+# connected), the pipes whose closure keeps every junction fed (no junction whose oldest water on the scored day is
+# BOUNDARY_FED_H or more, unless it already was with the pipe open), and of those the one whose closure moves water age
+# the most (the largest mean over junctions of the absolute change in the scored day's mean age; ties by pipe ID).  It
+# is then pinned by ID in fixtures.py (BOUNDARY_PIPE_KY10), so the check never repeats the search.
+BOUNDARY_RECORD = os.path.join(OUT, "boundary_valve_ky10.json")
+BOUNDARY_FED_H = 144.0                 # the scored day's start: water at least this old has not been renewed since
+
+
+def _closed_age(args):
+    """One 7-day water-age run with one pipe closed (None: none), in a temporary folder: the scored day's mean and
+    maximum age at every junction (module level, for the search's worker processes)."""
+    import wntr
+    from .simulate import _last_day, load
+    path, pipe = args
+    wn = load(path)
+    wn.options.quality.parameter = "AGE"
+    if pipe is not None:
+        wn.get_link(pipe).initial_status = wntr.network.LinkStatus.Closed
+    with tempfile.TemporaryDirectory(prefix="rm_epanet_") as d:
+        r = wntr.sim.EpanetSimulator(wn).run_sim(file_prefix=os.path.join(d, "b"))
+    a = _last_day(r.node["quality"], wn.junction_name_list) / 3600.0
+    return pipe, a.mean().values.astype(float), a.max().values.astype(float)
+
+
+def boundary_valve_search(n_jobs: int | None = None) -> dict:
+    import multiprocessing
+    import time
+    from concurrent.futures import ProcessPoolExecutor
+    import wntr
+    from .simulate import LIB, closable_pipes
+    _quiet()
+    work = tempfile.mkdtemp(prefix="rm_bv_")
+    try:
+        path, rep = _prepare(os.path.join(LIB, "ky10.inp"), os.path.join(work, "prepared"))
+        cands = closable_pipes(wntr.network.WaterNetworkModel(path))
+        t0 = time.time()
+        _, mean0, max0 = _closed_age((path, None))
+        n_jobs = n_jobs or max(1, (os.cpu_count() or 2) - 1)
+        with ProcessPoolExecutor(max_workers=n_jobs, mp_context=multiprocessing.get_context("spawn")) as ex:
+            got = list(ex.map(_closed_age, [(path, p) for p in cands], chunksize=4))
+        secs = time.time() - t0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    rows = []
+    for pipe, mean1, max1 in got:
+        starved = int(((max1 >= BOUNDARY_FED_H) & (max0 < BOUNDARY_FED_H)).sum())
+        rows.append({"pipe": pipe, "starved_junctions": starved,
+                     "mean_abs_change_h": float(np.abs(mean1 - mean0).mean()),
+                     "max_abs_change_h": float(np.abs(mean1 - mean0).max())})
+    fed = sorted([r for r in rows if r["starved_junctions"] == 0], key=lambda r: (-r["mean_abs_change_h"], r["pipe"]))
+    return _r6({"about": "Task 19: the boundary valve of operator_form_boundary_valve, picked once on ky10's prepared "
+                         "copy (public, bundled with WNTR) by the pre-registered rule in residualmap/intake_exp.py "
+                         "(every closable pipe closed in turn, a 7-day water-age run each; of the closures that keep "
+                         "every junction fed, the one that moves the scored day's mean age the most), then pinned in "
+                         "fixtures.py. Written by python -m residualmap.intake_exp boundary.",
+                "closable_pipes": len(cands), "fed_closures": len(fed), "fed_threshold_h": BOUNDARY_FED_H,
+                "picked": fed[0] if fed else None, "next_four": fed[1:5],
+                "starving_closures": len(rows) - len(fed), "_measured": {"seconds": round(secs, 1)}})
+
+
+def fidelity_reproduce_grids(net: str, committed: dict, cache_dir: str | None = None, grids: bool = True) -> dict:
+    """For the saved checks (ky4 and ky10, not rerun): every rung's file rebuilt by today's code has the committed
+    sha1, and, with grids, every rung's cached grid has the committed sha256 (read from the cache, never built).
+    grids=False reads nothing from the cache (fidelity_outputs_reproduce, in the committed report: task 19's final
+    verification found it unpickling every git-ignored grid only to drop the sha256, so a grid cut short by an
+    interrupted build failed a committed check); a cached grid that cannot be read is 'grid_readable' False."""
+    import pickle
+    cache_dir = cache_dir or os.path.join(REPO, "outputs", "cache")
+    work = tempfile.mkdtemp(prefix=f"rm_fidchk_{net}_")
+    try:
+        files = fidelity_rung_files(net, work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    out = {}
+    for r, v in committed["rungs"].items():
+        out[r] = {"file_sha1_same": files[r]["sha1"] == v["file_sha1"]}
+        if not grids:
+            continue
+        p = os.path.join(cache_dir, v["grid_file"])
+        got, readable = None, True
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as fh:
+                    params, Z = pickle.load(fh)
+                got = _grid_sha256(params, Z)
+            except Exception:  # noqa: BLE001  (a grid cut short or damaged: reported, never raised)
+                readable = False
+        out[r].update(grid_cached=os.path.exists(p), grid_readable=readable,
+                      grid_sha256_same=got is not None and got == v["grid_sha256"])
+    return out
+
+
 def _unmeasured(part: dict) -> dict:
     """A part without its '_measured' key (peak memory and seconds, which vary from run to run)."""
     return {k: v for k, v in part.items() if k != "_measured"}
@@ -3441,8 +4754,10 @@ def _unmeasured(part: dict) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples",
-                                                "snapping", "zone", "gis", "cad", "cad_timing"),
+                                                "snapping", "zone", "gis", "cad", "cad_timing", "fidelity",
+                                                "boundary", "form"),
                     default="all")
+    ap.add_argument("nets", nargs="*", help="fidelity: the networks (Net3, ky4, ky10; default all three)")
     ap.add_argument("--ky10", action="store_true", help="timing: also time ky10's grid (about 4 minutes)")
     ap.add_argument("--fixed-only", action="store_true", help="timing: rewrite only the records copied from logs "
                                                               "(scored run, review run, feasibility review, standalone "
@@ -3471,6 +4786,16 @@ def main(argv=None) -> int:
         return 0
     if a.what == "cad_timing":           # task 18's review: the MTEXT timing (about two minutes; not part of 'all')
         _write(RECORD_18_TIMING, cad_mtext_timing())
+        return 0
+    if a.what == "fidelity":             # task 19: the ladder (Net3 minutes; ky10 about 17, ky4 about 35 with grids)
+        for net in a.nets or ("Net3", "ky10", "ky4"):
+            _write(FIDELITY[net], fidelity_ladder(net))
+        return 0
+    if a.what == "boundary":             # task 19: the boundary valve's one search (a few minutes)
+        _write(BOUNDARY_RECORD, boundary_valve_search())
+        return 0
+    if a.what == "form":                 # task 19: the operator form's record
+        _write(RECORD_19, form_record())
         return 0
     if a.what in ("all", "elevation"):      # first: the readiness text quotes it
         _write(ELEVATION_PRV, elevation_prv())

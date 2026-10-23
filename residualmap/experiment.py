@@ -53,7 +53,11 @@ NET_DESC = {"Net3": "EPANET example based on North Marin Water District, CA; 92 
 # hidden-truth settings that make each network a plausible utility (Net3's defaults leave Net2, whose
 # water is 95 h old at midday, 83% below 0.2 mg/L at its daily minimum at ANY dose: a utility with
 # 4-day-old water only stays compliant with low-demand water; ky4 at 1.2 mg/L is 61% below at the minimum)
-NET_TRUTH = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0)}
+NET_TRUTH = {"Net2": dict(kb_per_day=0.10, kw_m_per_day=0.20), "ky4": dict(source_dose=2.0),
+             # iteration 5, task 19 (the fidelity ladder, written before its scored runs): ky10's hidden truth is the
+             # default one, said explicitly; on its order-fixed copy it puts 31% of junctions below 0.2 mg/L at 14:00
+             # and 39% at the daily minimum (the plan's review), near ky4's 25 to 37%, so no ky10 setting is needed
+             "ky10": dict(kb_per_day=0.40, kw_m_per_day=0.70, source_dose=1.2)}
 # task 13: the richer-truth audit (chemexp.py).  Each chemistry is a hidden truth on the committed draws; the model and
 # the sampling rules are exactly the committed ones.  'first_order' is the committed truth itself (chem=None) on the
 # audit's fresh seeds, the paired reference; '2ra' is Fisher's two-reactant chlorine-organics chemistry in EPANET-MSX

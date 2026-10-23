@@ -10,11 +10,12 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 143,
+ "n_pass": 155,
  "n_fail": 0,
  "n_skipped": 1,
  "run_log_only": {
-  "no_listed_names_in_tracked_files": "reads a private list kept outside the repository (RESIDUALMAP_NAMES_CSV) and is skipped without it, so its result is in outputs/chem/checks_run.json only; a failure still fails the run"
+  "no_listed_names_in_tracked_files": "reads a private list kept outside the repository (RESIDUALMAP_NAMES_CSV) and is skipped without it, so its result is in outputs/chem/checks_run.json only; a failure still fails the run",
+  "fidelity_cached_grids_sha256": "reads ky4's and ky10's fidelity-ladder grids in the git-ignored outputs/cache and is skipped when they are not there, so its result is in outputs/chem/checks_run.json only; a failure still fails the run"
  },
  "checks": [
   {
@@ -1306,36 +1307,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 738,
+    "registry_ok": 836,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 2189,
-     "date": 78,
-     "identifier": 804,
+     "code or path": 2368,
+     "date": 81,
+     "identifier": 848,
      "link target": 12,
-     "run cost (logs, df)": 9,
+     "run cost (logs, df)": 8,
      "seed range": 20,
-     "setting or literature value written in the code": 22,
-     "time of day": 130
+     "setting or literature value written in the code": 17,
+     "time of day": 144
     },
     "traced": {
-     "iteration-4 outputs": 293,
-     "file cited in its section": 3999,
-     "file cited in its paragraph": 5688,
-     "outputs": 8,
-     "iteration-5 outputs": 15
+     "iteration-4 outputs": 286,
+     "file cited in its section": 4189,
+     "file cited in its paragraph": 6226,
+     "iteration-5 outputs": 23,
+     "outputs": 7
     },
-    "n_tokens": 10035,
+    "n_tokens": 10757,
     "power_caught_of_tested": {
      "decimal": [
-      1253,
-      9298
+      1640,
+      10114
      ],
      "integer": [
-      1713,
-      9563
+      1782,
+      10142
      ]
     }
    }
@@ -1345,7 +1346,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 56,
+    "iteration4_texts_checked": 63,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -3375,6 +3376,186 @@
     "cloud_drawing_over_the_limit_refused": true,
     "cloud_block_bomb_refused_within_s": 30.0,
     "cloud_no_uploads_uploaders": 0
+   }
+  },
+  {
+   "name": "operator_form_completes_skeleton",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "bar": "pre-registered: age median <= 0.5 h, p95 <= 2 h; chlorine median <= 0.01, p95 <= 0.03 mg/L; lows Jaccard >= 0.95; missed in its scored run, so task 19 stopped; not asserted here",
+    "bar_parts_met": {
+     "age_median_h": false,
+     "age_p95_h": false,
+     "chlorine_median_mgL": true,
+     "chlorine_p95_mgL": false,
+     "lows_jaccard": true
+    },
+    "age_h": {
+     "median": 1.471684,
+     "p95": 22.577477,
+     "max": 140.577176,
+     "mean": 4.736044
+    },
+    "chlorine_mgL": {
+     "median": 0.001502,
+     "p95": 0.092337,
+     "max": 1.029479,
+     "mean": 0.019533
+    },
+    "lows_jaccard": 0.998886,
+    "tees_at_1_ft": 3,
+    "completed_sha1": "5a676a849b35756e94c71fde00565beb0e0e498d",
+    "after_the_stop_0p1_ft_within_the_bar_values_post_hoc": true
+   }
+  },
+  {
+   "name": "operator_form_restores_prvs_ky10",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "restored_age_max_abs_h": 0.0,
+    "restored_chlorine_max_abs_mgL": 0.0,
+    "same_inp_text": true,
+    "prvs_missing_junctions_age_moved": 347,
+    "prvs_missing_age_max_h": 84.544106
+   }
+  },
+  {
+   "name": "operator_form_boundary_valve",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "pipe": "P-18",
+    "same_inp_text": true,
+    "age_max_abs_h": 0.0,
+    "chlorine_max_abs_mgL": 0.0,
+    "open_vs_closed_junctions_age_moved": 272
+   }
+  },
+  {
+   "name": "no_source_never_runs",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "skeleton_stops": true,
+    "form_stops_with": "NO_SOURCE",
+    "model_written": false
+   }
+  },
+  {
+   "name": "form_parser_refuses_bad_rows",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "refused_lines": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "template_rows": 11
+   }
+  },
+  {
+   "name": "fidelity_outputs_reproduce",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "Net3_rungs": [
+     "c_material",
+     "r0",
+     "r1",
+     "r2",
+     "r3",
+     "r4",
+     "r5"
+    ],
+    "ky4_rung_files_checked": 7,
+    "ky10_rung_files_checked": 8
+   }
+  },
+  {
+   "name": "readiness_quotes_trace_to_outputs",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "sentences": 6,
+    "sources": 75,
+    "moves_checked": 22
+   }
+  },
+  {
+   "name": "operator_form_review_cases",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "cases": 17,
+    "pipe_c_materials": 4,
+    "refusals_checked": 15
+   }
+  },
+  {
+   "name": "operator_form_command_line",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "cad_read_form_same_model": true,
+    "gis_read_form_completes": true,
+    "operator_form_restores_ky10": true,
+    "inp_material_rows_refused": true,
+    "encodings_complete": [
+     "bom",
+     "cp1252",
+     "utf16",
+     "utf8"
+    ],
+    "zipped_model_completes_and_drawing_pointed_to_cad_read": true,
+    "pdf_form_refused": true
+   }
+  },
+  {
+   "name": "operator_form_final_verification",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "cases": 17,
+    "cut_off_refused": 4,
+    "fed_complete": 4,
+    "clock_rule_hours_differing": 0,
+    "messages_naming_a_file": 0,
+    "far_points_refused": 4,
+    "silent_rows_refused": 4,
+    "values_refused": 6
+   }
+  },
+  {
+   "name": "operator_form_reads_in_linear_time",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "forms_read_within_s": 5.0,
+    "rows_refused_notes": [
+     2,
+     0,
+     1
+    ],
+    "name_list_builds_25_and_400_large_users": [
+     25,
+     25
+    ]
+   }
+  },
+  {
+   "name": "get_started_gis_default_size_asked",
+   "group": "task19",
+   "pass": true,
+   "detail": {
+    "starts_empty": true,
+    "built_only_once_given": true,
+    "warning_says": "the size you gave"
    }
   },
   {
