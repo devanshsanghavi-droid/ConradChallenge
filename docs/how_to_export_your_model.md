@@ -7,7 +7,7 @@ Two checks after any export, whatever the package:
 1. Open the `.inp` in a text editor and look at `[CONTROLS]` and `[RULES]`. Pump and valve rules are the part exports lose most often, and a pump with no control runs all week.
 2. Look at the `[TIMES]` section's `START CLOCKTIME`. ResidualMap converts your grab samples' times of day with it, so it must be the time of day your model's hour 0 stands for.
 
-The app's Get started page (`pages/1_Get_started.py`) shows the section for your package. Its third step, "Check a file", reads any file you have and says what it is, without building the map. Its fourth step builds a skeleton model from a GIS layer of the water mains, for a system that has no hydraulic model: the pipes and where they meet, with no source, tank, pump, valve, control or demand until they are added.
+The app's Get started page (`pages/1_Get_started.py`) shows the section for your package. Its third step, "Check a file", reads any file you have and says what it is, without building the map. Its fourth step builds a skeleton model from a GIS layer of the water mains, for a system that has no hydraulic model: the pipes and where they meet, with no source, tank, pump, valve, control or demand until they are added. Its fifth step does the same from a CAD drawing of the mains saved as DXF: topology and sizes only.
 
 Each section below starts with a line the Get started page shows as the choice.
 
@@ -43,18 +43,21 @@ The native project database (`.IWDB`) is not read.
 1. An `.inp` is ready: upload it as it is.
 2. A `.net` file is EPANET's own binary project: open it in EPANET 2 and use File > Export > Network to write the `.inp`.
 
-## AutoCAD or Civil 3D (coming soon)
+## AutoCAD or Civil 3D
 
-A drawing holds lines, not a hydraulic model. If a hydraulic model of the system exists, its EPANET export is always better. Until the DXF reader is built, the app identifies a drawing and asks for the export.
+A drawing holds lines, not a hydraulic model. If a hydraulic model of the system exists, its EPANET export is always better.
 
-1. Save As > DXF (2004 or later).
+1. Save As > DXF, R2000 or a later version, which keeps the drawing's unit (an R12 DXF carries none, so the unit is then asked); a binary DXF is read too.
 2. For Civil 3D pressure networks, run AECTOACAD (Export Civil 3D Drawing to AutoCAD) first, so the pipes become plain lines a DXF reader can see.
-3. A `drawing.bak` is an AutoCAD backup copy: rename it to `.dwg`, open it, and save it as DXF.
-4. Without AutoCAD, the free ODA File Converter turns a DWG into a DXF: https://www.opendesign.com/guestfiles/oda_file_converter (a link only: ResidualMap does not install or run it).
+3. Bind external references first (XREF > Bind): an xref that points to another drawing is not read.
+4. A `drawing.bak` is an AutoCAD backup copy: rename it to `.dwg`, open it, and save it as DXF.
+5. Without AutoCAD, the free ODA File Converter turns a DWG into a DXF: https://www.opendesign.com/guestfiles/oda_file_converter (a link only: ResidualMap does not install or run it).
 
-## MicroStation (coming soon)
+Step 5 of the Get started page builds a skeleton model from the DXF: topology and sizes only. It reads the lines, polylines, arcs and splines of model space (mains inside blocks too, where AutoCAD draws them) and each pipe's size from its layer name (WATER-8IN, W_8_PVC) or from the nearest label ('8" DIP', '200 mm'); a number alone in a layer name (WATER-ZONE-2, PVC-ZONE-3) is asked, since it may be a zone, not a size, and so is one the labels on several of its lines dispute. Leave out the layer styles that are not mains in service (abandoned mains drawn dashed on the mains layer, streets, lot lines), and check the drawing's unit. The model has no source, tank, pump, valve, control, demand or elevation, and a drawing cannot say which crossing lines connect, so it needs the operator form (or EPANET, on the downloaded file, until the form is built) before it can run.
 
-1. File > Export > DWG/DXF and choose DXF, or send the water mains as a GIS layer (next sections).
+## MicroStation
+
+1. File > Export > DWG/DXF and choose DXF, then use step 5 of the Get started page (previous section), or send the water mains as a GIS layer (next sections).
 2. A DGN V8 file needs MicroStation itself to convert. In a WaterGEMS for MicroStation project, the drawing is not the model: send the WaterGEMS EPANET export instead (first section).
 
 ## ArcGIS Pro or ArcGIS Online

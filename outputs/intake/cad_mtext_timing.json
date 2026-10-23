@@ -1,0 +1,94 @@
+{
+ "about": "The probe that found ezdxf's default MTEXT reader quadratic, rerun and kept (the review of task 18): seconds to load a one-MTEXT drawing in recover mode and read its text with the default reader (plain_text, its 'fast' mode) and with the accurate parser cad_read uses (plain_mtext), for runs of formatting codes of 200,000, 400,000 and 800,000 characters, and the loader alone on other shapes. Timed on this Mac, so it varies from run to run and no check reruns it; written by python -m residualmap.intake_exp cad_timing.",
+ "written": "2026-10-22 22:34",
+ "ezdxf": "1.4.4",
+ "python": "3.13.9",
+ "machine": "arm64",
+ "chars": [
+  200000,
+  400000,
+  800000
+ ],
+ "default_reader_codes_A_s": {
+  "200000": 3.363,
+  "400000": 20.744,
+  "800000": 87.819
+ },
+ "default_reader_growth": {
+  "400000_over_200000": 6.17,
+  "800000_over_400000": 4.23
+ },
+ "extrapolated_default_reader_s_at_hostile_chars": {
+  "chars": 4800000,
+  "seconds": 3161,
+  "minutes": 53,
+  "is_extrapolation": true
+ },
+ "accurate_parser_s": {
+  "codes_A": {
+   "400000": 0.116,
+   "800000": 0.229,
+   "growth": {
+    "800000_over_400000": 1.97
+   }
+  },
+  "stack_S": {
+   "400000": 0.28,
+   "800000": 0.873,
+   "growth": {
+    "800000_over_400000": 3.12
+   }
+  },
+  "height_H": {
+   "400000": 0.282,
+   "800000": 0.88,
+   "growth": {
+    "800000_over_400000": 3.12
+   }
+  },
+  "paragraphs": {
+   "400000": 0.073,
+   "800000": 0.146,
+   "growth": {
+    "800000_over_400000": 2.0
+   }
+  },
+  "font_f": {
+   "400000": 0.26,
+   "800000": 0.866,
+   "growth": {
+    "800000_over_400000": 3.33
+   }
+  }
+ },
+ "loader_s": {
+  "text_spaces": {
+   "400000": 0.053,
+   "800000": 0.105,
+   "growth": {
+    "800000_over_400000": 1.98
+   }
+  },
+  "layer_long": {
+   "400000": 0.003,
+   "800000": 0.004,
+   "growth": {
+    "800000_over_400000": 1.33
+   }
+  },
+  "float_long": {
+   "400000": 0.001,
+   "800000": 0.001,
+   "growth": {
+    "800000_over_400000": 1.0
+   }
+  },
+  "many_lines": {
+   "400000": 0.14,
+   "800000": 0.283,
+   "growth": {
+    "800000_over_400000": 2.02
+   }
+  }
+ }
+}

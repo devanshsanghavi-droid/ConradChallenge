@@ -15,3 +15,6 @@ et-xmlfile==2.0.0
 # Community Cloud matches this Mac (the requirements_pinned check)
 # iteration 5, task 17: zipped shapefiles in the GIS importer (pure Python, no dependencies)
 pyshp==3.1.6
+# iteration 5, task 18: DXF drawings in the CAD importer (imported only when a drawing is read; its dependencies,
+# pyparsing, typing_extensions, numpy and fonttools, were already installed)
+ezdxf==1.4.4

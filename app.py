@@ -104,7 +104,8 @@ Iteration 5, task 17: while a model prepared on the Get started page (a skeleton
 files) is kept in this browser session, the Model radio offers a third option, 'Model prepared on Get started', and the
 page's 'Open it on the main page' picks it; the model goes through the same intake as an upload (its readiness report;
 a skeleton stops there, as its report says).  Without one the radio is the one before task 17, so every older check's
-widget order holds; with uploads off (the hosted demo) it never appears.
+widget order holds; with uploads off (the hosted demo) it never appears.  Since task 18 a skeleton built from a CAD
+drawing (DXF) on the same page is offered the same way.
 """
 from __future__ import annotations
 
@@ -204,11 +205,12 @@ INLET_HELP = ("Two columns: each inlet's node ID in your model and its measured 
               "means the highest residual entering the zone. A tap map can mark a tap as a zone inlet instead, with a "
               "'role' column that says inlet: the median of that tap's readings in the grab log's window sets the "
               "inlet's residual, and its readings are not fitted.")
-# task 17: a model prepared on the Get started page that cannot run yet (a skeleton from a GIS layer)
-PREPARED_NOT_READY = ("This model was built on the Get started page. A model built from a GIS layer is a skeleton: pipes "
-                      "and nodes only, with no source, tank, pump or demand, so it cannot run until those are added: "
-                      "download it on the Get started page and add them in EPANET (a form for them here is not built "
-                      "yet).")
+# task 17: a model prepared on the Get started page that cannot run yet (a skeleton from a GIS layer; since task 18,
+# or from a CAD drawing)
+PREPARED_NOT_READY = ("This model was built on the Get started page. A model built from a GIS layer or a CAD drawing is a "
+                      "skeleton: pipes and nodes only, with no source, tank, pump or demand, so it cannot run until those "
+                      "are added: download it on the Get started page and add them in EPANET (a form for them here is "
+                      "not built yet).")
 # the review of task 16c: inlet residuals are not offered in the chloramine mode until a check covers them
 INLET_NOT_CA_WHY = ("Inlet residuals are not available in the chloramine mode yet: its dose range is made for the total "
                     "chlorine leaving a plant, which the plant's fast organic demand lowers, and a residual measured "
@@ -422,7 +424,7 @@ with st.sidebar:
             st.stop()
         confirmed = show_intake(intake_box, readiness) if readiness is not None else False
         if net_path is None:
-            if src == PREPARED_OPTION:         # task 17: a skeleton from a GIS layer stops here, as its report said
+            if src == PREPARED_OPTION:         # task 17: a skeleton (GIS layer or drawing) stops here, as its report said
                 intake_box.info(PREPARED_NOT_READY)
             st.stop()
         if not confirmed:

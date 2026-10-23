@@ -139,6 +139,21 @@ T16C = "Task 16c"                                # task 16c's journal section (z
 _Z = "outputs/intake/zone_extract_Net3.json"
 _ZS = ("superposition", "by_tolerance")
 T17 = "Task 17"                                  # task 17's journal section (the GIS importer)
+T18 = "Task 18"                                  # task 18's journal section (the CAD importer)
+_C = "outputs/intake/cad_roundtrip.json"
+_C6 = ("rebuild", "fixtures", "ky4_r12_handwritten.dxf", "score_6ft")
+_CF = ("rebuild", "fixtures", "ky4_r12_handwritten.dxf")
+_CT = lambda net, ft: ("tolerance", "networks", net, "by_tolerance_ft", ft)
+_CL = lambda k, key: _CF + ("labels_on_another_line", k, key)
+_CTM = "outputs/intake/cad_mtext_timing.json"   # the review of task 18: ezdxf's MTEXT readers, timed
+_CRV = ("review",)                              # the review's cases (part 'review' of cad_roundtrip.json)
+_CH = ("hostile",)
+_T18RV = ("runs", "post_task18_review")         # the rerun on the tree after task 18's review
+_T18FV = ("runs", "post_task18_final")          # ... and after its final verification
+_CFV = ("final",)                               # the final verification's cases (part 'final' of cad_roundtrip.json)
+_REPRO_WORDS = (("{W} | {} of 50 files", ("vs_committed", "n_byte_identical")),
+                ("{W} | 50 of 50 files byte-identical; default demo {} of 92", ("app_default_demo", "flagged")),
+                ("{W} | 50 of 50 files byte-identical; default demo 42 of 92 flagged, {} of 36", ("app_default_demo", "found")))
 _G = "outputs/intake/gis_roundtrip.json"
 _GRF = lambda f, ft="6": ("rebuild", "fixtures", f, "by_tolerance_ft", ft)    # one scored fixture at one tolerance
 _G6 = _GRF("ky4_mains_stdlib_shp.zip")
@@ -165,13 +180,35 @@ def _pct_range(ratios) -> str:
     return f"{lo} to {hi}%"
 
 
-PINS_AFTER_TASK20 = ("pyshp",)                  # requirements.txt lines added after task 20 (task 17)
+PINS_AFTER_TASK20 = ("pyshp", "ezdxf")         # requirements.txt lines added after task 20 (tasks 17 and 18)
 
 
 def _guide_swaps_after_task20() -> int:
-    """The hosted demo's guide swaps added after task 20: task 17's, one per GIS section."""
-    from .cloud import GIS_STEP_LOCAL, GUIDE_CLOUD
-    return sum(old == GIS_STEP_LOCAL for _, old, _, _ in GUIDE_CLOUD)
+    """The hosted demo's guide swaps added after task 20: task 17's, one per GIS section, and task 18's, one per CAD
+    section."""
+    from .cloud import CAD_GUIDE_SWAPS, GIS_STEP_LOCAL, GUIDE_CLOUD
+    return sum(old == GIS_STEP_LOCAL for _, old, _, _ in GUIDE_CLOUD) + len(CAD_GUIDE_SWAPS)
+
+
+# the checks that read the committed report themselves: each is counted as passing in _report_counts, since it can
+# pass only when every number traces, these counts included (counting them as they stand in the report would leave a
+# run that adds a check failing for ever: each reads the report of the run before)
+SELF_READING = ("numbers_trace_to_outputs", "numbers_scan_settles")
+
+
+def _report_counts() -> dict:
+    """The committed checks report's counts as the text quotes them: 'in_report' the checks passing in it, 'passing'
+    those and the checks kept in the git-ignored run log only (the names check, which passes in every full run that
+    sets its list), 'total' every check, 'skipped' the skipped ones.  Only the saved checks count (those checks.CHECKS
+    defines, and the run's own repo_untouched), so the probe entry numbers_scan_settles adds to a copy is left out."""
+    from .checks import CHECKS, RUN_LOG_ONLY
+    known = {c[0] for c in CHECKS} | {"repo_untouched"}
+    report = _json(PATH_OVERRIDE.get(SELF_REPORT, SELF_REPORT))
+    rows = [c for c in report["checks"] if c["name"] in known]
+    in_report = sum(1 for c in rows if c["pass"] is True or c["name"] in SELF_READING)
+    skipped = sum(1 for c in rows if c["pass"] is None)
+    return {"in_report": in_report, "passing": in_report + len(RUN_LOG_ONLY), "total": len(rows) + len(RUN_LOG_ONLY),
+            "skipped": skipped}
 
 
 def _check_detail(name: str) -> dict:
@@ -239,8 +276,9 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
         "bomb_limit_mb": (_MD, "shared_strings_bomb_refused", "limit_mb"),
         "bomb_app_s": (_UP, "shared_strings_bomb_refused_in_the_app", "time_bound_s"),
         "allowed": (_EX, "allowed_mentions"), "rewordings": (_EX, "rewordings_caught")}.items()},
-    # task 17 added a requirement line (pyshp) and three guide swaps (the GIS sections), so task 20's journal, which
-    # quotes 11 lines and 4 swaps as they were then, is traced to today's report less what task 17 added
+    # task 17 added a requirement line (pyshp) and three guide swaps (the GIS sections), and task 18 one line (ezdxf)
+    # and two swaps (the CAD sections), so task 20's journal, which quotes 11 lines and 4 swaps as they were then, is
+    # traced to today's report less what tasks 17 and 18 added
     "t20_req_lines": ((SELF_REPORT,), lambda: len([k for k in _cd("requirements_pinned", "pinned")
                                                    if k not in PINS_AFTER_TASK20])),
     "t20_guide_swaps": ((SELF_REPORT,), lambda: _cd(_MD, "guide_swaps") - _guide_swaps_after_task20()),
@@ -256,8 +294,15 @@ DERIVED: dict[str, tuple[tuple[str, ...], callable]] = {
         "pilot_inlet_tap_readings": ("pilot_inlet_residuals", "inlet_tap_readings"),
         "pilot_fitted_with_inlet_tap": ("pilot_inlet_residuals", "samples_in_log", "inlet_tap"),
         "pilot_fitted_without": ("pilot_inlet_residuals", "samples_in_log", "without_inlets")}.items()},
+    # the final verification of task 18: the layer names of part 'final' that are no longer cued as sizes, and those still cued
+    "t18_names_not_cued": ((_C,), lambda: sum(1 for v in _json(_C)["final"]["layer_cues"].values() if not v["cued"])),
+    "t18_names_cued": ((_C,), lambda: sum(1 for v in _json(_C)["final"]["layer_cues"].values() if v["cued"])),
     # task 17's checks, as its journal quotes them
     "t17_net3_flagged": ((SELF_REPORT,), lambda: _cd("get_started_gis_import", "net3_from_wntr_gis_flagged")),
+    # the review of task 18: the saved checks' counts as the README and the journal quote them, from the committed
+    # report, so a stale or failing report fails this check (a review's run had left one that failed repo_untouched)
+    **{f"t18_checks_{k}": ((SELF_REPORT,), (lambda k: lambda: _report_counts()[k])(k))
+       for k in ("in_report", "passing", "total", "skipped")},
     # task 12, low-pH stress, random rule: model (c)'s RMSE over the uniform prior (b)'s at every n
     "ca_lowph_prior_cost": ((_C3,), lambda: _pct_range(
         [_json(_C3)["pooled"]["stress"]["c"]["random"][n]["rmse"] / _json(_C3)["pooled"]["stress"]["b"]["random"][n]["rmse"]
@@ -905,6 +950,155 @@ REGISTRY: list[tuple] = [
     ("README", L15, "the pre-registered bar was met with no miss to spare: {} of 1,156 pipes", (_G, _G6 + ("pipes_rebuilt",)), ",d"),
     ("README", L15, "rebuild {} pipes at the 10 m default and 1,071 at 15 m", (_G, _GK + ("10", "pipes_rebuilt")), ",d"),
     ("README", L15, "pipes at the 10 m default and {} at 15 m", (_G, _GK + ("15", "pipes_rebuilt")), ",d"),
+    # task 18: the CAD importer (its journal's outcome, findings and numbers table, and the README's bullet)
+    ("journal", T18, "the bar is met, with no pipe to spare: {} of 1,156 ky4 pipes", (_C, _C6 + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "with no pipe to spare: 1,151 of {} ky4 pipes", (_C, _C6 + ("of_pipes",)), ",d"),
+    *[(doc, sec, "and {} of the 1,151 rebuilt diameters within 1%", (_C, _C6 + ("diameters_matched",)), ",d")
+      for doc, sec in (("journal", T18), ("README", L15))],
+    ("README", L15, "met with no pipe to spare: {} of 1,156 pipes rebuilt at 6 ft", (_C, _C6 + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "| 1,151 of 1,156 pipes, {} connected part, 1,150 of 1,151", (_C, _C6 + ("components",)), "d"),
+    ("journal", T18, "{} pipes and 962 nodes built from 1,113 lines, 46 cuts", (_C, _C6 + ("pipes_built",)), ",d"),
+    ("journal", T18, "1,159 pipes and {} nodes built from 1,113 lines, 46 cuts", (_C, _C6 + ("nodes",)), ",d"),
+    ("journal", T18, "962 nodes built from {} lines, 46 cuts", (_C, _CF + ("lines",)), ",d"),
+    ("journal", T18, "1,113 lines, {} cuts at a tee, 8 extra pipes", (_C, _C6 + ("tees_split",)), "d"),
+    ("journal", T18, "46 cuts at a tee, {} extra pipes", (_C, _C6 + ("extra_pipes",)), "d"),
+    ("journal", T18, "{} labels, all assigned, 2 to another line", (_C, _CF + ("labels", "assigned")), "d"),
+    ("journal", T18, "P-941's label box overlaps P-943's line ({} ft)", (_C, _CL(0, "distance_ft")), ".3f"),
+    ("journal", T18, "while its own line is {} ft away", (_C, _CL(0, "own_distance_ft")), ".3f"),
+    ("journal", T18, "its longest segment {} ft; P-946's", (_C, _CL(0, "own_longest_segment_ft")), ".1f"),
+    ("journal", T18, "P-946's label sits {} ft from P-9", (_C, _CL(1, "distance_ft")), ".3f"),
+    ("journal", T18, "against {} ft from its own line", (_C, _CL(1, "own_distance_ft")), ".3f"),
+    ("journal", T18, "its longest segment {} ft. A label", (_C, _CL(1, "own_longest_segment_ft")), ".1f"),
+    ("journal", T18, "{} labels were within reach of two lines", (_C, _CF + ("labels", "within_reach_of_two_lines")), "d"),
+    ("journal", T18, "({} pipes from labels, 580 from layer names", (_C, _CF + ("size_counts", "label")), "d"),
+    ("journal", T18, "(577 pipes from labels, {} from layer names", (_C, _CF + ("size_counts", "layer")), "d"),
+    ("journal", T18, "0 along runs, {} at the commonest size", (_C, _CF + ("size_counts", "default")), "d"),
+    ("journal", T18, "(87.8 s for {} characters on this Mac)", (_CTM, ("chars", 2)), ",d"),
+    ("journal", T18, "({} s for 800,000 characters on this Mac)", (_CTM, ("default_reader_codes_A_s", "800000")), ".1f"),
+    ("journal", T18, "one MTEXT of the {} characters a 5 MB upload holds", (_CTM, ("extrapolated_default_reader_s_at_hostile_chars", "chars")), ",d"),
+    ("journal", T18, "would take about {} minutes, an extrapolation", (_CTM, ("extrapolated_default_reader_s_at_hostile_chars", "minutes")), "d"),
+    ("journal", T18, "{} characters of `\\A1;` took 20.7 s", (_CTM, ("chars", 1)), ",d"),
+    ("journal", T18, "characters of `\\A1;` took {} s and 800,000", (_CTM, ("default_reader_codes_A_s", "400000")), ".1f"),
+    ("journal", T18, "and 800,000 took {} s on this Mac, 4.23 times", (_CTM, ("default_reader_codes_A_s", "800000")), ".1f"),
+    ("journal", T18, "on this Mac, {} times as long for twice", (_CTM, ("default_reader_growth", "800000_over_400000")), ".2f"),
+    ("journal", T18, "would take about {} minutes: an extrapolation", (_CTM, ("extrapolated_default_reader_s_at_hostile_chars", "minutes")), "d"),
+    ("journal", T18, "one MTEXT of {} characters, the hostile fixture's", (_CTM, ("extrapolated_default_reader_s_at_hostile_chars", "chars")), ",d"),
+    ("journal", T18, "stacking, height and font codes ({} to 3.33 times)", (_CTM, ("accurate_parser_s", "stack_S", "growth", "800000_over_400000")), ".2f"),
+    ("journal", T18, "stacking, height and font codes (3.12 to {} times)", (_CTM, ("accurate_parser_s", "font_f", "growth", "800000_over_400000")), ".2f"),
+    ("journal", T18, "(1,133 pipes and 7 parts at 3 ft, {} and 1 at 6 ft)", (_C, _CT("ky4", "6") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "({} pipes and 7 parts at 3 ft", (_C, _CT("ky4", "3") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "and at 12 ft {} real pipes collapse", (_C, _CT("ky4", "12") + ("real_pipes_collapsed",)), "d"),
+    ("journal", T18, "rebuilds all {} pipes in one part at 1 ft", (_C, _CT("ky10", "1") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "| {}, 1,135, 1,133, 1,151 and 1,148 pipes", (_C, _CT("ky4", "0.5") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "1,151 and {} pipes at 0.5, 1, 3, 6 and 12 ft", (_C, _CT("ky4", "12") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "| {}, 1,043, 1,042, 1,041 and 1,037 of 1,043 pipes", (_C, _CT("ky10", "0.5") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "1,041 and {} of 1,043 pipes", (_C, _CT("ky10", "12") + ("pipes_rebuilt",)), ",d"),
+    ("journal", T18, "0, 0, 1, 2 and {} collapsed", (_C, _CT("ky10", "12") + ("real_pipes_collapsed",)), "d"),
+    ("journal", T18, "{} same-spot pairs in one node at every distance", (_C, ("tolerance", "ky10_same_spot_pairs", "pairs")), "d"),
+    ("README", L15, "ky10's {} pump and valve node pairs", (_C, ("tolerance", "ky10_same_spot_pairs", "pairs")), "d"),
+    ("journal", T18, "drawn in feet (its median line {} ft) are asked", (_C, ("units", "insunits_mm.dxf", "median_ft")), ".3f"),
+    *[(doc, sec, "its median line is {} ft long", (_C, ("units", "insunits_wrong_nomeasure.dxf", "median_ft")), ",.0f")
+      for doc, sec in (("journal", T18),)],
+    ("README", L15, "a median line of {} ft is", (_C, ("units", "insunits_wrong_nomeasure.dxf", "median_ft")), ",.0f"),
+    ("journal", T18, "| {} of 12 cases", (_C, ("labels", "right")), "d"),
+    ("journal", T18, "| {} of 8 lines found in place", (_C, ("blocks", "block_lines_found_in_place")), "d"),
+    ("journal", T18, "| 8 of {} lines found in place", (_C, ("blocks", "block_lines_expected")), "d"),
+    ("journal", T18, "found in place ({} from blocks: rotated", (_C, ("blocks", "lines_from_blocks")), "d"),
+    ("journal", T18, "All 8 lines of the block fixture ({} from blocks, 1 plain line", (_C, ("blocks", "lines_from_blocks")), "d"),
+    ("journal", T18, "worst error {} ft", (_C, ("blocks", "worst_position_error_ft")), ".1f"),
+    ("journal", T18, "listed apart; {} pipes with them, 6 without", (_C, ("styles", "pipes_with_all")), "d"),
+    ("journal", T18, "8 pipes with them, {} without", (_C, ("styles", "pipes_without_dashed")), "d"),
+    ("journal", T18, "byte for byte, {} pipes |", (_C, ("bak_binary", "ky4_binary.dxf", "pipes")), ",d"),
+    ("journal", T18, "one MTEXT of {} characters of codes", (_C, ("hostile", "sizes", "mtext_codes_chars")), ",d"),
+    ("journal", T18, "blocks that explode to {} lines", (_C, ("hostile", "sizes", "bomb_lines")), ",d"),
+    ("journal", T18, "a MINSERT of {} copies", (_C, ("hostile", "sizes", "minsert_copies")), ",d"),
+    ("journal", T18, "a spline of {} points", (_C, ("hostile", "sizes", "spline_points")), ",d"),
+    *[(doc, sec, "{} of the 1,041 rebuilt", (_C, ("tolerance", "networks", "ky10", "sizes_at_6ft", "diameters_matched")),
+       ",d") for doc, sec in (("journal", T18), ("README", L15))],
+    *[(doc, sec, "diameters are within 1% ({};", (_C, ("tolerance", "networks", "ky10", "sizes_at_6ft", "diameter_share")),
+       ".1%") for doc, sec in (("journal", T18),)],
+    ("README", L15, "rebuilt diameters are right ({})", (_C, ("tolerance", "networks", "ky10", "sizes_at_6ft",
+                                                               "diameter_share")), ".1%"),
+    ("journal", T18, "at 6 ft {} pipes took their size from a label", (_C, ("tolerance", "networks", "ky10", "sizes_at_6ft",
+                                                                           "size_counts", "label")), ",d"),
+    ("journal", T18, "on this task's tree) | {} of 50 files", (_BR, ("runs", "post_task18", "vs_committed", "n_byte_identical")), "d"),
+    ("journal", T18, "on this task's tree) | 50 of 50 files byte-identical; default demo {} of 92", (_BR, ("runs", "post_task18", "app_default_demo", "flagged")), "d"),
+    ("journal", T18, "on this task's tree) | 50 of 50 files byte-identical; default demo 42 of 92 flagged, {} of 36", (_BR, ("runs", "post_task18", "app_default_demo", "found")), "d"),
+    ("journal", T18, "({} of the 1,159 pipes of the R12 drawing)", (_C, _CF + ("c_counts", "default")), "d"),
+    # the review of task 18: the hostile drawings it added, its cases (part 'review'), the check counts and the rerun
+    ("journal", T18, "since the review, {} labels 10,000,000 ft high", (_C, _CH + ("sizes", "tall_labels")), ",d"),
+    ("journal", T18, "2,000 labels {} ft high on 600 lines", (_C, _CH + ("sizes", "tall_label_height_ft")), ",.0f"),
+    ("journal", T18, "ft high on {} lines (not used as labels", (_C, _CH + ("sizes", "tall_label_lines")), "d"),
+    ("journal", T18, "{} labels 100 ft high among 600 lines", (_C, _CH + ("sizes", "crowded_labels")), ",d"),
+    ("journal", T18, "2,000 labels {} ft high among 600 lines", (_C, _CH + ("sizes", "crowded_label_height_ft")), ".0f"),
+    ("journal", T18, "(refused: {} pairs of a label and a segment", (_C, _CH + ("hostile_crowded_labels.dxf", "local", "build", "label_pairs_within_reach")), ",d"),
+    ("journal", T18, "a polyline of {} near-circle bulges", (_C, _CH + ("sizes", "bulge_vertices")), ",d"),
+    ("journal", T18, "(refused for its {} points before", (_C, _CH + ("sizes", "bulge_points")), ",d"),
+    ("journal", T18, "(its median line {} ft read in inches", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "median_ft_read_as_inches")), ".1f"),
+    ("journal", T18, "ft read in inches, {} ft in feet)", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "median_ft_read_as_feet")), ".1f"),
+    ("journal", T18, "and in feet {} of 1,156 pipes", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "in_feet", "pipes_rebuilt")), ",d"),
+    ("journal", T18, "and in feet 1,151 of {} pipes", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "in_feet", "of_pipes")), ",d"),
+    ("journal", T18, "four mains drawn in inches ({} ft read as feet)", (_C, _CRV + ("inches", "inches_true.dxf", "median_ft_read_as_feet")), ",.1f"),
+    ("journal", T18, "or turned off, {} of 19 pipes sized 8 in", (_C, _CRV + ("zone_layers.dxf", "not_sizes", "size_counts", "label")), "d"),
+    ("journal", T18, "{} of 10 and 3 of 3 lines read", (_C, _CRV + ("dup_handles.dxf", "lines")), "d"),
+    ("journal", T18, "10 of 10 and {} of 3 lines read", (_C, _CRV + ("zero_handles.dxf", "lines")), "d"),
+    ("journal", T18, "(ezdxf alone read {}, and refused the other)", (_C, _CRV + ("dup_handles.dxf", "ezdxf_alone_lines")), "d"),
+    ("journal", T18, "the spline-fit curve {} ft long", (_C, _CRV + ("spline_fit_polyline.dxf", "length_read_ft")), ".1f"),
+    ("journal", T18, "ft long, not {} ft through its frame", (_C, _CRV + ("spline_fit_polyline.dxf", "length_with_frame_ft")), ",.1f"),
+    ("journal", T18, "left out at first ({} pipes; 7 with the block read)", (_C, _CRV + ("frozen_layers.dxf", "default", "pipes")), "d"),
+    ("journal", T18, "left out at first (4 pipes; {} with the block read)", (_C, _CRV + ("frozen_layers.dxf", "frozen_blocks", "pipes")), "d"),
+    ("journal", T18, "read to {}, 1,002 and 564 of its 1,113 lines", (_C, _CRV + ("ky4_cut_99.dxf", "lines")), ",d"),
+    ("journal", T18, "read to 1,101, {} and 564 of its 1,113 lines", (_C, _CRV + ("ky4_cut_90.dxf", "lines")), ",d"),
+    ("journal", T18, "read to 1,101, 1,002 and {} of its 1,113 lines", (_C, _CRV + ("ky4_cut_50.dxf", "lines")), ",d"),
+    ("journal", T18, "and with no '0 EOF' all {} (ezdxf alone: none)", (_C, _CRV + ("ky4_no_eof.dxf", "lines")), ",d"),
+    ("journal", T18, "U+2205 labels give 8 and {} in", (_C, _CRV + ("diameter_sign.dxf", "sizes_in", 1)), ".0f"),
+    ("journal", T18, "with both medians ({} and 509.7 ft)", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "median_ft_read_as_inches")), ".1f"),
+    ("journal", T18, "with both medians (42.5 and {} ft)", (_C, _CRV + ("inches", "ky4_inches_declared.dxf", "median_ft_read_as_feet")), ".1f"),
+    ("journal", T18, "whose median read in feet is implausible ({} ft)", (_C, _CRV + ("inches", "inches_true.dxf", "median_ft_read_as_feet")), ",.1f"),
+    ("journal", T18, "({} ft read for a curve of 688.0 ft)", (_C, _CRV + ("spline_fit_polyline.dxf", "length_with_frame_ft")), ",.1f"),
+    ("journal", T18, "ft read for a curve of {} ft)", (_C, _CRV + ("spline_fit_polyline.dxf", "curve_length_ft")), ".1f"),
+    ("journal", T18, "takes C from a material ({} of 1,159)", (_C, ("rebuild", "fixtures", "ky4_r2018_lwpolyline.dxf", "c_counts", "from_material")), "d"),
+    ("journal", T18, "WATER-ZONE-2, SHEET-12 and W-DIST-10 gave {}, 12 and 10 in", (_C, _CRV + ("zone_layers.dxf", "layer_names", "WATER-ZONE-2", "value")), ".0f"),
+    ("journal", T18, "since the review also {} texts", (_C, _CH + ("sizes", "cloud_text_limit")), ",d"),
+    ("journal", T18, "more than {} (2,000,000 in the hosted demo)", (_C, _CH + ("sizes", "local_label_pairs_limit")), ",d"),
+    ("journal", T18, "more than 20,000,000 ({} in the hosted demo)", (_C, _CH + ("sizes", "cloud_label_pairs_limit")), ",d"),
+    ("README", L15, "a drawing over 600 lines or {} texts is refused", (_C, _CH + ("sizes", "cloud_text_limit")), ",d"),
+    *[(doc, sec, words, f"t18_checks_{k}", "d") for doc, sec, words, k in (
+        ("journal", T18, "| {} of 145 pass and 1 is skipped (the external layer's), the twelve", "passing"),
+        ("journal", T18, "| 144 of {} pass and 1 is skipped (the external layer's), the twelve", "total"),
+        ("journal", T18, "| 144 of 145 pass and {} is skipped (the external layer's), the twelve", "skipped"),
+        ("journal", T18, "one more since the review): {} passing in the committed report", "in_report"),
+        ("README", L15, "saved checks after task 18's final verification: {} of 145 passing", "passing"),
+        ("README", L15, "saved checks after task 18's final verification: 144 of {} passing", "total"),
+        ("README", L15, "144 of 145 passing and {} skipped, the external layer's", "skipped"),
+        ("README", L15, "({} passing in `outputs/chem/checks_report.json`, and the names check", "in_report"))],
+    *[("journal", T18, words.replace("{W}", "until the final verification this row said 'on the final tree')"), (_BR, _T18RV + key), "d")
+      for words, key in _REPRO_WORDS],
+    *[("journal", T18, words.replace("{W}", "started after the last edit to any file the reruns or the checks read)"), (_BR, _T18FV + key), "d")
+      for words, key in _REPRO_WORDS],
+    # the final verification of task 18 (part 'final' and the hostile part's new drawings)
+    ("journal", T18, "| one handle of {} hex digits beside 3,000 handles 0", (_C, _CH + ("sizes", "long_handle_hex_digits")), ",d"),
+    ("journal", T18, "hex digits beside {} handles 0 and one 64-bit", (_C, _CH + ("sizes", "zero_handle_lines")), ",d"),
+    ("journal", T18, "64-bit handle at its largest: {} handles renumbered", (_C, _CH + ("hostile_long_handle.dxf", "handles_renumbered")), ",d"),
+    ("journal", T18, "handles renumbered, all {} lines read, the repaired", (_C, _CH + ("hostile_long_handle.dxf", "local", "lines")), ",d"),
+    ("journal", T18, "the repaired file {} times the drawing's size", (_C, _CH + ("hostile_long_handle.dxf", "repaired_over_input")), ".3f"),
+    ("journal", T18, "a polyline of {} vertices at infinity with bulges", (_C, _CH + ("sizes", "inf_bulge_vertices")), ",d"),
+    ("journal", T18, "whose arcs would make {} points: left out", (_C, _CFV + ("inf_polyline", "points_its_arcs_make")), ",d"),
+    ("journal", T18, "flattened, the drawing charged {} points", (_C, _CH + ("hostile_inf_bulges.dxf", "local", "points")), "d"),
+    ("journal", T18, "every bulge charged the points it makes ({} for two infinite", (_C, _CFV + ("bulge_counts", 1, "made")), "d"),
+    ("journal", T18, "| {} layer names no longer cued as sizes", "t18_names_not_cued", "d"),
+    ("journal", T18, "W_8_CL and WATER-ZONE-2), {} still cued", "t18_names_cued", "d"),
+    ("journal", T18, "with a byte order mark {} of 10 lines read", (_C, _CFV + ("bom_dup_handles.dxf", "lines")), "d"),
+    ("journal", T18, "ky4 with no '0 EOF' {} lines, warned as cut short", (_C, _CFV + ("bom_ky4_no_eof.dxf", "lines")), ",d"),
+    ("journal", T18, "handles drawn twice {} of 10 lines (not repaired", (_C, _CFV + ("binary_dup_handles.dxf", "lines")), "d"),
+    ("journal", T18, "{} pairs of a label and a segment, under the local limit", (_C, _CFV + ("label_pairs_near_limit.dxf", "pairs_within_reach")), ",d"),
+    ("journal", T18, "built ({} labels assigned, 1,900 pipes)", (_C, _CFV + ("label_pairs_near_limit.dxf", "assigned")), ",d"),
+    ("journal", T18, "labels assigned, {} pipes), the build adding", (_C, _CFV + ("label_pairs_near_limit.dxf", "pipes")), ",d"),
+    ("journal", T18, "its pipes sized from {} labels and 5 along runs", (_C, _CFV + ("disputed_layer.dxf", "not_sizes", "size_counts", "label")), "d"),
+    ("journal", T18, "sized from 3 labels and {} along runs", (_C, _CFV + ("disputed_layer.dxf", "not_sizes", "size_counts", "propagated")), "d"),
+    ("journal", T18, "repairs to {} times its size", (_C, _CH + ("hostile_long_handle.dxf", "repaired_over_input")), ".3f"),
+    ("journal", T18, "(1,900 polylines, 1,000 labels, {} pairs)", (_C, _CFV + ("label_pairs_near_limit.dxf", "pairs_within_reach")), ",d"),
+    ("journal", T18, "and made {} points before it was dropped", (_C, _CFV + ("inf_polyline", "points_its_arcs_make")), ",d"),
 ]
 
 

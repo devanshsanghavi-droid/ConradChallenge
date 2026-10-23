@@ -273,10 +273,83 @@ def gis_too_big(n_lines: int, n_points: int) -> str | None:
             f"junctions; build a larger layer with the local version, on your own computer.")
 
 
+
+# task 18: a CAD drawing in the hosted demo is read in a process of its own (run_in_folder) with a time limit and
+# tighter limits than the local version's, then held to the GIS step's line and point limits, and to a limit on its
+# texts, before any line is joined; since the review its build (labels, joining, the tolerance table) runs in a process
+# of its own with a time limit too, and measures at most CAD_MAX_LABEL_PAIRS pairs of a label and a line segment
+CAD_MAX_ENTITIES = 100_000              # cloud uploads: entities visited in one drawing, exploded blocks included
+CAD_MAX_POINTS = 10 * MAX_GIS_POINTS    # cloud uploads: line points read from one drawing
+CAD_MAX_INSERT_COPIES = 1_000           # cloud uploads: copies of one block array (MINSERT)
+CAD_MAX_TEXTS = 10 * MAX_GIS_LINES      # cloud uploads: texts on the layer styles chosen (ky4's drawing has 557)
+CAD_MAX_LABEL_PAIRS = 2_000_000         # cloud uploads: (label, line segment) pairs within reach, counted before any
+CAD_READ_TIMEOUT_S = 30                 # cloud uploads: a drawing's read is stopped after this long
+CAD_BUILD_TIMEOUT_S = 30                # cloud uploads: and its build
+
+
+def cad_limits() -> dict:
+    """cad_read.read_drawing's and build_from_drawing's limits for a cloud upload."""
+    return {"max_entities": CAD_MAX_ENTITIES, "max_points": CAD_MAX_POINTS, "max_insert_copies": CAD_MAX_INSERT_COPIES,
+            "max_label_pairs": CAD_MAX_LABEL_PAIRS}
+
+
+def cad_too_big(n_lines: int, n_points: int, n_texts: int = 0) -> str | None:
+    """None when a drawing's lines and texts are within the hosted demo's limits (the GIS step's for lines and
+    points, CAD_MAX_TEXTS for texts), else the plain refusal."""
+    if n_lines <= MAX_GIS_LINES and n_points <= MAX_GIS_POINTS and n_texts <= CAD_MAX_TEXTS:
+        return None
+    return (f"This drawing has {n_lines:,} lines, {n_points:,} points and {n_texts:,} texts on the layer styles chosen. "
+            f"The public demo builds drawings of up to {MAX_GIS_LINES} lines, {MAX_GIS_POINTS:,} points and "
+            f"{CAD_MAX_TEXTS:,} texts, since it runs models of up to {MAX_JUNCTIONS} junctions; leave out the layer "
+            f"styles that are not water mains or their labels, or build the drawing with the local version, on your "
+            f"own computer.")
+
+
+def read_cad_upload(data: bytes, folder: str, name: str, timeout: float | None = None):
+    """cad_read.read_drawing on a cloud upload, with cad_limits, in a process of its own whose working directory is
+    folder (run_in_folder), stopped after CAD_READ_TIMEOUT_S (or timeout).  Returns a cad_read.Drawing; one whose read
+    ran past the time limit, or whose process failed, comes back with a refusal that says so."""
+    from .cad_read import Drawing, read_drawing
+    timeout = CAD_READ_TIMEOUT_S if timeout is None else float(timeout)
+    try:
+        return run_in_folder(folder, read_drawing, data, name, cad_limits(), timeout=timeout)
+    except ChildFailed as e:
+        d = Drawing(name=os.path.basename(name))
+        d.refusal = ((f"Reading this drawing took longer than {timeout:g} s, so it was stopped; nothing was kept."
+                      if e.timed_out else "Reading this drawing stopped before it finished; nothing was kept.")
+                     + " Save a drawing of the water mains alone as DXF, or read it with the local version of "
+                       "ResidualMap, on your own computer.")
+        return d
+
+
+def build_cad_upload(drawing, opts, folder: str, timeout: float | None = None):
+    """cad_read.build_from_drawing on a cloud upload's drawing, with cad_limits, in a process of its own whose working
+    directory is folder (run_in_folder), stopped after CAD_BUILD_TIMEOUT_S (or timeout), so no drawing within the
+    upload limits holds the server's process (the review measured gigabytes there for 600 lines and thousands of labels).
+    Returns a cad_read.CadBuild; one whose build ran past the time limit, or whose process failed, comes back with a
+    refusal that says so."""
+    from .cad_read import CadBuild, build_from_drawing
+    timeout = CAD_BUILD_TIMEOUT_S if timeout is None else float(timeout)
+    try:
+        return run_in_folder(folder, build_from_drawing, drawing, opts, cad_limits(), timeout=timeout)
+    except ChildFailed as e:
+        return CadBuild(name=drawing.name, drawing=drawing,
+                        refusal=(f"Building this drawing took longer than {timeout:g} s, so it was stopped; nothing was "
+                                 f"kept." if e.timed_out else "Building this drawing stopped before it finished; nothing "
+                                 "was kept.") + " Leave out the layer styles that are not water mains or their labels, "
+                                                "or build it with the local version of ResidualMap, on your own computer.")
+
 # task 17: the GIS sections' last paragraph names the Get started page's step 4, which the hosted demo shows only with
 # uploads allowed
 GIS_STEP_LOCAL = "Step 4 of the Get started page builds a skeleton model from the layer:"
 GIS_STEP_CLOUD = "The local version of ResidualMap builds a skeleton model from the layer, on your own computer:"
+# task 18: the CAD sections name step 5 the same way
+CAD_STEP_LOCAL = "Step 5 of the Get started page builds a skeleton model from the DXF:"
+CAD_STEP_CLOUD = "The local version of ResidualMap builds a skeleton model from the DXF, on your own computer:"
+CAD_MSTN_LOCAL = "then use step 5 of the Get started page (previous section)"
+CAD_MSTN_CLOUD = "then the local version of ResidualMap reads it (previous section)"
+CAD_GUIDE_SWAPS = (("AutoCAD or Civil 3D", CAD_STEP_LOCAL, CAD_STEP_CLOUD, True),
+                   ("MicroStation", CAD_MSTN_LOCAL, CAD_MSTN_CLOUD, True))
 # The Get started page's guide (docs/how_to_export_your_model.md) in cloud mode: (section, the local words, the cloud
 # words, only when uploads are off).  The guide stays as it is for the local version; guide_section swaps the words
 # that tell a visitor to upload, or name the repository's folders, and the saved check asserts each one applies.
@@ -297,7 +370,7 @@ GUIDE_CLOUD = (
      'is at. In this public demo, type a few samples into the main page\'s "Grab samples" table instead.', True),
     ("Your grab samples", " (in the repository they are in `docs/templates/`)", "", False),
 ) + tuple((head, GIS_STEP_LOCAL, GIS_STEP_CLOUD, True) for head in ("ArcGIS Pro or ArcGIS Online", "QGIS",
-                                                                    "Google Earth"))
+                                                                    "Google Earth")) + CAD_GUIDE_SWAPS
 
 
 def guide_section(head: str, text: str, cloud: bool, uploads: bool) -> str:

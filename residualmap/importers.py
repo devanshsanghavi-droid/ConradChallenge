@@ -250,8 +250,9 @@ SHP_FILE_CODE = 9994
 _EPANET_EXPORT = ("If a hydraulic model of this system exists, send its EPANET export instead: in WaterCAD or WaterGEMS, "
                   "make the scenario you want active and use File, Export, EPANET, with IDs rather than labels; in "
                   "InfoWater, use its EPANET export; most modelling packages can write an EPANET .inp.")
-_SKELETON_LATER = ("Building a skeleton model from a drawing is planned, not built yet, and even then it carries no "
-                   "demands, tanks, pumps or controls.")
+# task 18: a DXF can be built into a skeleton on the Get started page (until then: "planned, not built yet")
+_SKELETON_CAD = ("Without one, step 5 of the Get started page builds a skeleton model from the drawing: topology and "
+                 "sizes only, with no demands, tanks, pumps or controls until you add them.")
 # task 17: a GIS layer can be built into a skeleton on the Get started page
 _SKELETON_GIS = ("Without one, step 4 of the Get started page builds a skeleton model from the layer: pipes, sizes and "
                  "where they meet, with no demands, tanks, pumps or controls until you add them.")
@@ -273,10 +274,9 @@ KINDS: dict[str, tuple[str, str, str]] = {
     "epanet_bin": ("results", "an EPANET binary results file (.bin)",
                    "It holds the results of a run, not the model. Send the .inp file that produced it."),
     "dxf_ascii": ("drawing", "a CAD drawing (DXF, text)",
-                  "A drawing holds lines, not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_LATER),
+                  "A drawing holds lines, not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_CAD),
     "dxf_binary": ("drawing", "a CAD drawing (binary DXF)",
-                   "A drawing holds lines, not a hydraulic model. Save it again as a text (ASCII) DXF. " + _EPANET_EXPORT
-                   + " " + _SKELETON_LATER),
+                   "A drawing holds lines, not a hydraulic model. " + _EPANET_EXPORT + " " + _SKELETON_CAD),
     "dwg": ("drawing", "an AutoCAD drawing (DWG)",
             "DWG is a closed format that cannot be read here: save it as DXF (AutoCAD: Save As, DXF) or export the water "
             "mains as a GIS layer. " + _EPANET_EXPORT),

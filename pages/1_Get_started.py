@@ -4,8 +4,8 @@ pages/1_Get_started.py: 'Bring your data', the app's second page (iteration 5, t
     streamlit run app.py          # the page is in the sidebar's page list, under the main page
 
 Step 1, 'Which software holds your network?': each package's export steps, read from docs/how_to_export_your_model.md
-(one section per choice, so the guide and the page never disagree).  CAD is marked 'coming' until its reader is built
-(task 18); since task 17 the GIS sections point to step 4.
+(one section per choice, so the guide and the page never disagree).  Since task 17 the GIS sections point to step 4,
+and since task 18 the CAD sections to step 5 (nothing is marked 'coming soon' any more).
 
 Step 2, templates: the grab log (free and total chlorine), the tap map by ID and the plant log, from docs/templates/,
 and the grab log as an Excel workbook written on the fly by openpyxl (nothing binary is committed).
@@ -44,6 +44,25 @@ definitions were read with patterns that took hours on a KMZ of 5 KB, before any
 the coordinates' unit is offered for a layer whose file names a projected system but whose coordinates lie in
 longitude and latitude ranges, and after a refusal as crowded, with the file's own unit first (there was no control to
 change it); and a layer whose latitude and longitude look swapped asks their order.
+
+Iteration 5, task 18 (residualmap/cad_read.py): step 5, 'Build a model from a CAD drawing', takes a DXF (ASCII or
+binary, or a .bak holding one); any other file gets what to send instead (a DWG, a DGN or an IFC file task 15's advice,
+with the ODA File Converter as a link for a DWG; a GIS layer is sent to step 4, a model to the main page).  It lists
+the drawing's layer styles (layer, linetype, colour) with their lines and texts and lets any be left out (those on
+layers that are off or frozen are left out at first), offers the drawing's unit over its insertion units, the joining
+distance and the reach of a label, asks what the drawing does not say, and shows the counts, the sizes by where they
+came from (labels, layer names, runs of pipes, the commonest size), the table at 0.5, 1, 3, 6 and 12 ft, the warnings
+and the readiness report, 'topology and sizes only, needs the operator form'.  'Download the model (.inp)' and 'Open it
+on the main page' work as in step 4.  The drawing is read once per file and kept in this browser session; in cloud
+mode it is read in a process of its own with the hosted demo's limits and a time limit (cloud.read_cad_upload), and a
+drawing over the demo's line and point limits is refused before any line is joined, with nothing written under
+outputs/.  Every widget of step 5 has a key of its own and comes after step 4's, so no earlier widget moves.
+Since task 18's review: in cloud mode the build runs in a process of its own too (cloud.build_cad_upload) and a
+drawing over the demo's text limit is refused before joining; the layer styles of texts only are listed and can be
+left out; a block inserted on a frozen layer gets a control of its own, and layer-name sizes can be turned off;
+numbers in layer names with no unit beside them are asked; the size of every pipe, asked when none can be read, starts
+empty, so nothing is built until it is given; and in cloud mode a model or GIS file over the upload limit no longer
+stops the page before the later steps.
 """
 from __future__ import annotations
 
@@ -62,6 +81,7 @@ APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if APP_ROOT not in sys.path:
     sys.path.insert(0, APP_ROOT)
 
+from residualmap import cad_read as CAD  # noqa: E402
 from residualmap import cloud  # noqa: E402
 from residualmap import gis_read as G  # noqa: E402
 from residualmap import topology as TOPO  # noqa: E402
@@ -100,6 +120,19 @@ AXES_CHOICES = {"(choose the order)": None, "latitude first: swap them": True, "
 NO_FIELD = "(none)"
 FIELD_LABELS = (("diameter", "Pipe size field"), ("material", "Material field"), ("year", "Install year field"),
                 ("length", "Declared length field"), ("id", "Pipe ID field"))
+CAD_HEADER = "Step 5. Build a model from a CAD drawing"           # task 18
+CAD_INTRO = ("A drawing of the water mains from AutoCAD or another CAD program, saved as DXF? The lines are joined where "
+             "their ends meet, their sizes are read from layer names and labels, and a skeleton model is written: "
+             "topology and sizes only, with no source, tank, pump, valve, control, demand or elevation, so it needs the "
+             "operator form (or EPANET) before it can run. A GIS layer of the mains, or a hydraulic model's EPANET "
+             "export, is better if one exists.")
+CAD_LABEL = "CAD drawing of your water mains (DXF)"
+CAD_DIR = os.path.join(APP_ROOT, "outputs", "private", "cad_check")   # git-ignored; emptied after each readiness check
+CAD_CACHE_KEY = "residualmap_cad_drawing"        # the last drawing read in this session: {'sha1', 'drawing'}
+CAD_UNITS = {"feet": "ft", "US survey feet": "us_ft", "metres": "m", "inches": "in", "millimetres": "mm",
+             "centimetres": "cm", "yards": "yd"}
+LAYER_NUMBERS = {"(choose)": None, "not pipe sizes": "none", "sizes in inches": "in", "sizes in millimetres": "mm",
+                 "sizes in metres": "m"}      # the review of task 18: numbers in layer names with no unit beside them
 
 
 def guide_sections(path: str = GUIDE) -> dict[str, str]:
@@ -198,17 +231,19 @@ def gis_readiness(b) -> object:
     return (rep if b.wntr_schema else G.readiness(b, rep)), None
 
 
-def hand_off(b, inp_name: str) -> None:
+def hand_off(b, inp_name: str, source: str | None = None) -> None:
     """Keep the prepared model for the main page (st.session_state, this browser session only) and, in local mode,
-    write it to outputs/app_uploads/ under the main page's own name for it; then open the main page on it."""
+    write it to outputs/app_uploads/ under the main page's own name for it; then open the main page on it.  source:
+    the plain phrase the main page shows (task 18: a CAD drawing's); by default the GIS layer's."""
     data = b.inp_text.encode("utf-8")
     if not CLOUD:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         with open(os.path.join(UPLOAD_DIR, prepared_name(hashlib.sha1(data).hexdigest()[:8], inp_name, True)), "wb") as fh:
             fh.write(data)
-    st.session_state[G.PREPARED_KEY] = {"name": inp_name, "data": data,
-                                        "from": f"the GIS layer {b.layer.name if b.layer else b.name}"
-                                                if not b.wntr_schema else f"the WNTR GIS files {b.name}"}
+    if source is None:
+        source = (f"the GIS layer {b.layer.name if b.layer else b.name}" if not b.wntr_schema else
+                  f"the WNTR GIS files {b.name}")
+    st.session_state[G.PREPARED_KEY] = {"name": inp_name, "data": data, "from": source}
     st.session_state[G.PREPARED_OPEN] = True
     try:
         st.switch_page(MAIN_PAGE)
@@ -368,6 +403,181 @@ def gis_step(data: bytes, name: str) -> None:
         hand_off(b, inp_name)
 
 
+def read_cad(data: bytes, name: str):
+    """The drawing (cad_read.Drawing), read once per file and kept in this browser session: in local mode in this
+    process; in cloud mode in a process of its own, with the hosted demo's limits and a time limit, in a temporary
+    folder under the system's temporary directory (cloud.read_cad_upload)."""
+    h = hashlib.sha1(data).hexdigest()
+    kept = st.session_state.get(CAD_CACHE_KEY)
+    if kept and kept["sha1"] == h:
+        return kept["drawing"]
+    if CLOUD:
+        with cloud.temporary_folder("cad_", CAD_DIR) as d:
+            drawing = cloud.read_cad_upload(data, d, name)
+    else:
+        drawing = CAD.read_drawing(data, name)
+    st.session_state[CAD_CACHE_KEY] = {"sha1": h, "drawing": drawing}
+    return drawing
+
+
+def build_cad(d, opts):
+    """The skeleton (cad_read.CadBuild): in local mode built in this process; in cloud mode in a process of its own,
+    with the hosted demo's limits and a time limit (cloud.build_cad_upload, since task 18's review)."""
+    if CLOUD:
+        with cloud.temporary_folder("cad_", CAD_DIR) as f:
+            return cloud.build_cad_upload(d, opts, f)
+    return CAD.build_from_drawing(d, opts)
+
+
+def cad_readiness(b) -> tuple:
+    """The skeleton's readiness report: importers.prepare_inp on it, in a temporary folder deleted at once (as step 4's
+    gis_readiness), with the drawing's rows first (cad_read.readiness)."""
+    data, name = b.inp_text.encode("utf-8"), f"{TOPO.clean_id(os.path.splitext(b.name)[0] or 'drawing')[0]}.inp"
+    with cloud.temporary_folder("cad_", CAD_DIR) as d:
+        _, rep = (cloud.prepare_upload(data, d, "free_chlorine", name, APP_ROOT) if CLOUD else
+                  prepare_inp(data, d, "free_chlorine", name=name))
+    if CLOUD and cloud.limit_refusal(rep):
+        return None, cloud.limit_refusal(rep)
+    return CAD.readiness(b, rep), None
+
+
+def cad_step(data: bytes, name: str) -> None:
+    """Step 5: a DXF read, its layer styles listed and chosen, its unit, joining distance and label reach offered, its
+    questions asked, its skeleton built and its readiness report shown, with the download and the hand-off; any other
+    file gets what to send instead.  Nothing here raises (cad_read.read_drawing and build_from_drawing never do)."""
+    s = sniff(data, name)
+    if s.kind not in CAD.CAD_KINDS:
+        st.warning(CAD.guidance(s))
+        return
+    d = read_cad(data, name)
+    if d.refusal:
+        st.warning(d.refusal)
+        return
+    tag = hashlib.sha1(data).hexdigest()[:8]
+    st.markdown(f"**The drawing {d.name}** (DXF, {d.counts.get('version_name', d.version)}): {len(d.lines):,} lines "
+                f"and {len(d.texts):,} texts in model space, on {len(d.styles)} layer style"
+                f"{'s' if len(d.styles) != 1 else ''} (layer, linetype and colour).")
+    rows = []
+    for k, v in d.styles.items():
+        sz = CAD.layer_size(k[0])
+        size = (f"{sz['value']:g} {sz['unit'] or ''}".strip() + ("" if sz["cued"] else " (a number: asked)")
+                if sz["value"] is not None else "")
+        frozen = v.get("in_frozen_blocks", 0) and v["in_frozen_blocks"] == v["lines"] + v["texts"]
+        rows.append({"layer": k[0], "linetype": k[1], "colour": k[2], "lines": v["lines"], "texts": v["texts"],
+                     "size in the layer name": size,
+                     "in the drawing": v.get("hidden") or ("in a block on a frozen layer" if frozen else "shown")})
+    st.dataframe(rows, hide_index=True)
+    options = [CAD.style_label(k) for k in d.styles]
+    left = st.multiselect("Layer styles to leave out", options,
+                          default=[CAD.style_label(k) for k in CAD.default_excluded(d)], key=f"cad_exclude_{tag}",
+                          help="Leave out the lines that are not water mains in service: abandoned or proposed mains "
+                               "(often drawn dashed on the mains layer), streets, lot lines; and the texts that are "
+                               "not pipe labels. Styles on layers that are off or frozen in the drawing are left out "
+                               "at first.")
+    opts = CAD.CadOptions(exclude=[k for k in d.styles if CAD.style_label(k) in left], include_hidden=True)
+    if d.counts.get("in_frozen_blocks"):
+        opts.frozen_blocks = st.checkbox("Read the lines inside blocks inserted on frozen layers", False,
+                                         key=f"cad_frozen_blocks_{tag}",
+                                         help="AutoCAD draws nothing of a block inserted on a frozen layer (a proposed "
+                                              "or old drawing attached and frozen, most often), so its lines are left "
+                                              "out unless they are mains in service.")
+    opts.layer_sizes = st.checkbox("Read pipe sizes from layer names", True, key=f"cad_layer_sizes_{tag}",
+                                   help="A size in a layer's name (WATER-8IN, W_8_PVC) sizes every line on it, over "
+                                        "any label. Turn this off when the numbers in the names are not sizes, and "
+                                        "the labels will be used.")
+    if CLOUD:                        # the hosted demo's limit, before any line is joined
+        out = set(opts.exclude)
+        keep = lambda x: (x.layer, x.linetype, x.color) not in out and (x.frozen_block is None or opts.frozen_blocks)
+        kept = [ln for ln in d.lines if keep(ln)]
+        too_big = cloud.cad_too_big(len(kept), sum(len(ln.pts) for ln in kept), sum(1 for tx in d.texts if keep(tx)))
+        if too_big:
+            st.error(too_big)
+            return
+    declared = CAD.INSUNITS.get(d.insunits) if d.insunits is not None else None
+    own = f"as the drawing says ({CAD.UNIT_WORDS[declared]})" if declared else "(choose the unit)"
+    units = {own: None, **CAD_UNITS}
+    u = st.selectbox("Unit of the drawing", list(units), key=f"cad_unit_{tag}",
+                     help="The drawing's insertion units (INSUNITS in AutoCAD) say what one drawing unit is. Lines are "
+                          "joined within a distance, so the unit must be right.")
+    opts.unit = units[u]
+    tol_ft = st.number_input("Join line ends closer than (ft)", 0.1, 200.0, 6.0, 0.5, key=f"cad_tol_{tag}",
+                             help="The table below shows what 0.5, 1, 3, 6 and 12 ft would do.")
+    opts.tolerance_m = tol_ft * TOPO.FT
+    opts.label_radius_h = st.number_input("A label names the nearest line within (text heights)", 0.5, 20.0,
+                                          CAD.LABEL_RADIUS_H, 0.5, key=f"cad_reach_{tag}",
+                                          help="Measured from the line to the label's box, in multiples of the label's "
+                                               "height.")
+    b = build_cad(d, opts)
+    changed = False
+    for q in b.questions:
+        if q["key"] in ("layer_bare_unit", "label_bare_unit"):
+            du = st.selectbox("Unit of the sizes in layer names" if q["key"] == "layer_bare_unit" else
+                              "Unit of the sizes marked with the diameter symbol", list(DIAMETER_UNITS),
+                              key=f"cad_{q['key']}_{tag}", help=q["text"])
+            if DIAMETER_UNITS[du]:
+                setattr(opts, q["key"], DIAMETER_UNITS[du])
+                changed = True
+        elif q["key"] == "layer_numbers":
+            ln_ = st.selectbox("Numbers in layer names", list(LAYER_NUMBERS), key=f"cad_layer_numbers_{tag}",
+                               help=q["text"])
+            if LAYER_NUMBERS[ln_]:
+                opts.layer_numbers = LAYER_NUMBERS[ln_]
+                changed = True
+        elif q["key"] == "default_diameter_in":
+            # empty until the operator answers: the question stays open, nothing is built at a size nobody gave
+            size = st.number_input("Size of every pipe (in)", 1.0, 120.0, None, 1.0, key=f"cad_default_{tag}",
+                                   help=q["text"], placeholder="the size, in inches")
+            if size is not None:
+                opts.default_diameter_in = float(size)
+                changed = True
+        elif q["key"] == "to_scale":
+            ans = st.radio("Is the drawing to scale?", ["not sure", "yes", "no"], horizontal=True,
+                           key=f"cad_to_scale_{tag}", help=q["text"])
+            opts.to_scale = {"yes": True, "no": False}.get(ans)
+            kl = st.text_area("Pipes whose true length you know (optional): one per line, 'pipe ID, length in ft'", "",
+                              key=f"cad_known_lengths_{tag}")
+            opts.known_lengths_ft = _known_lengths(kl)
+            changed = changed or opts.to_scale is not None or bool(opts.known_lengths_ft)
+    if changed:
+        b = build_cad(d, opts)
+    if b.refusal:
+        st.warning(b.refusal)
+        return
+    for n in b.notes:
+        st.caption(n)
+    blocking = b.blocking_questions()
+    if blocking:
+        for q in blocking:
+            st.info(q["text"])
+        return
+    r, sc = b.net.report, b.size_counts
+    st.markdown(f"**Topology and sizes only:** {b.lines_used:,} lines become {r['pipes']:,} pipes and {r['nodes']:,} "
+                f"nodes, ends joined within {b.tolerance_m / TOPO.FT:.1f} ft: {r['components']} connected "
+                f"part{'s' if r['components'] != 1 else ''}, {r['dead_ends']:,} dead ends, {r['tees_split']:,} "
+                f"cut{'s' if r['tees_split'] != 1 else ''} where another line ends on one. Sizes: "
+                f"{sc['label']:,} pipes from labels, {sc['layer']:,} from layer names, {sc['propagated']:,} along runs "
+                f"of pipes, {sc['default']:,} at {CAD.default_words(b)}.")
+    st.dataframe([{"join ends within (ft)": x["tolerance_ft"], "pipes": x["pipes"], "nodes": x["nodes"],
+                   "connected parts": x["components"], "dead ends": x["dead_ends"], "cuts at a tee": x["tees_split"],
+                   "nodes split": x["nodes_split"], "pieces dropped": x["dropped_pieces"]} for x in b.diagnostics],
+                 hide_index=True)
+    for w in b.warnings:
+        st.warning(w)
+    rep, refusal = cad_readiness(b)
+    if refusal:
+        st.error(refusal)
+        return
+    st.markdown(rep.to_markdown())
+    inp_name = f"{TOPO.clean_id(os.path.splitext(os.path.basename(name))[0])[0]}_skeleton.inp"
+    st.download_button("Download the model (.inp)", data=b.inp_text.encode("utf-8"), file_name=inp_name,
+                       mime="text/plain", key="cad_download")
+    if st.button("Open it on the main page", key="cad_hand_off",
+                 help="The main page shows its readiness report; a skeleton stops there until its source, tanks, "
+                      "pumps and demand are added, in EPANET on the downloaded file (the operator form for them here "
+                      "is not built yet)."):
+        hand_off(b, inp_name, f"the CAD drawing {d.name}")
+
+
 st.set_page_config(page_title="ResidualMap: bring your data", layout="wide")
 st.title("Bring your data")
 if CLOUD:      # task 20: the privacy notice at the top of the page
@@ -381,10 +591,9 @@ sections = {k: cloud.guide_section(k, v, CLOUD, UPLOADS) for k, v in guide_secti
 choices = [k for k in sections if k != SAMPLES_SECTION]
 choice = st.radio("Which software holds your network?", choices, index=0)
 st.markdown(sections[choice])
-st.caption("'Coming soon' means the app already recognises this kind of file and says what to export, but cannot read "
-           "it yet. ResidualMap reads EPANET models, and every modelling package above can write one; "
-           + ("step 4 below builds a skeleton model from a GIS layer." if UPLOADS else
-              "the local version of ResidualMap builds a skeleton model from a GIS layer."))
+st.caption("ResidualMap reads EPANET models, and every modelling package above can write one; "
+           + ("steps 4 and 5 below build a skeleton model from a GIS layer or a CAD drawing." if UPLOADS else
+              "the local version of ResidualMap builds a skeleton model from a GIS layer or a CAD drawing."))
 
 # ----------------------------------------------------------------------------- step 2
 st.header("Step 2. Your grab samples: templates")
@@ -414,10 +623,9 @@ st.caption("Give it any file: a model, a drawing, a GIS layer, a grab log, a tap
 species_label = st.radio("Disinfectant", list(DISINFECTANTS), index=0, horizontal=True, key="check_disinfectant")
 up = st.file_uploader("Check a file", type=None, help="any file: it is identified by its content",
                       max_upload_size=cloud.UPLOAD_MB if CLOUD else None)
-if up is not None and CLOUD and cloud.too_big(up.size):      # task 20: the hosted demo's limit
-    st.error(cloud.too_big(up.size))
-    st.stop()
-if up is not None:
+if up is not None and CLOUD and cloud.too_big(up.size):      # task 20: the hosted demo's limit; since task 18's
+    st.error(cloud.too_big(up.size))                         # review the later steps still show (no st.stop)
+elif up is not None:
     data, name, species = up.getvalue(), up.name, DISINFECTANTS[species_label]
     s = sniff(data, name)
     st.subheader("What this file is")
@@ -450,8 +658,17 @@ st.header(GIS_HEADER)
 st.caption(GIS_INTRO)
 gis_up = st.file_uploader("GIS layer of your water mains", type=None, help=GIS_HELP, key="gis_layer",
                           max_upload_size=cloud.UPLOAD_MB if CLOUD else None)
-if gis_up is not None and CLOUD and cloud.too_big(gis_up.size):      # task 20: the hosted demo's limit
-    st.error(cloud.too_big(gis_up.size))
-    st.stop()
-if gis_up is not None:
+if gis_up is not None and CLOUD and cloud.too_big(gis_up.size):      # task 20: the hosted demo's limit (step 5
+    st.error(cloud.too_big(gis_up.size))                             # still shows)
+elif gis_up is not None:
     gis_step(gis_up.getvalue(), gis_up.name)
+
+# ----------------------------------------------------------------------------- step 5 (task 18)
+st.header(CAD_HEADER)
+st.caption(CAD_INTRO)
+cad_up = st.file_uploader(CAD_LABEL, type=None, help=GIS_HELP, key="cad_drawing",
+                          max_upload_size=cloud.UPLOAD_MB if CLOUD else None)
+if cad_up is not None and CLOUD and cloud.too_big(cad_up.size):      # the hosted demo's limit
+    st.error(cloud.too_big(cad_up.size))
+elif cad_up is not None:
+    cad_step(cad_up.getvalue(), cad_up.name)

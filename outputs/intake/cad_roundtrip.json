@@ -1,0 +1,1968 @@
+{
+ "about": "Task 18's CAD importer, converter self-consistency on public models drawn by our own writers (residualmap/fixtures.py), never a test on a real drawing (R6): ky4's mains as an R12 drawing written by hand and read by ezdxf against the pre-registered bar, and as an R2018 drawing ezdxf wrote (part 'rebuild'), the tolerance table in feet on ky4 and ky10 (part 'tolerance'), labels and propagation, blocks and Civil 3D objects, layer styles, units and MTEXT, the backup and binary copies, DWG, DGN and IFC guidance, hostile drawings (part 'hostile'), and since the review of task 18 one drawing for each case it found (part 'review') and since its final verification one for each issue that found (part 'final'). Every CAD-built model is topology and sizes only, and needs the operator form. Written by python -m residualmap.intake_exp cad; the task18 checks in residualmap/checks.py rerun every part and compare.",
+ "rebuild": {
+  "bar": {
+   "tolerance_ft": 6.0,
+   "pipes_at_least": 1151,
+   "of_pipes": 1156,
+   "components": 1,
+   "diameter_share_at_least": 0.99,
+   "fixture": "ky4_r12_handwritten.dxf"
+  },
+  "fixtures": {
+   "ky4_r12_handwritten.dxf": {
+    "reader": "ezdxf (recover mode), on an R12 drawing written by the fixtures' own writer: cross-implementation",
+    "version": "R11 and R12",
+    "lines": 1113,
+    "texts": 557,
+    "unit": "ft",
+    "default_tolerance_ft": 6.0,
+    "score_6ft": {
+     "pipes_rebuilt": 1151,
+     "of_pipes": 1156,
+     "diameters_matched": 1150,
+     "diameter_share": 0.9991311902693311,
+     "extra_pipes": 8,
+     "components": 1,
+     "nodes": 962,
+     "dead_ends": 256,
+     "tees_split": 46,
+     "nodes_flagged_wide": 0,
+     "nodes_split": 0,
+     "dropped_pieces": 1,
+     "pipes_built": 1159,
+     "missed": [
+      "P-1126",
+      "P-152",
+      "P-625",
+      "P-696",
+      "P-9"
+     ],
+     "collapsed": [
+      "P-625",
+      "P-696"
+     ]
+    },
+    "size_counts": {
+     "label": 577,
+     "layer": 580,
+     "propagated": 0,
+     "default": 2,
+     "lines_from_labels": 555,
+     "lines_from_layers": 556
+    },
+    "labels": {
+     "texts": 557,
+     "sizes_read": 557,
+     "assigned": 557,
+     "not_within_reach": 0,
+     "within_reach_of_two_lines": 3,
+     "lines_with_two_sizes": 0,
+     "layer_and_label_disagree": 1,
+     "bare_unit": "mm",
+     "radius_text_heights": 3.0,
+     "not_sizes": {}
+    },
+    "c_counts": {
+     "from_material": 341,
+     "default": 818,
+     "classes": {
+      "cast iron": 61,
+      "concrete or concrete lined": 214,
+      "plastic": 66
+     },
+     "uniform": false
+    },
+    "labels_on_another_line": [
+     {
+      "label_of": "P-941",
+      "text": "8 in",
+      "went_to": "P-943",
+      "distance_ft": 0.0,
+      "own_distance_ft": 4.931,
+      "own_longest_segment_ft": 12.4
+     },
+     {
+      "label_of": "P-946",
+      "text": "\u00d8152",
+      "went_to": "P-9",
+      "distance_ft": 4.049,
+      "own_distance_ft": 4.499,
+      "own_longest_segment_ft": 14.2
+     }
+    ],
+    "default_sized": [
+     {
+      "pipe": "P-946",
+      "piece": 0,
+      "true_in": 6.0,
+      "given_in": 8.0
+     },
+     {
+      "pipe": "P-941",
+      "piece": 0,
+      "true_in": 8.0,
+      "given_in": 8.0
+     }
+    ],
+    "bar_met": true
+   },
+   "ky4_r2018_lwpolyline.dxf": {
+    "reader": "ezdxf, on an R2018 drawing ezdxf wrote: same-library self-consistency",
+    "version": "AutoCAD 2018",
+    "lines": 1113,
+    "texts": 557,
+    "unit": "ft",
+    "default_tolerance_ft": 6.0,
+    "score_6ft": {
+     "pipes_rebuilt": 1151,
+     "of_pipes": 1156,
+     "diameters_matched": 1150,
+     "diameter_share": 0.9991311902693311,
+     "extra_pipes": 8,
+     "components": 1,
+     "nodes": 962,
+     "dead_ends": 256,
+     "tees_split": 46,
+     "nodes_flagged_wide": 0,
+     "nodes_split": 0,
+     "dropped_pieces": 1,
+     "pipes_built": 1159,
+     "missed": [
+      "P-1126",
+      "P-152",
+      "P-625",
+      "P-696",
+      "P-9"
+     ],
+     "collapsed": [
+      "P-625",
+      "P-696"
+     ]
+    },
+    "size_counts": {
+     "label": 577,
+     "layer": 580,
+     "propagated": 0,
+     "default": 2,
+     "lines_from_labels": 555,
+     "lines_from_layers": 556
+    },
+    "labels": {
+     "texts": 557,
+     "sizes_read": 557,
+     "assigned": 557,
+     "not_within_reach": 0,
+     "within_reach_of_two_lines": 3,
+     "lines_with_two_sizes": 0,
+     "layer_and_label_disagree": 1,
+     "bare_unit": "mm",
+     "radius_text_heights": 3.0,
+     "not_sizes": {}
+    },
+    "c_counts": {
+     "from_material": 555,
+     "default": 604,
+     "classes": {
+      "cast iron": 61,
+      "concrete or concrete lined": 285,
+      "plastic": 209
+     },
+     "uniform": false
+    },
+    "labels_on_another_line": [
+     {
+      "label_of": "P-941",
+      "text": "8\" DIP",
+      "went_to": "P-943",
+      "distance_ft": 0.0,
+      "own_distance_ft": 4.931,
+      "own_longest_segment_ft": 12.4
+     },
+     {
+      "label_of": "P-946",
+      "text": "6 in PVC",
+      "went_to": "P-9",
+      "distance_ft": 4.048,
+      "own_distance_ft": 4.499,
+      "own_longest_segment_ft": 14.2
+     }
+    ],
+    "default_sized": [
+     {
+      "pipe": "P-946",
+      "piece": 0,
+      "true_in": 6.0,
+      "given_in": 8.0
+     },
+     {
+      "pipe": "P-941",
+      "piece": 0,
+      "true_in": 8.0,
+      "given_in": 8.0
+     }
+    ],
+    "bar_met": true
+   }
+  },
+  "drawn": {
+   "lines": 1113,
+   "sizes_in_layer_names": 556,
+   "sizes_as_labels": 557,
+   "text_height_ft": 2.0,
+   "label_offsets_heights": [
+    0.5,
+    2.5
+   ]
+  },
+  "bar_met": true
+ },
+ "tolerance": {
+  "feet": [
+   0.5,
+   1.0,
+   3.0,
+   6.0,
+   12.0
+  ],
+  "networks": {
+   "ky4": {
+    "fixture": "ky4_r12_handwritten.dxf",
+    "by_tolerance_ft": {
+     "0.5": {
+      "pipes_rebuilt": 1115,
+      "of_pipes": 1156,
+      "components": 14,
+      "dead_ends": 303,
+      "real_pipes_collapsed": 0,
+      "collapsed": [],
+      "extra_pipes": 50,
+      "pipes_built": 1165,
+      "dropped_pieces": 147,
+      "tees_split": 198
+     },
+     "1": {
+      "pipes_rebuilt": 1135,
+      "of_pipes": 1156,
+      "components": 7,
+      "dead_ends": 276,
+      "real_pipes_collapsed": 0,
+      "collapsed": [],
+      "extra_pipes": 25,
+      "pipes_built": 1160,
+      "dropped_pieces": 0,
+      "tees_split": 47
+     },
+     "3": {
+      "pipes_rebuilt": 1133,
+      "of_pipes": 1156,
+      "components": 7,
+      "dead_ends": 276,
+      "real_pipes_collapsed": 2,
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "extra_pipes": 27,
+      "pipes_built": 1160,
+      "dropped_pieces": 1,
+      "tees_split": 47
+     },
+     "6": {
+      "pipes_rebuilt": 1151,
+      "of_pipes": 1156,
+      "components": 1,
+      "dead_ends": 256,
+      "real_pipes_collapsed": 2,
+      "collapsed": [
+       "P-625",
+       "P-696"
+      ],
+      "extra_pipes": 8,
+      "pipes_built": 1159,
+      "dropped_pieces": 1,
+      "tees_split": 46
+     },
+     "12": {
+      "pipes_rebuilt": 1148,
+      "of_pipes": 1156,
+      "components": 1,
+      "dead_ends": 256,
+      "real_pipes_collapsed": 5,
+      "collapsed": [
+       "P-1125",
+       "P-488",
+       "P-504",
+       "P-625",
+       "P-696"
+      ],
+      "extra_pipes": 8,
+      "pipes_built": 1156,
+      "dropped_pieces": 4,
+      "tees_split": 46
+     }
+    },
+    "sizes_at_6ft": {
+     "size_counts": {
+      "label": 577,
+      "layer": 580,
+      "propagated": 0,
+      "default": 2,
+      "lines_from_labels": 555,
+      "lines_from_layers": 556
+     },
+     "labels": {
+      "texts": 557,
+      "sizes_read": 557,
+      "assigned": 557,
+      "not_within_reach": 0,
+      "within_reach_of_two_lines": 3,
+      "lines_with_two_sizes": 0,
+      "layer_and_label_disagree": 1,
+      "bare_unit": "mm",
+      "radius_text_heights": 3.0,
+      "not_sizes": {}
+     },
+     "diameters_matched": 1150,
+     "diameter_share": 0.9991311902693311
+    }
+   },
+   "ky10": {
+    "fixture": "ky10_r12.dxf",
+    "by_tolerance_ft": {
+     "0.5": {
+      "pipes_rebuilt": 1014,
+      "of_pipes": 1043,
+      "components": 13,
+      "dead_ends": 296,
+      "real_pipes_collapsed": 0,
+      "collapsed": [],
+      "extra_pipes": 37,
+      "pipes_built": 1051,
+      "dropped_pieces": 134,
+      "tees_split": 142
+     },
+     "1": {
+      "pipes_rebuilt": 1043,
+      "of_pipes": 1043,
+      "components": 1,
+      "dead_ends": 257,
+      "real_pipes_collapsed": 0,
+      "collapsed": [],
+      "extra_pipes": 0,
+      "pipes_built": 1043,
+      "dropped_pieces": 0,
+      "tees_split": 0
+     },
+     "3": {
+      "pipes_rebuilt": 1042,
+      "of_pipes": 1043,
+      "components": 1,
+      "dead_ends": 257,
+      "real_pipes_collapsed": 1,
+      "collapsed": [
+       "P-403"
+      ],
+      "extra_pipes": 0,
+      "pipes_built": 1042,
+      "dropped_pieces": 1,
+      "tees_split": 0
+     },
+     "6": {
+      "pipes_rebuilt": 1041,
+      "of_pipes": 1043,
+      "components": 1,
+      "dead_ends": 256,
+      "real_pipes_collapsed": 2,
+      "collapsed": [
+       "P-108",
+       "P-403"
+      ],
+      "extra_pipes": 0,
+      "pipes_built": 1041,
+      "dropped_pieces": 2,
+      "tees_split": 0
+     },
+     "12": {
+      "pipes_rebuilt": 1037,
+      "of_pipes": 1043,
+      "components": 1,
+      "dead_ends": 255,
+      "real_pipes_collapsed": 6,
+      "collapsed": [
+       "P-108",
+       "P-391",
+       "P-397",
+       "P-403",
+       "P-550",
+       "P-924"
+      ],
+      "extra_pipes": 0,
+      "pipes_built": 1037,
+      "dropped_pieces": 8,
+      "tees_split": 2
+     }
+    },
+    "sizes_at_6ft": {
+     "size_counts": {
+      "label": 1030,
+      "layer": 0,
+      "propagated": 4,
+      "default": 7,
+      "lines_from_labels": 1030,
+      "lines_from_layers": 0
+     },
+     "labels": {
+      "texts": 1043,
+      "sizes_read": 1043,
+      "assigned": 1043,
+      "not_within_reach": 0,
+      "within_reach_of_two_lines": 28,
+      "lines_with_two_sizes": 5,
+      "layer_and_label_disagree": 0,
+      "bare_unit": null,
+      "radius_text_heights": 3.0,
+      "not_sizes": {}
+     },
+     "diameters_matched": 1029,
+     "diameter_share": 0.9884726224783862
+    }
+   }
+  },
+  "ky10_same_spot_pairs": {
+   "pairs": 18,
+   "kinds": [
+    "pump",
+    "valve"
+   ],
+   "list": [
+    {
+     "nodes": [
+      "I-Pump-1",
+      "O-Pump-1"
+     ],
+     "link": "pump ~@Pump-1"
+    },
+    {
+     "nodes": [
+      "I-Pump-10",
+      "O-Pump-10"
+     ],
+     "link": "pump ~@Pump-10"
+    },
+    {
+     "nodes": [
+      "I-Pump-11",
+      "O-Pump-11"
+     ],
+     "link": "pump ~@Pump-11"
+    },
+    {
+     "nodes": [
+      "I-Pump-12",
+      "O-Pump-12"
+     ],
+     "link": "pump ~@Pump-12"
+    },
+    {
+     "nodes": [
+      "I-Pump-13",
+      "O-Pump-13"
+     ],
+     "link": "pump ~@Pump-13"
+    },
+    {
+     "nodes": [
+      "I-Pump-2",
+      "O-Pump-2"
+     ],
+     "link": "pump ~@Pump-2"
+    },
+    {
+     "nodes": [
+      "I-Pump-3",
+      "O-Pump-3"
+     ],
+     "link": "pump ~@Pump-3"
+    },
+    {
+     "nodes": [
+      "I-Pump-4",
+      "O-Pump-4"
+     ],
+     "link": "pump ~@Pump-4"
+    },
+    {
+     "nodes": [
+      "I-Pump-5",
+      "O-Pump-5"
+     ],
+     "link": "pump ~@Pump-5"
+    },
+    {
+     "nodes": [
+      "I-Pump-6",
+      "O-Pump-6"
+     ],
+     "link": "pump ~@Pump-6"
+    },
+    {
+     "nodes": [
+      "I-Pump-7",
+      "O-Pump-7"
+     ],
+     "link": "pump ~@Pump-7"
+    },
+    {
+     "nodes": [
+      "I-Pump-8",
+      "O-Pump-8"
+     ],
+     "link": "pump ~@Pump-8"
+    },
+    {
+     "nodes": [
+      "I-Pump-9",
+      "O-Pump-9"
+     ],
+     "link": "pump ~@Pump-9"
+    },
+    {
+     "nodes": [
+      "I-RV-1",
+      "O-RV-1"
+     ],
+     "link": "valve ~@RV-1"
+    },
+    {
+     "nodes": [
+      "I-RV-2",
+      "O-RV-2"
+     ],
+     "link": "valve ~@RV-2"
+    },
+    {
+     "nodes": [
+      "I-RV-3",
+      "O-RV-3"
+     ],
+     "link": "valve ~@RV-3"
+    },
+    {
+     "nodes": [
+      "I-RV-4",
+      "O-RV-4"
+     ],
+     "link": "valve ~@RV-4"
+    },
+    {
+     "nodes": [
+      "I-RV-5",
+      "O-RV-5"
+     ],
+     "link": "valve ~@RV-5"
+    }
+   ],
+   "in_one_node_by_tolerance_ft": {
+    "0.5": 18,
+    "1": 18,
+    "3": 18,
+    "6": 18,
+    "12": 18
+   },
+   "unrecoverable_from_geometry": true
+  }
+ },
+ "labels": {
+  "cases": {
+   "corner_0.5h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 4.0,
+      "want_source": "label",
+      "want_size_in": 4.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "corner_2.5h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 6.0,
+      "want_source": "label",
+      "want_size_in": 6.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "below_2h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 8.0,
+      "want_source": "label",
+      "want_size_in": 8.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "centred_1h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 9.843,
+      "want_source": "label",
+      "want_size_in": 9.843,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "middle_1.5h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 12.0,
+      "want_source": "label",
+      "want_size_in": 12.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "right_2h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 16.0,
+      "want_source": "label",
+      "want_size_in": 16.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "vertical_1h": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 3.0,
+      "want_source": "label",
+      "want_size_in": 3.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "too_far_3.5h": {
+    "lines": [
+     {
+      "source": "default",
+      "size_in": 10.0,
+      "want_source": "default",
+      "want_size_in": 10.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "run_of_three": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 10.0,
+      "want_source": "label",
+      "want_size_in": 10.0,
+      "right": true
+     },
+     {
+      "source": "propagated",
+      "size_in": 10.0,
+      "want_source": "propagated",
+      "want_size_in": 10.0,
+      "right": true
+     },
+     {
+      "source": "propagated",
+      "size_in": 10.0,
+      "want_source": "propagated",
+      "want_size_in": 10.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "stops_at_a_tee": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 12.0,
+      "want_source": "label",
+      "want_size_in": 12.0,
+      "right": true
+     },
+     {
+      "source": "default",
+      "size_in": 10.0,
+      "want_source": "default",
+      "want_size_in": 10.0,
+      "right": true
+     },
+     {
+      "source": "default",
+      "size_in": 10.0,
+      "want_source": "default",
+      "want_size_in": 10.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "nearest_of_two": {
+    "lines": [
+     {
+      "source": "label",
+      "size_in": 6.0,
+      "want_source": "label",
+      "want_size_in": 6.0,
+      "right": true
+     },
+     {
+      "source": "label",
+      "size_in": 8.0,
+      "want_source": "label",
+      "want_size_in": 8.0,
+      "right": true
+     }
+    ],
+    "right": true
+   },
+   "lone_line": {
+    "lines": [
+     {
+      "source": "default",
+      "size_in": 10.0,
+      "want_source": "default",
+      "want_size_in": 10.0,
+      "right": true
+     }
+    ],
+    "right": true
+   }
+  },
+  "right": 12,
+  "of": 12,
+  "size_counts": {
+   "label": 11,
+   "layer": 0,
+   "propagated": 2,
+   "default": 4,
+   "lines_from_labels": 11,
+   "lines_from_layers": 0
+  },
+  "labels": {
+   "texts": 12,
+   "sizes_read": 12,
+   "assigned": 11,
+   "not_within_reach": 1,
+   "within_reach_of_two_lines": 1,
+   "lines_with_two_sizes": 0,
+   "layer_and_label_disagree": 0,
+   "bare_unit": null,
+   "radius_text_heights": 3.0,
+   "not_sizes": {}
+  },
+  "default_size_in": 10.0
+ },
+ "blocks": {
+  "block_lines_expected": 8,
+  "block_lines_found_in_place": 8,
+  "worst_position_error_ft": 0.0,
+  "lines_from_blocks": 7,
+  "inserts_exploded": 3,
+  "xrefs": [
+   "XSITE"
+  ],
+  "xref_warned": true,
+  "civil3d_proxy.dxf": {
+   "refused": true,
+   "aectoacad": true,
+   "objects": 5
+  },
+  "civil3d_proxy_with_lines.dxf": {
+   "pipes": 3,
+   "aectoacad_warned": true
+  }
+ },
+ "styles": {
+  "styles": {
+   "WATER-MAINS / CONTINUOUS / colour 5": {
+    "lines": 6,
+    "texts": 0
+   },
+   "WATER-MAINS / DASHED / colour 8": {
+    "lines": 2,
+    "texts": 0
+   },
+   "WATER-TEXT / Continuous / colour 7": {
+    "lines": 0,
+    "texts": 1
+   }
+  },
+  "dashed_styles": [
+   "WATER-MAINS / DASHED / colour 8"
+  ],
+  "pipes_with_all": 8,
+  "pipes_without_dashed": 6,
+  "lines_left_out": 2
+ },
+ "units": {
+  "insunits_zero.dxf": {
+   "questions": [
+    [
+     "unit",
+     true
+    ]
+   ],
+   "built": false,
+   "unit": null,
+   "insunits": 0,
+   "measurement": null,
+   "median_ft": null,
+   "flagged": true,
+   "built_in_feet": {
+    "pipes": 65,
+    "unit": "ft"
+   }
+  },
+  "insunits_wrong.dxf": {
+   "questions": [
+    [
+     "unit_check",
+     false
+    ],
+    [
+     "to_scale",
+     false
+    ]
+   ],
+   "built": true,
+   "unit": "m",
+   "insunits": 6,
+   "measurement": 0,
+   "median_ft": 1554.366,
+   "flagged": true
+  },
+  "insunits_wrong_nomeasure.dxf": {
+   "questions": [
+    [
+     "to_scale",
+     false
+    ]
+   ],
+   "built": true,
+   "unit": "m",
+   "insunits": 6,
+   "measurement": null,
+   "median_ft": 1554.366,
+   "flagged": false
+  },
+  "insunits_mm.dxf": {
+   "questions": [
+    [
+     "unit",
+     true
+    ]
+   ],
+   "built": false,
+   "unit": null,
+   "insunits": 4,
+   "measurement": 1,
+   "median_ft": 1.554,
+   "flagged": true
+  },
+  "mtext_codes.dxf": {
+   "texts": [
+    "8\" DIP",
+    "6 in PVC",
+    "12\" DIP"
+   ],
+   "sizes": [
+    [
+     [
+      "label",
+      8.0
+     ]
+    ],
+    [
+     [
+      "label",
+      6.0
+     ]
+    ],
+    [
+     [
+      "label",
+      12.0
+     ]
+    ]
+   ],
+   "want": [
+    8.0,
+    6.0,
+    12.0
+   ]
+  }
+ },
+ "bak_binary": {
+  "ky4_r12_handwritten.dxf": {
+   "sniff": "dxf_ascii",
+   "backup": false,
+   "bytes": 598675,
+   "pipes": 1159,
+   "inp_sha1": "0b87d2e0adf00780c6bb4256efa100758b4ae39b"
+  },
+  "ky4_drawing.dxf.bak": {
+   "sniff": "dxf_ascii",
+   "backup": true,
+   "bytes": 598675,
+   "pipes": 1159,
+   "inp_sha1": "0b87d2e0adf00780c6bb4256efa100758b4ae39b"
+  },
+  "ky4_binary.dxf": {
+   "sniff": "dxf_binary",
+   "backup": false,
+   "bytes": 359309,
+   "pipes": 1159,
+   "inp_sha1": "0b87d2e0adf00780c6bb4256efa100758b4ae39b"
+  },
+  "identical": true
+ },
+ "guidance": {
+  "dwg_ac1027.dwg": {
+   "sniff": "dwg",
+   "first_sentence": "This file is an AutoCAD drawing (DWG): AutoCAD 2013 format (AC1027).",
+   "says_dxf": true,
+   "oda_link": true,
+   "rename_to_dwg": false
+  },
+  "drawing.bak": {
+   "sniff": "dwg",
+   "first_sentence": "This file is a backup copy of an AutoCAD drawing (DWG): AutoCAD 2010 format (AC1024).",
+   "says_dxf": true,
+   "oda_link": true,
+   "rename_to_dwg": true
+  },
+  "dgn_v7.dgn": {
+   "sniff": "dgn_v7",
+   "first_sentence": "This file is a MicroStation drawing (DGN V7): 2D.",
+   "says_dxf": true,
+   "oda_link": false,
+   "rename_to_dwg": false
+  },
+  "ole_dgn_v8.dgn": {
+   "sniff": "dgn_v8",
+   "first_sentence": "This file is a MicroStation drawing (DGN V8): an OLE compound file with streams named Dgn~.",
+   "says_dxf": true,
+   "oda_link": false,
+   "rename_to_dwg": false
+  },
+  "plant.ifc": {
+   "sniff": "ifc",
+   "first_sentence": "This file is a BIM model (IFC): schema IFC4.",
+   "says_dxf": false,
+   "oda_link": false,
+   "rename_to_dwg": false
+  }
+ },
+ "hostile": {
+  "sizes": {
+   "mtext_codes_chars": 4800000,
+   "stacked_mtexts": 1000,
+   "stacked_mtext_chars": 1990,
+   "bomb_depth": 9,
+   "bomb_fan": 10,
+   "bomb_lines": 100000000,
+   "minsert_copies": 1000000,
+   "spline_points": 60000,
+   "long_name_chars": 1000000,
+   "upload_limit_bytes": 5000000,
+   "tall_label_lines": 600,
+   "tall_label_points": 30000,
+   "tall_labels": 2000,
+   "tall_label_height_ft": 10000000.0,
+   "crowded_labels": 2000,
+   "crowded_label_height_ft": 100.0,
+   "negative_minsert_depth": 8,
+   "negative_minsert_fan": 10,
+   "negative_minsert_lines": 194871710,
+   "bulge_vertices": 120000,
+   "bulge_points": 8640001,
+   "cloud_text_limit": 6000,
+   "cloud_label_pairs_limit": 2000000,
+   "local_label_pairs_limit": 20000000,
+   "long_handle_hex_digits": 100000,
+   "zero_handle_lines": 3000,
+   "inf_bulge_vertices": 160000,
+   "handle_hex_digits_max": 16
+  },
+  "hostile_mtext_codes.dxf": {
+   "bytes": 4800434,
+   "local": {
+    "lines": 1,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 1
+   },
+   "cloud": {
+    "lines": 1,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 1
+   }
+  },
+  "hostile_stacked_mtext.dxf": {
+   "bytes": 2115195,
+   "local": {
+    "lines": 1,
+    "texts": 1000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 1,
+    "texts": 1000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_block_bomb.dxf": {
+   "bytes": 6007,
+   "local": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 2,000,000 entities once its blocks are exploded, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 100,000 entities once its blocks are exploded, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_minsert.dxf": {
+   "bytes": 664,
+   "local": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [
+     "1 block array (MINSERT) of more than 10,000 copies was not exploded."
+    ],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [
+     "1 block array (MINSERT) of more than 1,000 copies was not exploded."
+    ],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_spline.dxf": {
+   "bytes": 2858395,
+   "local": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [
+     "1 spline with more than 2,000 points was not read."
+    ],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [
+     "1 spline with more than 2,000 points was not read."
+    ],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_long_names.dxf": {
+   "bytes": 2500475,
+   "local": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 2
+   },
+   "cloud": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 2
+   }
+  },
+  "hostile_tall_labels.dxf": {
+   "bytes": 2147221,
+   "local": {
+    "lines": 600,
+    "texts": 2000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "build": {
+     "refused": false,
+     "refusal": "",
+     "pipes": 600,
+     "size_counts": {
+      "label": 0,
+      "layer": 600,
+      "propagated": 0,
+      "default": 0,
+      "lines_from_labels": 0,
+      "lines_from_layers": 600
+     },
+     "labels_too_tall": 2000,
+     "label_pairs_within_reach": null
+    }
+   },
+   "cloud": {
+    "lines": 600,
+    "texts": 2000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "build": {
+     "refused": false,
+     "refusal": "",
+     "pipes": 600,
+     "size_counts": {
+      "label": 0,
+      "layer": 600,
+      "propagated": 0,
+      "default": 0,
+      "lines_from_labels": 0,
+      "lines_from_layers": 600
+     },
+     "labels_too_tall": 2000,
+     "label_pairs_within_reach": null
+    }
+   }
+  },
+  "hostile_crowded_labels.dxf": {
+   "bytes": 2061431,
+   "local": {
+    "lines": 600,
+    "texts": 2000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "build": {
+     "refused": true,
+     "refusal": "The drawing's labels reach too many lines",
+     "pipes": null,
+     "size_counts": {},
+     "labels_too_tall": 0,
+     "label_pairs_within_reach": 52842962
+    }
+   },
+   "cloud": {
+    "lines": 600,
+    "texts": 2000,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "build": {
+     "refused": true,
+     "refusal": "The drawing's labels reach too many lines",
+     "pipes": null,
+     "size_counts": {},
+     "labels_too_tall": 0,
+     "label_pairs_within_reach": 52842962
+    }
+   }
+  },
+  "hostile_negative_minsert.dxf": {
+   "bytes": 6751,
+   "local": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 2,000,000 entities once its blocks are exploded, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 100,000 entities once its blocks are exploded, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_bulges.dxf": {
+   "bytes": 4449188,
+   "local": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 5,000,000 line points, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 0,
+    "texts": 0,
+    "refused": true,
+    "refusal": "The drawing holds more than 300,000 line points, more than this reader takes",
+    "warnings": [],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_long_handle.dxf": {
+   "bytes": 414652,
+   "repaired_bytes": 320385,
+   "handles_renumbered": 3001,
+   "repaired_over_input": 0.773,
+   "local": {
+    "lines": 3002,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0
+   },
+   "cloud": {
+    "lines": 3002,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0
+   }
+  },
+  "hostile_inf_bulges.dxf": {
+   "bytes": 4800563,
+   "local": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "lines_not_finite": 1,
+    "points": 4
+   },
+   "cloud": {
+    "lines": 2,
+    "texts": 0,
+    "refused": false,
+    "refusal": "",
+    "warnings": [],
+    "texts_too_long": 0,
+    "lines_not_finite": 1,
+    "points": 4
+   }
+  }
+ },
+ "review": {
+  "inches": {
+   "ky4_inches_declared.dxf": {
+    "insunits": 1,
+    "questions": [
+     [
+      "unit",
+      true
+     ]
+    ],
+    "built": false,
+    "median_ft_read_as_inches": 42.5,
+    "median_ft_read_as_feet": 509.7,
+    "in_feet": {
+     "pipes_rebuilt": 1151,
+     "of_pipes": 1156,
+     "components": 1,
+     "diameter_share": 0.9991311902693311
+    },
+    "in_inches": {
+     "pipes": 1120,
+     "dropped_pieces": 66,
+     "median_pipe_ft": 43.4
+    }
+   },
+   "inches_true.dxf": {
+    "questions": [
+     [
+      "to_scale",
+      false
+     ]
+    ],
+    "unit": "in",
+    "median_ft": 600.0,
+    "median_ft_read_as_feet": 7200.0,
+    "pipes": 4
+   }
+  },
+  "zone_layers.dxf": {
+   "asked": {
+    "questions": [
+     [
+      "layer_numbers",
+      true
+     ]
+    ],
+    "built": false,
+    "size_counts": {},
+    "sizes_in": [],
+    "labels_win": [],
+    "warned_labels_win": false
+   },
+   "not_sizes": {
+    "questions": [
+     [
+      "to_scale",
+      false
+     ]
+    ],
+    "built": true,
+    "size_counts": {
+     "label": 19,
+     "layer": 0,
+     "propagated": 0,
+     "default": 0,
+     "lines_from_labels": 19,
+     "lines_from_layers": 0
+    },
+    "sizes_in": [
+     8.0
+    ],
+    "labels_win": [],
+    "warned_labels_win": false
+   },
+   "inches": {
+    "questions": [
+     [
+      "to_scale",
+      false
+     ]
+    ],
+    "built": true,
+    "size_counts": {
+     "label": 19,
+     "layer": 0,
+     "propagated": 0,
+     "default": 0,
+     "lines_from_labels": 19,
+     "lines_from_layers": 0
+    },
+    "sizes_in": [
+     8.0
+    ],
+    "labels_win": [
+     "PVC-ZONE-3",
+     "WATER-ZONE-2",
+     "WATER-ZONE-2-PVC",
+     "WATER-ZONE-3"
+    ],
+    "warned_labels_win": true
+   },
+   "layer_names_off": {
+    "questions": [
+     [
+      "to_scale",
+      false
+     ]
+    ],
+    "built": true,
+    "size_counts": {
+     "label": 19,
+     "layer": 0,
+     "propagated": 0,
+     "default": 0,
+     "lines_from_labels": 19,
+     "lines_from_layers": 0
+    },
+    "sizes_in": [
+     8.0
+    ],
+    "labels_win": [],
+    "warned_labels_win": false
+   },
+   "layer_names": {
+    "WATER-ZONE-2": {
+     "value": 2.0,
+     "unit": null,
+     "cued": false
+    },
+    "WATER-PHASE-2": {
+     "value": 2.0,
+     "unit": null,
+     "cued": false
+    },
+    "SHEET-12": {
+     "value": 12.0,
+     "unit": null,
+     "cued": false
+    },
+    "W-DIST-10": {
+     "value": 10.0,
+     "unit": null,
+     "cued": false
+    },
+    "W_8_PVC": {
+     "value": 8.0,
+     "unit": null,
+     "cued": true
+    },
+    "WATER-8IN": {
+     "value": 8.0,
+     "unit": "in",
+     "cued": true
+    },
+    "WTR-200MM": {
+     "value": 200.0,
+     "unit": "mm",
+     "cued": true
+    },
+    "MAINS-8-DIA": {
+     "value": 8.0,
+     "unit": null,
+     "cued": true
+    }
+   }
+  },
+  "latin1_r2018.dxf": {
+   "ezdxf_default_gives_surrogates": true,
+   "layer_names": [
+    "TUBER\ufffdA-8IN"
+   ],
+   "utf8_writable": true,
+   "pipes": 3
+  },
+  "dup_handles.dxf": {
+   "ezdxf_alone_lines": 5,
+   "lines": 10,
+   "refused": false,
+   "handles_renumbered": 5,
+   "pipes": 10,
+   "components": 1,
+   "noted": true
+  },
+  "zero_handles.dxf": {
+   "ezdxf_alone_lines": "ValueError",
+   "lines": 3,
+   "refused": false,
+   "handles_renumbered": 3,
+   "pipes": 3,
+   "components": 1,
+   "noted": true
+  },
+  "spline_fit_polyline.dxf": {
+   "points_read": 11,
+   "length_read_ft": 688.0,
+   "curve_length_ft": 688.0,
+   "length_with_frame_ft": 2136.5
+  },
+  "frozen_layers.dxf": {
+   "hidden_layers": {
+    "OLD-MAINS": "frozen",
+    "OLD-TEXT": "frozen",
+    "XREF-PROPOSED": "frozen"
+   },
+   "default_excluded": [
+    "OLD-TEXT / CONTINUOUS / colour 7",
+    "old-mains / CONTINUOUS / colour 7"
+   ],
+   "in_frozen_blocks": {
+    "XREF-PROPOSED": 3
+   },
+   "default": {
+    "lines_used": 4,
+    "pipes": 4,
+    "size_counts": {
+     "label": 0,
+     "layer": 3,
+     "propagated": 0,
+     "default": 1,
+     "lines_from_labels": 0,
+     "lines_from_layers": 3
+    },
+    "sizes_in": [
+     8.0
+    ],
+    "notes": [
+     "1 line and 1 text on layers that are off or frozen in the drawing are left out",
+     "3 lines and texts inside blocks inserted on frozen layers (XREF-PROPOSED), which AutoCAD does not draw, are left out"
+    ]
+   },
+   "frozen_blocks": {
+    "lines_used": 7,
+    "pipes": 7,
+    "size_counts": {
+     "label": 0,
+     "layer": 6,
+     "propagated": 0,
+     "default": 1,
+     "lines_from_labels": 0,
+     "lines_from_layers": 6
+    },
+    "sizes_in": [
+     8.0,
+     12.0
+    ],
+    "notes": [
+     "1 line and 1 text on layers that are off or frozen in the drawing are left out"
+    ]
+   },
+   "all_hidden": {
+    "lines_used": 5,
+    "pipes": 5,
+    "size_counts": {
+     "label": 1,
+     "layer": 3,
+     "propagated": 1,
+     "default": 0,
+     "lines_from_labels": 1,
+     "lines_from_layers": 3
+    },
+    "sizes_in": [
+     8.0,
+     12.0
+    ],
+    "notes": [
+     "3 lines and texts inside blocks inserted on frozen layers (XREF-PROPOSED), which AutoCAD does not draw, are left out"
+    ]
+   }
+  },
+  "ky4_cut_99.dxf": {
+   "bytes": 592688,
+   "ezdxf_alone_lines": 0,
+   "lines": 1101,
+   "texts": 549,
+   "pipes": 1145,
+   "warned_cut_short": true,
+   "refused": false
+  },
+  "ky4_cut_90.dxf": {
+   "bytes": 538807,
+   "ezdxf_alone_lines": 0,
+   "lines": 1002,
+   "texts": 507,
+   "pipes": 1038,
+   "warned_cut_short": true,
+   "refused": false
+  },
+  "ky4_cut_50.dxf": {
+   "bytes": 299337,
+   "ezdxf_alone_lines": 0,
+   "lines": 564,
+   "texts": 291,
+   "pipes": 581,
+   "warned_cut_short": true,
+   "refused": false
+  },
+  "ky4_no_eof.dxf": {
+   "bytes": 598652,
+   "ezdxf_alone_lines": 0,
+   "lines": 1113,
+   "texts": 557,
+   "pipes": 1159,
+   "warned_cut_short": true,
+   "refused": false
+  },
+  "diameter_sign.dxf": {
+   "labels": [
+    [
+     "\u22058",
+     8.0,
+     true
+    ],
+    [
+     "\u220512",
+     12.0,
+     true
+    ]
+   ],
+   "size_counts": {
+    "label": 2,
+    "layer": 0,
+    "propagated": 0,
+    "default": 0,
+    "lines_from_labels": 2,
+    "lines_from_layers": 0
+   },
+   "sizes_in": [
+    8.0,
+    12.0
+   ]
+  },
+  "c_from_label.dxf": {
+   "size_counts": {
+    "label": 0,
+    "layer": 2,
+    "propagated": 0,
+    "default": 0,
+    "lines_from_labels": 0,
+    "lines_from_layers": 2
+   },
+   "c_counts": {
+    "from_material": 2,
+    "default": 0,
+    "classes": {
+     "cast iron": 2
+    },
+    "uniform": true
+   }
+  },
+  "no_sizes.dxf": {
+   "questions": [
+    [
+     "default_diameter_in",
+     true
+    ]
+   ],
+   "built": false,
+   "given": {
+    "built": true,
+    "default_size": {
+     "size_in": 8.0,
+     "from": "given"
+    },
+    "warned_size_you_gave": true
+   }
+  },
+  "long_label.dxf": {
+   "texts_too_long": 1,
+   "noted": true
+  },
+  "diameters_row": {
+   "layer names only": {
+    "value": "0 pipes from labels (each label to its nearest line), 2 from layer names, 0 along runs of pipes, 0 at the commonest size",
+    "source": "from your file"
+   },
+   "labels only": {
+    "value": "2 pipes from labels (each label to its nearest line), 0 from layer names, 0 along runs of pipes, 0 at the commonest size",
+    "source": "derived"
+   },
+   "the size you gave": {
+    "value": "0 pipes from labels (each label to its nearest line), 0 from layer names, 0 along runs of pipes, 5 at the size you gave",
+    "source": "assumed"
+   }
+  }
+ },
+ "final": {
+  "layer_cues": {
+   "W-MAIN-CL-ZONE-2": {
+    "value": 2.0,
+    "unit": null,
+    "cued": false
+   },
+   "WATER-CL-PHASE-3": {
+    "value": 3.0,
+    "unit": null,
+    "cued": false
+   },
+   "C-WATR-PIPE-CL-2": {
+    "value": 2.0,
+    "unit": null,
+    "cued": false
+   },
+   "WATER-ST-12": {
+    "value": 12.0,
+    "unit": null,
+    "cued": false
+   },
+   "W-PE-SHEET-4": {
+    "value": 4.0,
+    "unit": null,
+    "cued": false
+   },
+   "WATER-ZONE-2-PVC": {
+    "value": 2.0,
+    "unit": null,
+    "cued": false
+   },
+   "PVC-ZONE-3": {
+    "value": 3.0,
+    "unit": null,
+    "cued": false
+   },
+   "W-POLY-ZONE-3": {
+    "value": 3.0,
+    "unit": null,
+    "cued": false
+   },
+   "W-AC-DIST-10": {
+    "value": 10.0,
+    "unit": null,
+    "cued": false
+   },
+   "WS-ZONE-2": {
+    "value": 2.0,
+    "unit": null,
+    "cued": false
+   },
+   "W_8_CL": {
+    "value": 8.0,
+    "unit": null,
+    "cued": false
+   },
+   "WATER-ZONE-2": {
+    "value": 2.0,
+    "unit": null,
+    "cued": false
+   },
+   "W_8_PVC": {
+    "value": 8.0,
+    "unit": null,
+    "cued": true
+   },
+   "PVC-8": {
+    "value": 8.0,
+    "unit": null,
+    "cued": true
+   },
+   "W-8PVC": {
+    "value": 8.0,
+    "unit": null,
+    "cued": true
+   },
+   "W-\u22058": {
+    "value": 8.0,
+    "unit": null,
+    "cued": true
+   },
+   "MAINS-8-DIA": {
+    "value": 8.0,
+    "unit": null,
+    "cued": true
+   },
+   "WATER-8IN": {
+    "value": 8.0,
+    "unit": "in",
+    "cued": true
+   }
+  },
+  "cue_ambiguous": [
+   "cl",
+   "st",
+   "pe",
+   "ac",
+   "ws",
+   "poly"
+  ],
+  "dispute_lines": 2,
+  "disputed_layer.dxf": {
+   "asked": {
+    "questions": [
+     [
+      "layer_numbers",
+      true
+     ]
+    ],
+    "built": false,
+    "size_counts": {},
+    "sizes_in": [],
+    "disputed": [
+     "W-2-PVC"
+    ],
+    "question_names": [
+     "W-2-PVC"
+    ],
+    "warned_stray_label": true
+   },
+   "not_sizes": {
+    "questions": [],
+    "built": true,
+    "size_counts": {
+     "label": 3,
+     "layer": 9,
+     "propagated": 5,
+     "default": 0,
+     "lines_from_labels": 3,
+     "lines_from_layers": 9
+    },
+    "sizes_in": [
+     8.0
+    ],
+    "disputed": [
+     "W-2-PVC"
+    ],
+    "question_names": [],
+    "warned_stray_label": true
+   },
+   "inches": {
+    "questions": [],
+    "built": true,
+    "size_counts": {
+     "label": 0,
+     "layer": 17,
+     "propagated": 0,
+     "default": 0,
+     "lines_from_labels": 0,
+     "lines_from_layers": 17
+    },
+    "sizes_in": [
+     2.0,
+     8.0
+    ],
+    "disputed": [
+     "W-2-PVC"
+    ],
+    "question_names": [],
+    "warned_stray_label": true
+   }
+  },
+  "bom_dup_handles.dxf": {
+   "starts_with_bom": true,
+   "same_as": "dup_handles.dxf",
+   "lines": 10,
+   "ezdxf_alone_lines": 5,
+   "handles_renumbered": 5,
+   "cut_short": false,
+   "refused": false,
+   "warned_cut_short": false
+  },
+  "bom_ky4_no_eof.dxf": {
+   "starts_with_bom": true,
+   "same_as": "ky4_no_eof.dxf",
+   "lines": 1113,
+   "ezdxf_alone_lines": 0,
+   "handles_renumbered": 0,
+   "cut_short": true,
+   "refused": false,
+   "warned_cut_short": true
+  },
+  "binary_dup_handles.dxf": {
+   "kind": "dxf_binary",
+   "lines": 5,
+   "of_lines": 10,
+   "audit_removed": 5,
+   "handles_renumbered": 0,
+   "warned": true
+  },
+  "bulge_counts": [
+   {
+    "vertices": [
+     [
+      "0.0",
+      "0.0",
+      1.0
+     ],
+     [
+      "10.0",
+      "0.0",
+      0.0
+     ]
+    ],
+    "counted": 37,
+    "made": 37
+   },
+   {
+    "vertices": [
+     [
+      "inf",
+      "inf",
+      1.0
+     ],
+     [
+      "inf",
+      "inf",
+      0.0
+     ]
+    ],
+    "counted": 37,
+    "made": 37
+   },
+   {
+    "vertices": [
+     [
+      "inf",
+      "0.0",
+      1.0
+     ],
+     [
+      "inf",
+      "0.0",
+      0.0
+     ]
+    ],
+    "counted": 37,
+    "made": 37
+   },
+   {
+    "vertices": [
+     [
+      "5.0",
+      "5.0",
+      1.0
+     ],
+     [
+      "5.0",
+      "5.0",
+      0.0
+     ]
+    ],
+    "counted": 2,
+    "made": 2
+   }
+  ],
+  "inf_polyline": {
+   "vertices": 160000,
+   "points_its_arcs_make": 5759965
+  },
+  "label_pairs_near_limit.dxf": {
+   "lines": 1900,
+   "texts": 1000,
+   "pairs_within_reach": 18910690,
+   "under_local_limit": true,
+   "refused": false,
+   "pipes": 1900,
+   "assigned": 1000,
+   "size_counts": {
+    "label": 471,
+    "layer": 0,
+    "propagated": 529,
+    "default": 900,
+    "lines_from_labels": 471,
+    "lines_from_layers": 0
+   }
+  }
+ }
+}

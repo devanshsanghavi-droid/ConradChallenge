@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 131,
+ "n_pass": 143,
  "n_fail": 0,
  "n_skipped": 1,
  "run_log_only": {
@@ -1306,36 +1306,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 595,
+    "registry_ok": 738,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 2075,
+     "code or path": 2189,
      "date": 78,
-     "identifier": 757,
+     "identifier": 804,
      "link target": 12,
-     "run cost (logs, df)": 7,
+     "run cost (logs, df)": 9,
      "seed range": 20,
-     "setting or literature value written in the code": 21,
-     "time of day": 129
+     "setting or literature value written in the code": 22,
+     "time of day": 130
     },
     "traced": {
-     "iteration-4 outputs": 273,
-     "file cited in its section": 3788,
-     "file cited in its paragraph": 5411,
-     "outputs": 10,
-     "iteration-5 outputs": 12
+     "iteration-4 outputs": 293,
+     "file cited in its section": 3999,
+     "file cited in its paragraph": 5688,
+     "outputs": 8,
+     "iteration-5 outputs": 15
     },
-    "n_tokens": 9523,
+    "n_tokens": 10035,
     "power_caught_of_tested": {
      "decimal": [
-      1196,
-      9184
+      1253,
+      9298
      ],
      "integer": [
-      1446,
-      8739
+      1713,
+      9563
      ]
     }
    }
@@ -1345,7 +1345,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 52,
+    "iteration4_texts_checked": 56,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -2135,7 +2135,7 @@
    "pass": true,
    "detail": {
     "software_choices": 12,
-    "coming": 2,
+    "coming": 0,
     "template_downloads": 5,
     "templates_parse": [
      "grab_log_template.csv",
@@ -2398,7 +2398,7 @@
      "cloud": []
     },
     "nominal_run_same_results": true,
-    "guide_swaps": 7,
+    "guide_swaps": 9,
     "limits_before_parsing": {
      "grid180.inp": {
       "bytes": 3744579,
@@ -2471,7 +2471,7 @@
    "group": "task20",
    "pass": true,
    "detail": {
-    "lines": 12,
+    "lines": 13,
     "pinned": {
      "wntr": "1.5.0",
      "scikit-learn": "1.9.1",
@@ -2484,7 +2484,8 @@
      "pypdf": "6.19.0",
      "openpyxl": "3.1.5",
      "et-xmlfile": "2.0.0",
-     "pyshp": "3.1.6"
+     "pyshp": "3.1.6",
+     "ezdxf": "1.4.4"
     }
    }
   },
@@ -3118,7 +3119,8 @@
    "detail": {
     "page_uploaders": [
      "Check a file",
-     "GIS layer of your water mains"
+     "GIS layer of your water mains",
+     "CAD drawing of your water mains (DXF)"
     ],
     "downloads_before_a_file": 5,
     "skeleton_handed_off": "valves_normal_pos_skeleton.inp",
@@ -3143,6 +3145,236 @@
     "lonlat_under_a_state_plane_prj_unit_offered": true,
     "swapped_axes_asked_and_built": true,
     "cloud_kmz_of_4p9_mb_spaces_built_within_s": 30.0
+   }
+  },
+  {
+   "name": "dxf_rebuilds_network",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "ky4_r12_handwritten.dxf": {
+     "pipes_rebuilt": 1151,
+     "components": 1,
+     "diameter_share": 0.9991311902693311,
+     "extra_pipes": 8,
+     "size_counts": {
+      "label": 577,
+      "layer": 580,
+      "propagated": 0,
+      "default": 2,
+      "lines_from_labels": 555,
+      "lines_from_layers": 556
+     }
+    },
+    "ky4_r2018_lwpolyline.dxf": {
+     "pipes_rebuilt": 1151,
+     "components": 1,
+     "diameter_share": 0.9991311902693311,
+     "extra_pipes": 8,
+     "size_counts": {
+      "label": 577,
+      "layer": 580,
+      "propagated": 0,
+      "default": 2,
+      "lines_from_labels": 555,
+      "lines_from_layers": 556
+     }
+    }
+   }
+  },
+  {
+   "name": "dxf_tolerance_table_feet",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "ky4": {
+     "0.5": [
+      1115,
+      14,
+      0
+     ],
+     "1": [
+      1135,
+      7,
+      0
+     ],
+     "3": [
+      1133,
+      7,
+      2
+     ],
+     "6": [
+      1151,
+      1,
+      2
+     ],
+     "12": [
+      1148,
+      1,
+      5
+     ]
+    },
+    "ky10": {
+     "0.5": [
+      1014,
+      13,
+      0
+     ],
+     "1": [
+      1043,
+      1,
+      0
+     ],
+     "3": [
+      1042,
+      1,
+      1
+     ],
+     "6": [
+      1041,
+      1,
+      2
+     ],
+     "12": [
+      1037,
+      1,
+      6
+     ]
+    }
+   }
+  },
+  {
+   "name": "dxf_labels_and_propagation",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "cases_right": 12,
+    "size_counts": {
+     "label": 11,
+     "layer": 0,
+     "propagated": 2,
+     "default": 4,
+     "lines_from_labels": 11,
+     "lines_from_layers": 0
+    }
+   }
+  },
+  {
+   "name": "dxf_blocks_and_proxies",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "block_lines_found": 8,
+    "civil3d_refused_with_aectoacad": true
+   }
+  },
+  {
+   "name": "dxf_layer_style_listing",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "styles": 3,
+    "pipes_with_all": 8,
+    "pipes_without_dashed": 6
+   }
+  },
+  {
+   "name": "dxf_units_and_mtext",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "unitless_asked": true,
+    "metres_on_imperial_flagged": true,
+    "metres_without_measurement_flagged": false,
+    "millimetres_asked": true,
+    "mtext_sizes": [
+     8.0,
+     6.0,
+     12.0
+    ]
+   }
+  },
+  {
+   "name": "dxf_bak_and_binary",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "identical": true,
+    "pipes": 1159
+   }
+  },
+  {
+   "name": "dwg_dgn_ifc_get_guidance",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "dwg_ac1027.dwg": "dwg",
+    "drawing.bak": "dwg",
+    "dgn_v7.dgn": "dgn_v7",
+    "ole_dgn_v8.dgn": "dgn_v8",
+    "plant.ifc": "ifc"
+   }
+  },
+  {
+   "name": "cad_reads_in_linear_time",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "time_bound_s": 5.0,
+    "reads_timed": 24,
+    "child_bomb_refused": true,
+    "child_time_limit_leaves_nothing": true,
+    "child_build_time_limit_leaves_nothing": true
+   }
+  },
+  {
+   "name": "dxf_review_cases",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "cases": 16,
+    "inches_on_feet_asked": true,
+    "zone_numbers_asked": true,
+    "handles_renumbered": true,
+    "cut_short_read": true
+   }
+  },
+  {
+   "name": "dxf_final_verification",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "names_not_cued": 12,
+    "disputed_number_asked": true,
+    "bom_repaired": true,
+    "binary_not_repaired": true,
+    "near_limit_pairs": 18910690,
+    "near_limit_growth_bound_gb": 0.8,
+    "near_limit_within_bound": true
+   }
+  },
+  {
+   "name": "get_started_cad_import",
+   "group": "task18",
+   "pass": true,
+   "detail": {
+    "page_uploaders": [
+     "Check a file",
+     "GIS layer of your water mains",
+     "CAD drawing of your water mains (DXF)"
+    ],
+    "skeleton_handed_off": "ky4_r12_handwritten_skeleton.inp",
+    "main_options_with_prepared": [
+     "Example network",
+     "Upload my .inp",
+     "Model prepared on Get started"
+    ],
+    "skeleton_stops_at_readiness": true,
+    "upload_copies_left_by_the_main_page": [],
+    "cloud_files_under_outputs": 0,
+    "cloud_drawing_over_the_limit_refused": true,
+    "cloud_block_bomb_refused_within_s": 30.0,
+    "cloud_no_uploads_uploaders": 0
    }
   },
   {

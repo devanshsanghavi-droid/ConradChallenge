@@ -2502,7 +2502,9 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "docs/deploy_streamlit_cloud.md", "docs/privacy.md", "requirements.txt",
              "docs/templates/inlet_residuals_template.csv",                                         # task 16c
              "outputs/intake/zone_extract_Net3.json",     # its review: the names check covers it before it is committed
-             "residualmap/gis_read.py", "residualmap/topology.py", "outputs/intake/gis_roundtrip.json")   # task 17
+             "residualmap/gis_read.py", "residualmap/topology.py", "outputs/intake/gis_roundtrip.json",   # task 17
+             "residualmap/cad_read.py", "outputs/intake/cad_roundtrip.json",                              # task 18
+             "outputs/intake/cad_mtext_timing.json")                                                # its review
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -4550,8 +4552,8 @@ print("PAGE_JSON " + json.dumps(res))
 @check("task16", quick=False)
 def get_started_page_runs():
     """Headless AppTest of pages/1_Get_started.py (PYTHONPATH set): every software choice of step 1 renders its own
-    section of docs/how_to_export_your_model.md (12 choices; the CAD ones marked 'coming', and since task 17 not the
-    GIS ones, whose reader is built); step 2 has one
+    section of docs/how_to_export_your_model.md (12 choices; none marked 'coming' since task 18: the GIS sections lost
+    it with task 17's reader, the CAD ones with task 18's); step 2 has one
     download button per template (the four CSVs and the Excel grab log, written on the fly by openpyxl); every template
     parses (the grab logs with load_log and the tap map template, the tap map as load_log's tap map, the plant log with
     load_plant, the workbook through the same reader: part 'templates' of the committed record); step 3, 'Check a
@@ -4592,8 +4594,9 @@ def get_started_page_runs():
     assert list(choices) == [s for s in sections if s != "Your grab samples"] and len(choices) == 12, list(choices)
     assert len(set(choices.values())) == len(choices), "two choices show the same steps"
     coming = [c for c in choices if "coming" in c]
-    # task 17: the GIS sections (ArcGIS, QGIS, Google Earth) are read now, so only the CAD ones are 'coming'
-    assert len(coming) == 2 and all(any(w in c for w in ("AutoCAD", "MicroStation")) for c in coming), coming
+    # task 17: the GIS sections (ArcGIS, QGIS, Google Earth) are read now; task 18: the CAD ones (AutoCAD, MicroStation)
+    # too, so none is 'coming'
+    assert not coming, coming
     assert len(res["downloads"]) == 5, res["downloads"]
     xlsx = [f for f in res["files"] if f and f.endswith(".xlsx")]
     assert xlsx and sorted(f for f in res["files"] if f) == sorted(
@@ -5773,8 +5776,10 @@ def cloud_mode_uploads_leave_no_files():
     assert k4["errors"] == [C.too_many_junctions(959)] and k4["flagged"] is None, k4["errors"]
     assert big["errors"] == [C.too_big(5_000_009)] and big["flagged"] is None, big["errors"]
     pg = res["page"]
-    # task 17: with uploads allowed, the page's step 4 adds its GIS uploader after 'Check a file', with the same limit
-    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains"] and pg["readiness"], pg
+    # task 17: with uploads allowed, the page's step 4 adds its GIS uploader after 'Check a file', with the same limit;
+    # task 18: step 5 its CAD uploader after that
+    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains",
+                               "CAD drawing of your water mains (DXF)"] and pg["readiness"], pg
     assert pg["info"][:1] == [C.notice(True)], pg
     from . import fixtures as FX
     gz, pz = res["grid180_zip"], res["padded_zip"]
@@ -5782,7 +5787,7 @@ def cloud_mode_uploads_leave_no_files():
     assert gz["seconds"] < CLOUD_LIMIT_APP_S and C.too_big(gz["bytes"]) is None, gz["seconds"]
     unpacked = len(FX.cloud_grid_inp(180, pad_bytes=5_000_000))
     assert pz["errors"] == [C.too_big(unpacked, unpacked=True)] and C.too_big(pz["bytes"]) is None, pz["errors"]
-    assert res["model_uploader_mb"] == [C.UPLOAD_MB] and res["page_uploader_mb"] == [C.UPLOAD_MB] * 2, (
+    assert res["model_uploader_mb"] == [C.UPLOAD_MB] and res["page_uploader_mb"] == [C.UPLOAD_MB] * 3, (
         res["model_uploader_mb"], res["page_uploader_mb"])
     assert res["log_uploaders"] == [["Grab log (CSV or Excel)", C.UPLOAD_MB], ["Tap map (CSV)", C.UPLOAD_MB]]
     for k in ("big_log", "big_tap_map"):
@@ -7004,7 +7009,8 @@ def get_started_gis_import():
                               or "bad_vertices" in f or "lonlat_no_prj" in f, "GIS_PAGE_JSON")
     from .gis_read import NOT_READY, PREPARED_OPTION
     pg = res["page"]
-    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains"] and len(pg["downloads"]) == 5, pg
+    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains",       # task 18: step 5's after step 4's
+                               "CAD drawing of your water mains (DXF)"] and len(pg["downloads"]) == 5, pg
     assert "Step 4. Build a model from a GIS layer" in pg["headers"], pg["headers"]
     v = res["valves"]
     assert any(m.startswith("**The layer valves_normal_pos:** 4 lines become 4 pipes and 5 nodes") for m in v["markdown"]), v["markdown"]
@@ -7076,6 +7082,598 @@ def get_started_gis_import():
             "bad_vertices_page_pipes": 24, "lonlat_page_pipes_in_degrees": 1740, "cloud_layer_over_the_limit_refused": True,
             "lonlat_under_a_state_plane_prj_unit_offered": True, "swapped_axes_asked_and_built": True,
             "cloud_kmz_of_4p9_mb_spaces_built_within_s": CLOUD_PAGE_LIMIT_S}
+
+
+# ----------------------------------------------------------------------------- iteration 5, task 18: the CAD importer
+INTAKE_RECORD_18 = os.path.join(REPO, "outputs", "intake", "cad_roundtrip.json")
+
+
+def _record_18(part: str) -> dict:
+    """One part of the committed task-18 record (python -m residualmap.intake_exp cad)."""
+    with open(INTAKE_RECORD_18) as fh:
+        return json.load(fh)[part]
+
+
+def _same_as_18(got: dict, part: str) -> dict:
+    want = _record_18(part)
+    diff = _json_diff(json.loads(json.dumps(_jsonable(got))), want)
+    assert not diff, (part, diff[:10])
+    return want
+
+
+@contextlib.contextmanager
+def _cad_fixtures(names=None):
+    """The task-18 fixtures built into a temporary folder."""
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t18_") as d:
+        yield FX.build_all(os.path.join(d, "fx"), names or FX.CAD_FIXTURES)
+
+
+@check("task18", quick=False)
+def dxf_rebuilds_network():
+    """The pre-registered bar (plan task 18): ky4's 1,156 pipes drawn as task 17's mains layer (43 runs through tees,
+    19 undershoots of 4 ft, every end moved by up to 0.3 ft) in an R12 DXF written by the fixtures' own writer and
+    read by ezdxf (cross-implementation), half the sizes in layer names (WATER-8IN, W_8_PVC, WTR-200MM) and half as
+    TEXT labels 2 ft high whose box is 0.5 to 2.5 heights off the line, rebuilt at the 6 ft default and scored by
+    endpoint-pair identity with task 17's rule: at least 1,151 pipes, one connected part and 99% of diameters.  The same
+    drawing as an R2018 DXF with LWPOLYLINEs and MTEXT labels, which ezdxf wrote, is reported (same-library
+    self-consistency).  Equal to the committed record (part 'rebuild')."""
+    from . import intake_exp as E
+    with _cad_fixtures(E.CAD_SCORED) as paths:
+        got = E.part_cad_rebuild(paths)
+    _same_as_18(got, "rebuild")
+    bar = E.CAD_BAR
+    s = got["fixtures"][bar["fixture"]]["score_6ft"]
+    assert s["of_pipes"] == bar["of_pipes"] and s["pipes_rebuilt"] >= bar["pipes_at_least"], s
+    assert s["components"] == bar["components"] and s["diameter_share"] >= bar["diameter_share_at_least"], s
+    assert got["bar_met"] and got["fixtures"][bar["fixture"]]["unit"] == "ft"
+    dr = got["drawn"]
+    assert dr["sizes_in_layer_names"] + dr["sizes_as_labels"] == dr["lines"] == 1113, dr
+    return {n: {k: v["score_6ft"][k] for k in ("pipes_rebuilt", "components", "diameter_share", "extra_pipes")}
+            | {"size_counts": v["size_counts"]} for n, v in got["fixtures"].items()}
+
+
+@check("task18", quick=False)
+def dxf_tolerance_table_feet():
+    """The tolerance table in feet (critique 3c) on ky4's drawing and on ky10's (each pipe a POLYLINE, ends moved by up
+    to 0.3 ft, sizes as labels): pipes rebuilt, connected parts, dead ends and real pipes collapsed at 0.5, 1, 3, 6 and
+    12 ft, recorded, no bar.  ky10's 18 node pairs drawn at one spot (the two ends of its pumps and valves) fall into one
+    node at every distance: unrecoverable from a drawing of pipes.  Equal to the committed record (part
+    'tolerance')."""
+    from . import intake_exp as E
+    with _cad_fixtures(["ky4_r12_handwritten.dxf", "ky10_r12.dxf"]) as paths:
+        got = E.part_cad_tolerance(paths)
+    _same_as_18(got, "tolerance")
+    assert got["feet"] == [0.5, 1.0, 3.0, 6.0, 12.0]
+    for net in ("ky4", "ky10"):
+        assert list(got["networks"][net]["by_tolerance_ft"]) == ["0.5", "1", "3", "6", "12"], net
+    sp = got["ky10_same_spot_pairs"]
+    assert sp["pairs"] == 18 and all(v == 18 for v in sp["in_one_node_by_tolerance_ft"].values()), sp
+    return {net: {ft: (r["pipes_rebuilt"], r["components"], r["real_pipes_collapsed"])
+                  for ft, r in v["by_tolerance_ft"].items()} for net, v in got["networks"].items()}
+
+
+@check("task18")
+def dxf_labels_and_propagation():
+    """labels_offset_cases.dxf: a TEXT label whose box is 0.5 to 2.5 heights off its line, in four alignments (its
+    insertion point the box's corner, centred, middle, right) and on a vertical line, names that line; one 3.5 heights
+    off names none; between two lines the nearer takes it (counted as within reach of two); a run of three lines
+    joined end to end takes the one label along the run; propagation stops at a tee; a lone line gets the commonest
+    size.  Every line's size and source as the fixture says.  Equal to the committed record (part 'labels')."""
+    from . import intake_exp as E
+    with _cad_fixtures(["labels_offset_cases.dxf"]) as paths:
+        got = E.part_cad_labels(paths)
+    _same_as_18(got, "labels")
+    assert got["right"] == got["of"] == 12, {k: v for k, v in got["cases"].items() if not v["right"]}
+    sc = got["size_counts"]
+    assert (sc["label"], sc["propagated"], sc["default"]) == (11, 2, 4), sc
+    assert got["labels"]["not_within_reach"] == 1 and got["labels"]["within_reach_of_two_lines"] == 1, got["labels"]
+    return {"cases_right": got["right"], "size_counts": sc}
+
+
+@check("task18")
+def dxf_blocks_and_proxies():
+    """xref_block_mains.dxf: mains inside an INSERT (rotated 30 degrees, scaled 2), a block nested in it and a 2 by 2
+    block array are found where AutoCAD draws them (every point within 1e-6 ft of the fixtures' own transform), on
+    the layer AutoCAD shows them on (layer 0 inside a block takes the INSERT's), with the size from that layer's name;
+    the external xref is named in a warning, not read.  civil3d_proxy.dxf (proxy entities and AECC objects only) is
+    refused with the AECTOACAD message; beside plain lines it is built and warned.  Equal to the committed record
+    (part 'blocks')."""
+    from . import intake_exp as E
+    with _cad_fixtures(["xref_block_mains.dxf", "civil3d_proxy.dxf", "civil3d_proxy_with_lines.dxf"]) as paths:
+        got = E.part_cad_blocks(paths)
+    _same_as_18(got, "blocks")
+    assert got["block_lines_found_in_place"] == got["block_lines_expected"] == 8, got
+    assert got["worst_position_error_ft"] <= 1e-6 and got["xref_warned"] and got["xrefs"] == ["XSITE"], got
+    p, m = got["civil3d_proxy.dxf"], got["civil3d_proxy_with_lines.dxf"]
+    assert p["refused"] and p["aectoacad"] and p["objects"] == 5, p
+    assert m["pipes"] == 3 and m["aectoacad_warned"], m
+    return {"block_lines_found": got["block_lines_found_in_place"], "civil3d_refused_with_aectoacad": True}
+
+
+@check("task18")
+def dxf_layer_style_listing():
+    """abandoned_linetype.dxf: two abandoned mains drawn dashed (linetype DASHED, colour 8) on the mains layer are
+    listed as a layer style of their own, apart from the mains in service (CONTINUOUS, colour 5 from the layer), and
+    leaving that style out removes exactly those two lines.  Equal to the committed record (part 'styles')."""
+    from . import intake_exp as E
+    with _cad_fixtures(["abandoned_linetype.dxf"]) as paths:
+        got = E.part_cad_styles(paths)
+    _same_as_18(got, "styles")
+    assert got["dashed_styles"] == ["WATER-MAINS / DASHED / colour 8"], got
+    assert got["styles"]["WATER-MAINS / CONTINUOUS / colour 5"]["lines"] == 6, got
+    assert (got["pipes_with_all"], got["pipes_without_dashed"]) == (8, 6), got
+    return {"styles": len(got["styles"]), "pipes_with_all": 8, "pipes_without_dashed": 6}
+
+
+@check("task18")
+def dxf_units_and_mtext():
+    """insunits_zero.dxf (unitless) asks the unit and builds once feet are chosen; insunits_wrong.dxf (metres declared,
+    feet drawn, from an imperial template) is flagged by its measurement setting; insunits_wrong_nomeasure.dxf, the
+    same with no measurement setting, is not flagged (a known limit: its median line, read as metres, is 1,554 ft
+    long, which is plausible); insunits_mm.dxf (millimetres declared, feet drawn) is asked, its median line 1.6 ft; mtext_codes.dxf's
+    MTEXT labels with formatting codes (font, alignment, height, colour and underline codes) give 8, 6 and 12 in.
+    Equal to the committed record (part 'units')."""
+    from . import intake_exp as E
+    names = ["insunits_zero.dxf", "insunits_wrong.dxf", "insunits_wrong_nomeasure.dxf", "insunits_mm.dxf",
+             "mtext_codes.dxf"]
+    with _cad_fixtures(names) as paths:
+        got = E.part_cad_units(paths)
+    got = _same_as_18(got, "units")          # the record's JSON form: lists, not tuples
+    z, w, n, mm = (got[k] for k in names[:4])
+    assert z["questions"] == [["unit", True]] and not z["built"] and z["built_in_feet"]["unit"] == "ft", z
+    assert w["flagged"] and ["unit_check", False] in w["questions"] and w["built"], w
+    assert not n["flagged"] and n["built"], n
+    assert mm["questions"] == [["unit", True]] and not mm["built"], mm
+    mt = got["mtext_codes.dxf"]
+    assert [x[0][1] for x in mt["sizes"]] == mt["want"] == [8.0, 6.0, 12.0], mt
+    assert all(x[0][0] == "label" for x in mt["sizes"]), mt
+    return {"unitless_asked": True, "metres_on_imperial_flagged": True, "metres_without_measurement_flagged": False,
+            "millimetres_asked": True, "mtext_sizes": mt["want"]}
+
+
+@check("task18", quick=False)
+def dxf_bak_and_binary():
+    """The ky4 drawing as an ASCII DXF, the same bytes named ky4_drawing.dxf.bak (read as the DXF it holds, marked a
+    backup) and the same drawing as a binary DXF written by the fixtures' own binary writer (read through ezdxf's
+    binary loader) give the same skeleton .inp, byte for byte.  Equal to the committed record (part 'bak_binary')."""
+    from . import intake_exp as E
+    with _cad_fixtures(["ky4_r12_handwritten.dxf", "ky4_drawing.dxf.bak", "ky4_binary.dxf"]) as paths:
+        got = E.part_cad_bak_binary(paths)
+    _same_as_18(got, "bak_binary")
+    assert got["identical"], got
+    assert got["ky4_drawing.dxf.bak"]["backup"] and got["ky4_binary.dxf"]["sniff"] == "dxf_binary", got
+    return {"identical": True, "pipes": got["ky4_binary.dxf"]["pipes"]}
+
+
+@check("task18")
+def dwg_dgn_ifc_get_guidance():
+    """A DWG (AC1027), an AutoCAD backup holding a DWG (drawing.bak), DGN V7, an OLE DGN V8 and an IFC file are
+    identified by their content on the CAD step and get what to send instead with no traceback: a DXF for the drawings,
+    the ODA File Converter as a link for the DWGs, 'rename it to .dwg' for the backup, the EPANET export or a GIS layer
+    for the BIM file.  Equal to the committed record (part 'guidance')."""
+    from . import cad_read as C
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _cad_fixtures(list(FX.CAD_GUIDANCE)) as paths:
+        got = E.part_cad_guidance(paths)
+        for n in FX.CAD_GUIDANCE:
+            b = C.build_cad(open(paths[n], "rb").read(), n)
+            assert b.refusal and b.net is None, n
+    _same_as_18(got, "guidance")
+    kinds = {n: v["sniff"] for n, v in got.items()}
+    assert kinds == {"dwg_ac1027.dwg": "dwg", "drawing.bak": "dwg", "dgn_v7.dgn": "dgn_v7", "ole_dgn_v8.dgn": "dgn_v8",
+                     "plant.ifc": "ifc"}, kinds
+    assert all(got[n]["says_dxf"] for n in ("dwg_ac1027.dwg", "drawing.bak", "dgn_v7.dgn", "ole_dgn_v8.dgn"))
+    assert got["dwg_ac1027.dwg"]["oda_link"] and got["drawing.bak"]["oda_link"] and got["drawing.bak"]["rename_to_dwg"]
+    assert got["plant.ifc"]["first_sentence"].startswith("This file is a BIM model (IFC)")
+    return kinds
+
+
+@check("task18")
+def cad_reads_in_linear_time():
+    """A fixed time bound on hostile drawings (the name says what the bound is for; the check measures each case's
+    time against CLOUD_LIMIT_S, not its growth): drawings within the hosted demo's 5 MB upload limit, each read and
+    built, or refused, within CLOUD_LIMIT_S with the local and with the hosted demo's limits (cloud.cad_limits): one
+    MTEXT of 4.8 million characters of formatting codes (ezdxf's default MTEXT reader is quadratic in them, its timing
+    in outputs/intake/cad_mtext_timing.json; no text over cad_read.TEXT_MAX_CHARS is parsed), 1,000 MTEXTs of stacking
+    codes just under that cap (through the accurate parser), blocks nested 9 deep that explode to 10**8 lines (refused
+    before anything is exploded), a block array of a million copies (not exploded), a spline of 60,000 points (not
+    read), a layer name of a million characters and texts of a million spaces.  Since the review: 2,000 labels 10**7
+    ft high on 600 lines (not used as labels, the skeleton built), 2,000 labels 100 ft high among 600 lines 1 ft
+    apart (refused, its pairs of a label and a segment counted before any is measured), blocks whose negative MINSERT
+    once counted as negative copies (refused before anything is exploded) and a polyline of 120,000 near-circle bulges
+    (refused for the points it becomes, before it is flattened).  Since the final verification: one handle of 100,000
+    hex digits beside 3,000 handles 0 and one 64-bit handle at its largest (renumbered with handles of at most 16
+    digits, so the repaired file is no larger than the drawing: it was 725 times larger), and a polyline of 160,000
+    vertices at infinity with bulges (left out before its arcs are drawn, charged no points: it made 5.8 million
+    points).  In cloud mode the read and the build each run in a
+    process of its own: the block bomb is refused there too, and a read or a build stopped at its time limit leaves
+    nothing in its folder.  What each read and build gave is equal to the committed record (part 'hostile')."""
+    from . import cad_read as C
+    from . import cloud
+    from . import fixtures as FX
+    from . import intake_exp as E
+    secs = {}
+    with _cad_fixtures(list(FX.HOSTILE_FIXTURES) + ["ky10_r12.dxf"]) as paths:
+        for n in FX.HOSTILE_FIXTURES:
+            data = open(paths[n], "rb").read()
+            assert len(data) <= cloud.UPLOAD_MB * 1_000_000, (n, len(data))
+            for label, lim in (("local", None), ("cloud", cloud.cad_limits())):
+                t = time.perf_counter()
+                d = C.read_drawing(data, n, lim)
+                C.build_from_drawing(d, C.CadOptions(), lim)
+                secs[f"{n}|{label}"] = time.perf_counter() - t
+        got = E.part_cad_hostile(paths)
+        with tempfile.TemporaryDirectory(prefix="rm_t18_child_") as tmp:
+            t = time.perf_counter()
+            bomb = cloud.read_cad_upload(open(paths["hostile_block_bomb.dxf"], "rb").read(), tmp, "bomb.dxf")
+            child_s = time.perf_counter() - t
+            stopped = cloud.read_cad_upload(open(paths["ky10_r12.dxf"], "rb").read(), tmp, "ky10.dxf", timeout=0.05)
+            ky10 = C.read_drawing(open(paths["ky10_r12.dxf"], "rb").read(), "ky10.dxf", cloud.cad_limits())
+            built = cloud.build_cad_upload(ky10, C.CadOptions(), tmp, timeout=0.05)
+            left = os.listdir(tmp)
+    _same_as_18(got, "hostile")
+    slow = {k: v for k, v in secs.items() if v > CLOUD_LIMIT_S}
+    assert not slow, slow
+    assert got["sizes"]["bomb_lines"] == 10 ** 8 and got["sizes"]["minsert_copies"] == 10 ** 6, got["sizes"]
+    assert got["hostile_block_bomb.dxf"]["local"]["refused"] and got["hostile_block_bomb.dxf"]["cloud"]["refused"]
+    assert got["hostile_mtext_codes.dxf"]["local"]["texts_too_long"] == 1
+    assert bomb.refusal and "entities once its blocks are exploded" in bomb.refusal and child_s < CLOUD_LIMIT_S, (
+        bomb.refusal, child_s)
+    assert stopped.refusal and stopped.refusal.startswith("Reading this drawing took longer than") and not left, (
+        stopped.refusal, left)
+    assert built.refusal and built.refusal.startswith("Building this drawing took longer than"), built.refusal
+    for lim in ("local", "cloud"):           # the review's hostile drawings
+        tall = got["hostile_tall_labels.dxf"][lim]["build"]
+        assert not tall["refused"] and tall["pipes"] == 600 and tall["labels_too_tall"] == 2000, tall
+        crowd = got["hostile_crowded_labels.dxf"][lim]["build"]
+        assert crowd["refused"] and crowd["refusal"] == "The drawing's labels reach too many lines", crowd
+        assert got["hostile_negative_minsert.dxf"][lim]["refused"], got["hostile_negative_minsert.dxf"]
+        assert "entities once its blocks are exploded" in got["hostile_negative_minsert.dxf"][lim]["refusal"]
+        assert "line points" in got["hostile_bulges.dxf"][lim]["refusal"], got["hostile_bulges.dxf"]
+        lh = got["hostile_long_handle.dxf"]     # the final verification's hostile drawings
+        assert not lh[lim]["refused"] and lh[lim]["lines"] == 2 + FX.HOSTILE_LONG_HANDLE[1], lh
+        ib = got["hostile_inf_bulges.dxf"][lim]
+        assert not ib["refused"] and ib["lines"] == 2 and ib["lines_not_finite"] == 1 and ib["points"] == 4, ib
+    lh = got["hostile_long_handle.dxf"]
+    assert lh["handles_renumbered"] == 1 + FX.HOSTILE_LONG_HANDLE[1] and lh["repaired_bytes"] <= lh["bytes"], lh
+    return {"time_bound_s": CLOUD_LIMIT_S, "reads_timed": len(secs), "child_bomb_refused": True,
+            "child_time_limit_leaves_nothing": True, "child_build_time_limit_leaves_nothing": True}
+
+
+@check("task18")
+def dxf_review_cases():
+    """One drawing for each case the review of task 18 found, each written by the fixtures' own writers: inches
+    declared on ky4's drawing in feet are asked, both medians shown, and in feet it rebuilds ky4's pipes, while four
+    600 ft mains drawn in inches are taken in inches; a zone number in layer names (WATER-ZONE-2, and since the final
+    verification PVC-ZONE-3 and WATER-ZONE-2-PVC, whose material word once cued it) is asked, and once called no size,
+    or read as inches, the 8 in labels size every pipe; cp1252 bytes in an R2018 file read as U+FFFD,
+    not lone surrogates (ezdxf's default gave them); handles drawn twice or 0 are renumbered, so all 10 and 3 lines are
+    read (ezdxf alone kept 5, and refused the other); a spline-fit POLYLINE is its 688 ft curve, not its frame's path;
+    a frozen layer named in another case, an old label on a frozen layer and a block inserted on a frozen layer are
+    left out at first; ky4 cut to 99, 90 and 50% of its bytes, or with no '0 EOF', is read up to where it stops, with
+    a warning (ezdxf alone read no line); labels with the sign U+2205 are sizes; a label's material gives C on a line
+    whose layer names its size; a drawing with no size is built only at the size the operator gives, and says so; a
+    text over the cap is said; and the Diameters row is from the file only for layer names.  Equal to the committed
+    record (part 'review')."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    with _cad_fixtures(list(FX.REVIEW_18_FIXTURES)) as paths:
+        got = E.part_cad_review(paths)
+    got = _same_as_18(got, "review")
+    i = got["inches"]["ky4_inches_declared.dxf"]
+    assert i["questions"] == [["unit", True]] and not i["built"], i
+    assert i["in_feet"]["pipes_rebuilt"] == E.CAD_BAR["pipes_at_least"] and i["in_feet"]["components"] == 1, i
+    t = got["inches"]["inches_true.dxf"]
+    assert t["unit"] == "in" and ["unit", True] not in t["questions"] and t["pipes"] == 4, t
+    z = got["zone_layers.dxf"]
+    assert z["asked"]["questions"] == [["layer_numbers", True]] and not z["asked"]["built"], z["asked"]
+    for k in ("not_sizes", "inches", "layer_names_off"):
+        assert z[k]["built"] and z[k]["sizes_in"] == [8.0] and z[k]["size_counts"]["layer"] == 0, (k, z[k])
+    assert z["inches"]["labels_win"] == sorted(FX.ZONE_LAYERS) and z["inches"]["warned_labels_win"], z
+    assert not z["layer_names"]["WATER-ZONE-2"]["cued"] and z["layer_names"]["W_8_PVC"]["cued"], z["layer_names"]
+    la = got["latin1_r2018.dxf"]
+    assert la["ezdxf_default_gives_surrogates"] and la["utf8_writable"] and la["layer_names"] == ["TUBER\ufffdA-8IN"]
+    assert got["dup_handles.dxf"]["ezdxf_alone_lines"] == 5 and got["dup_handles.dxf"]["lines"] == 10
+    assert got["dup_handles.dxf"]["components"] == 1 and got["dup_handles.dxf"]["noted"], got["dup_handles.dxf"]
+    assert got["zero_handles.dxf"]["lines"] == 3 and not got["zero_handles.dxf"]["refused"], got["zero_handles.dxf"]
+    sp = got["spline_fit_polyline.dxf"]
+    assert sp["length_read_ft"] == sp["curve_length_ft"] < sp["length_with_frame_ft"], sp
+    fz = got["frozen_layers.dxf"]
+    assert fz["default"]["size_counts"]["label"] == 0 and fz["default"]["pipes"] == 4, fz["default"]
+    assert fz["frozen_blocks"]["pipes"] == 7 and fz["all_hidden"]["size_counts"]["label"] == 1, fz
+    for n in [f"ky4_cut_{round(100 * x)}.dxf" for x in FX.CUT_SHORT_SHARES] + ["ky4_no_eof.dxf"]:
+        c = got[n]
+        assert c["ezdxf_alone_lines"] == 0 and c["lines"] > 0 and c["warned_cut_short"] and not c["refused"], (n, c)
+    assert got["ky4_no_eof.dxf"]["lines"] == 1113, got["ky4_no_eof.dxf"]
+    assert got["diameter_sign.dxf"]["sizes_in"] == [8.0, 12.0] and got["diameter_sign.dxf"]["size_counts"]["label"] == 2
+    assert got["c_from_label.dxf"]["c_counts"]["from_material"] == 2, got["c_from_label.dxf"]
+    ns = got["no_sizes.dxf"]
+    assert ns["questions"] == [["default_diameter_in", True]] and not ns["built"], ns
+    assert ns["given"]["built"] and ns["given"]["warned_size_you_gave"], ns
+    assert got["long_label.dxf"] == {"texts_too_long": 1, "noted": True}, got["long_label.dxf"]
+    rows = got["diameters_row"]
+    assert [rows[k]["source"] for k in ("layer names only", "labels only", "the size you gave")] == [
+        "from your file", "derived", "assumed"], rows
+    assert rows["the size you gave"]["value"].endswith("at the size you gave"), rows
+    return {"cases": len(FX.REVIEW_18_FIXTURES), "inches_on_feet_asked": True, "zone_numbers_asked": True,
+            "handles_renumbered": True, "cut_short_read": True}
+
+
+NEAR_LIMIT_GROWTH_GB = 0.8   # the near-limit drawing's build may add at most this to the peak memory after its read
+                             # (about 0.4 GB on this Mac; the label measure alone added 1.4 GB before the final verification)
+
+
+@check("task18", quick=False)
+def dxf_final_verification():
+    """One case for each issue the final verification of task 18 found that cad_reads_in_linear_time does not hold.
+    A layer name's bare number is cued as a size only by a size word, a diameter mark or a material right beside it,
+    never after a numbering word (ZONE, PHASE, SHEET), and never by CL, ST, PE, AC, WS or POLY: the ten names it found
+    cued (PVC-ZONE-3, WATER-ZONE-2-PVC, W-MAIN-CL-ZONE-2 and the rest) and W_8_CL are not, W_8_PVC, PVC-8, W-8PVC,
+    W-U+2205 8 and MAINS-8-DIA still are.  A cued number that the labels on its layer's lines dispute (W-2-PVC, three
+    labelled lines of 8 in) is asked, and once called no size the labels and runs size its pipes, while one stray label
+    (W-8-PVC) keeps the layer's size and is warned.  A UTF-8 byte order mark no longer stops the ASCII repair: handles
+    drawn twice are renumbered (10 of 10 lines; ezdxf alone 5) and a file with no '0 EOF' is read to where it stops
+    (1,113 lines).  A binary DXF whose handles are drawn twice is not repaired, and the audit's removals are warned (a
+    recorded limit).  A bulge between vertices that compare equal but whose chord is not 0 (infinite ones) is charged
+    the 37 points it makes.  And the drawing just under the local limit of pairs of a label and a segment (18,910,690
+    pairs) is built in a process of its own, its build adding at most NEAR_LIMIT_GROWTH_GB to its peak memory.  Equal
+    to the committed record (part 'final'), its peak memory and seconds aside."""
+    from . import fixtures as FX
+    from . import intake_exp as E
+    from .cad_read import MAX_LABEL_PAIRS
+    with _cad_fixtures(list(FX.FINAL_18_FIXTURES)) as paths:
+        got = E.part_cad_final(paths)
+    measured = got.pop("_measured")["label_pairs_near_limit.dxf"]
+    got = _same_as_18(got, "final")
+    cues = got["layer_cues"]
+    for n in ("W-MAIN-CL-ZONE-2", "WATER-CL-PHASE-3", "C-WATR-PIPE-CL-2", "WATER-ST-12", "W-PE-SHEET-4",
+              "WATER-ZONE-2-PVC", "PVC-ZONE-3", "W-POLY-ZONE-3", "W-AC-DIST-10", "WS-ZONE-2", "W_8_CL", "WATER-ZONE-2"):
+        assert cues[n]["value"] is not None and not cues[n]["cued"], (n, cues[n])
+    for n in ("W_8_PVC", "PVC-8", "W-8PVC", "W-∅8", "MAINS-8-DIA", "WATER-8IN"):
+        assert cues[n]["cued"], (n, cues[n])
+    dl = got["disputed_layer.dxf"]
+    assert dl["asked"]["questions"] == [["layer_numbers", True]] and not dl["asked"]["built"], dl["asked"]
+    assert dl["asked"]["question_names"] == ["W-2-PVC"] and dl["asked"]["disputed"] == ["W-2-PVC"], dl["asked"]
+    ns = dl["not_sizes"]
+    assert ns["built"] and ns["sizes_in"] == [8.0] and ns["size_counts"]["label"] == 3 and ns["warned_stray_label"], ns
+    assert dl["inches"]["built"] and dl["inches"]["sizes_in"] == [2.0, 8.0], dl["inches"]
+    bd, be = got["bom_dup_handles.dxf"], got["bom_ky4_no_eof.dxf"]
+    assert bd["starts_with_bom"] and bd["lines"] == 10 and bd["handles_renumbered"] == 5 and bd["ezdxf_alone_lines"] == 5
+    assert be["starts_with_bom"] and be["lines"] == 1113 and be["cut_short"] and be["warned_cut_short"], be
+    bi = got["binary_dup_handles.dxf"]
+    assert bi["lines"] == 5 and bi["audit_removed"] == 5 and bi["warned"] and bi["handles_renumbered"] == 0, bi
+    assert all(r["counted"] == r["made"] for r in got["bulge_counts"]), got["bulge_counts"]
+    nl = got["label_pairs_near_limit.dxf"]
+    assert nl["under_local_limit"] and nl["pairs_within_reach"] > 0.9 * MAX_LABEL_PAIRS, nl
+    assert not nl["refused"] and nl["assigned"] == FX.NEAR_LIMIT_LABELS[0], nl
+    growth = measured["peak_gb_after_build"] - measured["peak_gb_after_read"]
+    assert growth <= NEAR_LIMIT_GROWTH_GB, measured
+    return {"names_not_cued": 12, "disputed_number_asked": True, "bom_repaired": True, "binary_not_repaired": True,
+            "near_limit_pairs": nl["pairs_within_reach"], "near_limit_growth_bound_gb": NEAR_LIMIT_GROWTH_GB,
+            "near_limit_within_bound": True}
+
+
+CAD_PAGE_SCRIPT = r"""
+import json, os, sys, time, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+import residualmap.chloramine as CA
+def _no_msx(*a, **k):
+    raise RuntimeError("EPANET-MSX not run by get_started_cad_import")
+CA.truth_in_subprocess = _no_msx
+from residualmap import gis_read as G
+from residualmap import cloud
+page, app, fx = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+res = {}
+LABEL = "CAD drawing of your water mains (DXF)"
+def page_run():
+    return AppTest.from_file(page, default_timeout=900).run()
+def cad_up(at, name):
+    [u for u in at.file_uploader if u.label == LABEL][0].set_value((name, open(fx[name], "rb").read(),
+                                                                    "application/octet-stream"))
+    at.run()
+    assert not at.exception, (name, [e.value for e in at.exception])
+    return at
+def state(at):
+    return {"markdown": [m.value for m in at.markdown], "warnings": [w.value for w in at.warning],
+            "info": [i.value for i in at.info], "errors": [e.value for e in at.error],
+            "downloads": [b.label for b in at.get("download_button")], "buttons": [b.label for b in at.button],
+            "selectboxes": [s.label for s in at.selectbox], "multiselects": [m.label for m in at.multiselect],
+            "uploaders": [u.label for u in at.file_uploader], "dataframes": len(at.dataframe),
+            "headers": [h.value for h in at.header], "checkboxes": [c.label for c in at.checkbox],
+            "number_inputs": [[n.label, n.value] for n in at.number_input]}
+def prepared(at):
+    return at.session_state[G.PREPARED_KEY] if G.PREPARED_KEY in at.session_state else None
+at = page_run()
+res["page"] = state(at)
+at = cad_up(page_run(), "ky4_r12_handwritten.dxf")
+res["ky4"] = state(at)
+at.button(key="cad_hand_off").click()
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+skel = prepared(at)
+res["ky4_prepared"] = None if skel is None else {"name": skel["name"], "bytes": len(skel["data"]), "from": skel["from"]}
+a = AppTest.from_file(app, default_timeout=900)
+a.session_state[G.PREPARED_KEY] = skel
+a.session_state[G.PREPARED_OPEN] = True
+a.run()
+radio = [r for r in a.radio if r.label == "Model"][0]
+res["main"] = {"model_options": list(radio.options), "model_value": radio.value, "errors": [e.value for e in a.error],
+               "info": [i.value for i in a.info], "captions": [c.value for c in a.caption],
+               "exception": [e.value for e in a.exception]}
+res["dwg"] = state(cad_up(page_run(), "dwg_ac1027.dwg"))
+res["gpkg"] = state(cad_up(page_run(), "mains.gpkg"))
+at = cad_up(page_run(), "insunits_zero.dxf")
+res["zero"] = state(at)
+[s for s in at.selectbox if s.label == "Unit of the drawing"][0].set_value("feet")
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["zero_feet"] = state(at)
+at = cad_up(page_run(), "abandoned_linetype.dxf")
+res["abandoned"] = state(at)
+res["abandoned_options"] = list(at.multiselect[0].options)
+at.multiselect[0].set_value(["WATER-MAINS / DASHED / colour 8"])
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["abandoned_without_dashed"] = state(at)
+# the review of task 18: cp1252 bytes in an R2018 file; a drawing with no size; zone numbers in layer names; frozen layers
+res["latin1"] = state(cad_up(page_run(), "latin1_r2018.dxf"))
+at = cad_up(page_run(), "no_sizes.dxf")
+res["no_sizes"] = state(at)
+[n for n in at.number_input if n.label == "Size of every pipe (in)"][0].set_value(8.0)
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["no_sizes_given"] = state(at)
+at = cad_up(page_run(), "zone_layers.dxf")
+res["zones"] = state(at)
+[s for s in at.selectbox if s.label == "Numbers in layer names"][0].set_value("not pipe sizes")
+at.run()
+assert not at.exception, [e.value for e in at.exception]
+res["zones_not_sizes"] = state(at)
+res["disputed"] = state(cad_up(page_run(), "disputed_layer.dxf"))
+at = cad_up(page_run(), "frozen_layers.dxf")
+res["frozen"] = state(at)
+res["frozen_left_out"] = list(at.multiselect[0].value)
+# cloud mode with uploads allowed: nothing written under outputs/; a drawing over the demo's limits refused before
+# any line is joined; the block bomb refused in the read's own process
+def snap():
+    out = {}
+    for base, dirs, files in os.walk(os.path.join(os.path.dirname(os.path.dirname(page)), "outputs")):
+        dirs[:] = [d for d in dirs if d != "cache"]
+        for f in files:
+            q = os.path.join(base, f)
+            out[q] = os.stat(q).st_mtime_ns
+    return out
+s0 = snap()
+os.environ[cloud.MODE_ENV] = "cloud"
+os.environ[cloud.UPLOADS_ENV] = "true"
+t0 = time.time()
+at = cad_up(page_run(), "labels_offset_cases.dxf")
+res["cloud_cases_s"] = time.time() - t0
+res["cloud_cases"] = state(at)
+at.button(key="cad_hand_off").click()
+at.run()
+c = prepared(at)
+res["cloud_prepared"] = None if c is None else {"name": c["name"], "bytes": len(c["data"])}
+res["cloud_ky4"] = state(cad_up(page_run(), "ky4_r12_handwritten.dxf"))
+t0 = time.time()
+res["cloud_bomb"] = state(cad_up(page_run(), "hostile_block_bomb.dxf"))
+res["cloud_bomb_s"] = time.time() - t0
+s1 = snap()
+res["cloud_outputs_changed"] = sorted(k for k in set(s0) | set(s1) if s0.get(k) != s1.get(k))
+os.environ.pop(cloud.UPLOADS_ENV, None)
+res["cloud_no_uploads"] = state(page_run())
+os.environ.pop(cloud.MODE_ENV, None)
+print("CAD_PAGE_JSON " + json.dumps(res))
+"""
+
+
+@check("task18", quick=False)
+def get_started_cad_import():
+    """Headless AppTest of the Get started page's step 5 (local mode unless said).  Before any file, step 5's uploader
+    comes after step 4's and the five downloads are still offered.  ky4's R12 drawing gives the drawing's sentence, the
+    layer styles, 'Topology and sizes only:' with the counts and the sizes by source, the table at 0.5 to 12 ft, the
+    readiness report (not ready: topology and sizes only, needs the operator form), 'Download the model (.inp)' and
+    'Open it on the main page', whose click keeps the skeleton in the session; the main page then offers 'Model
+    prepared on Get started', picked, and stops at the readiness report with the skeleton's sentence.  A DWG gets its
+    guidance with the ODA link; a GeoPackage is sent to step 4; a unitless drawing asks its unit and builds once feet
+    are chosen; abandoned_linetype.dxf lists its two styles on the mains layer (and its labels' style) and builds 6
+    pipes, not 8, with the dashed one left out.  Since the review: an R2018 drawing with cp1252 bytes in a layer name
+    builds, with no traceback from the style table; a drawing with no size asks it with an empty input and builds
+    only once 8 in is given, 'at the size you gave'; zone numbers in layer names are asked, and once called no size
+    the labels size all 19 pipes (9 until the final verification added two layers); since the final verification a
+    cued number its labels dispute (W-2-PVC) is asked there too; frozen layers' styles (one named in another case, one of texts only) are left out at
+    first, and a block on a frozen layer gets its own control.  In cloud mode with uploads allowed the case drawing
+    builds (in a process of its own) and is handed off with nothing
+    written under outputs/, ky4's drawing (1,113 lines) is refused as over the demo's limits before any line is
+    joined, and the block bomb is refused, from the read's own process, within CLOUD_PAGE_LIMIT_S; with uploads off
+    the page has no uploader at all."""
+    from . import cloud as C
+    names = ["ky4_r12_handwritten.dxf", "dwg_ac1027.dwg", "mains.gpkg", "insunits_zero.dxf", "abandoned_linetype.dxf",
+             "labels_offset_cases.dxf", "hostile_block_bomb.dxf", "latin1_r2018.dxf", "no_sizes.dxf",
+             "zone_layers.dxf", "frozen_layers.dxf", "disputed_layer.dxf"]
+    watch = [os.path.join(REPO, "outputs", "app_uploads"), os.path.join(REPO, "outputs", "private")]
+    before = {d: sorted(os.listdir(d)) if os.path.isdir(d) else [] for d in watch}
+    cache0 = _cache_snapshot()
+    from . import fixtures as FX
+    with tempfile.TemporaryDirectory(prefix="rm_t18_page_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), names)
+        res, built = _app_run(CAD_PAGE_SCRIPT, [GET_STARTED_PAGE, os.path.join(REPO, "app.py"), json.dumps(paths)],
+                              lambda f: "ky4_r12_handwritten" in f or "labels_offset_cases" in f, "CAD_PAGE_JSON")
+    from .cad_read import NOT_READY as CAD_NOT_READY
+    from .cad_read import ODA_LINK
+    from .gis_read import PREPARED_OPTION
+    pg = res["page"]
+    assert pg["uploaders"] == ["Check a file", "GIS layer of your water mains", "CAD drawing of your water mains (DXF)"]
+    assert "Step 5. Build a model from a CAD drawing" in pg["headers"] and len(pg["downloads"]) == 5, pg
+    k = res["ky4"]
+    assert any(m.startswith("**The drawing ky4_r12_handwritten.dxf** (DXF, R11 and R12): 1,113 lines and 557 texts")
+               for m in k["markdown"]), k["markdown"]
+    top = [m for m in k["markdown"] if m.startswith("**Topology and sizes only:**")]
+    assert top and "1,113 lines become 1,159 pipes" in top[0] and "1 connected part" in top[0], top
+    rep = [m for m in k["markdown"] if m.startswith("**Model readiness:")]
+    assert rep and CAD_NOT_READY in rep[0] and "| What it is | topology and sizes only, needs the operator form" in rep[0]
+    assert k["downloads"][-1] == "Download the model (.inp)" and "Open it on the main page" in k["buttons"], k
+    assert "Layer styles to leave out" in k["multiselects"] and "Unit of the drawing" in k["selectboxes"], k
+    kp = res["ky4_prepared"]
+    assert kp and kp["name"] == "ky4_r12_handwritten_skeleton.inp" and kp["from"] == "the CAD drawing ky4_r12_handwritten.dxf"
+    mn = res["main"]
+    assert mn["model_options"] == ["Example network", "Upload my .inp", PREPARED_OPTION], mn
+    assert mn["model_value"] == PREPARED_OPTION and not mn["exception"], mn
+    assert any(e.startswith("This model cannot run yet.") for e in mn["errors"]), mn["errors"]
+    assert any(i.startswith("This model was built on the Get started page. A model built from a GIS layer or a CAD "
+                            "drawing") for i in mn["info"]), mn["info"]
+    assert any("the CAD drawing ky4_r12_handwritten.dxf" in c for c in mn["captions"]), mn["captions"]
+    assert any(w.startswith("This file is an AutoCAD drawing (DWG)") and ODA_LINK in w for w in res["dwg"]["warnings"])
+    assert any("Build a model from a GIS layer" in w for w in res["gpkg"]["warnings"]), res["gpkg"]["warnings"]
+    assert any("does not say its unit" in i for i in res["zero"]["info"]), res["zero"]["info"]
+    assert any(m.startswith("**Topology and sizes only:** 60 lines become") for m in res["zero_feet"]["markdown"])
+    assert res["abandoned_options"] == ["WATER-MAINS / CONTINUOUS / colour 5", "WATER-MAINS / DASHED / colour 8",
+                                        "WATER-TEXT / Continuous / colour 7"], res["abandoned_options"]
+    assert any(m.startswith("**Topology and sizes only:** 8 lines become 8 pipes") for m in res["abandoned"]["markdown"])
+    assert any(m.startswith("**Topology and sizes only:** 6 lines become 6 pipes")
+               for m in res["abandoned_without_dashed"]["markdown"]), res["abandoned_without_dashed"]["markdown"]
+    # the review of task 18
+    la = res["latin1"]
+    assert any(m.startswith("**Topology and sizes only:** 3 lines become 3 pipes") for m in la["markdown"]), la
+    ns, ng = res["no_sizes"], res["no_sizes_given"]
+    assert any(i.startswith("No pipe size can be read from the drawing") for i in ns["info"]), ns["info"]
+    assert ["Size of every pipe (in)", None] in ns["number_inputs"], ns["number_inputs"]
+    assert not any(m.startswith("**Topology") for m in ns["markdown"]), ns["markdown"]
+    top = [m for m in ng["markdown"] if m.startswith("**Topology and sizes only:** 5 lines become 5 pipes")]
+    assert top and top[0].endswith("5 at the size you gave."), top
+    assert any("the size you gave" in w for w in ng["warnings"]), ng["warnings"]
+    zs, zn = res["zones"], res["zones_not_sizes"]
+    assert any("Are these numbers pipe sizes?" in i for i in zs["info"]) and "Numbers in layer names" in zs["selectboxes"]
+    assert any(m.startswith("**Topology and sizes only:** 19 lines become 19 pipes") and "Sizes: 19 pipes from labels"
+               in m for m in zn["markdown"]), zn["markdown"]
+    dl = res["disputed"]         # the final verification: a cued number its labels dispute is asked on the page too
+    assert any("that the labels on its lines dispute: W-2-PVC" in i for i in dl["info"]), dl["info"]
+    assert "Numbers in layer names" in dl["selectboxes"] and not any(m.startswith("**Topology") for m in dl["markdown"])
+    fr = res["frozen"]
+    assert "Read the lines inside blocks inserted on frozen layers" in fr["checkboxes"], fr["checkboxes"]
+    assert res["frozen_left_out"] == ["OLD-TEXT / CONTINUOUS / colour 7", "old-mains / CONTINUOUS / colour 7"], res
+    assert "Read pipe sizes from layer names" in fr["checkboxes"], fr["checkboxes"]
+    cc = res["cloud_cases"]
+    assert any(m.startswith("**Topology and sizes only:** 17 lines become 17 pipes") for m in cc["markdown"]), cc
+    assert res["cloud_prepared"] and res["cloud_prepared"]["name"] == "labels_offset_cases_skeleton.inp", res
+    assert res["cloud_outputs_changed"] == [], res["cloud_outputs_changed"]
+    assert any(e.startswith("This drawing has 1,113 lines") and f"up to {C.MAX_GIS_LINES} lines" in e
+               for e in res["cloud_ky4"]["errors"]) and not any(m.startswith("**Topology") for m in
+                                                                res["cloud_ky4"]["markdown"]), res["cloud_ky4"]
+    assert any("entities once its blocks are exploded" in w for w in res["cloud_bomb"]["warnings"]), res["cloud_bomb"]
+    assert res["cloud_bomb_s"] < CLOUD_PAGE_LIMIT_S and res["cloud_cases_s"] < CLOUD_PAGE_LIMIT_S, res
+    assert res["cloud_no_uploads"]["uploaders"] == [], res["cloud_no_uploads"]["uploaders"]
+    after = {d: sorted(os.listdir(d)) if os.path.isdir(d) else [] for d in watch}
+    assert after == before, (before, after)
+    assert _cache_snapshot() == cache0
+    return {"page_uploaders": pg["uploaders"], "skeleton_handed_off": kp["name"],
+            "main_options_with_prepared": mn["model_options"], "skeleton_stops_at_readiness": True,
+            "upload_copies_left_by_the_main_page": sorted(built["app_uploads"]), "cloud_files_under_outputs": 0,
+            "cloud_drawing_over_the_limit_refused": True, "cloud_block_bomb_refused_within_s": CLOUD_PAGE_LIMIT_S,
+            "cloud_no_uploads_uploaders": 0}
 
 
 def _counts(rs: list) -> dict:

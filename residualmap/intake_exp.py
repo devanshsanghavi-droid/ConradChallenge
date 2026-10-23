@@ -2128,15 +2128,16 @@ def _gis(data: bytes, name: str, **kw):
     return G.build_gis(data, name, G.GisOptions(**kw))
 
 
-def score_ky4(b, index_of=lambda j: j) -> dict:
+def score_ky4(b, index_of=lambda j: j, man: dict | None = None) -> dict:
     """A rebuilt ky4 mains layer scored by endpoint-pair identity, not counts: each ky4 node stands for the rebuilt
     node most of the line ends drawn at it fell into (so nodes the tolerance joins, the pump node pairs drawn at one
     point and J-702 and J-703, stand for one another), and a ky4 pipe is rebuilt when a rebuilt pipe joins its two
     nodes' rebuilt nodes (each rebuilt pipe used once; one whose two ends are one node is a miss).  Its diameter
-    matches within DIAMETER_REL_TOL.  index_of: a record's feature index in the file."""
+    matches within DIAMETER_REL_TOL.  index_of: a record's feature index in the file.  man: another network's
+    manifest in ky4_manifest's shape (task 18: ky10's drawing), scored by the same rule."""
     from . import fixtures as FX
     from collections import Counter
-    man = FX.ky4_manifest()
+    man = man or FX.ky4_manifest()
     net = b.net
     votes: dict = {}
     for j, r in enumerate(man["records"]):
@@ -2789,10 +2790,658 @@ def gis_record() -> dict:
                 "final": part_gis_final(paths)}
 
 
+# ----------------------------------------------------------------------------- task 18: cad_roundtrip.json
+RECORD_18 = os.path.join(OUT, "cad_roundtrip.json")
+CAD_BAR = {"tolerance_ft": 6.0, "pipes_at_least": 1151, "of_pipes": 1156, "components": 1,
+           "diameter_share_at_least": 0.99, "fixture": "ky4_r12_handwritten.dxf"}   # pre-registered (plan task 18)
+CAD_SCORED = ("ky4_r12_handwritten.dxf", "ky4_r2018_lwpolyline.dxf")
+CAD_READERS = {"ky4_r12_handwritten.dxf": "ezdxf (recover mode), on an R12 drawing written by the fixtures' own "
+                                          "writer: cross-implementation",
+               "ky4_r2018_lwpolyline.dxf": "ezdxf, on an R2018 drawing ezdxf wrote: same-library self-consistency"}
+
+
+def _cad(data: bytes, name: str, **kw):
+    from . import cad_read as C
+    return C.build_cad(data, name, C.CadOptions(**kw))
+
+
+def _cad_score_keys(s: dict) -> dict:
+    return {k: s[k] for k in ("pipes_rebuilt", "of_pipes", "diameters_matched", "diameter_share", "extra_pipes",
+                              "components", "nodes", "dead_ends", "tees_split", "nodes_flagged_wide", "nodes_split",
+                              "dropped_pieces", "pipes_built", "missed", "collapsed")}
+
+
+def _labels_elsewhere(b, plan) -> list:
+    """The labels of the ky4 drawing that went to a line other than their own: the pipe they label, the pipe they went
+    to, their distance from each (ft) and their own line's longest segment (ft)."""
+    from . import cad_read as C
+    from . import fixtures as FX
+    from .topology import FT
+    d, recs = b.drawing, FX.ky4_mains_records()
+    origin = np.asarray(b.frame["origin"], float)
+    f = C.UNIT_M[b.unit]
+    lines = [(ln.pts - origin) * f for ln in d.lines]
+    texts = [tx for tx in d.texts if C.label_size(tx.text)["value"] is not None]
+    got = C.assign_labels(lines, [(tx.box - origin) * f for tx in texts],
+                          [b.labels["radius_text_heights"] * tx.height * f for tx in texts])
+    owners = [j for j, p in enumerate(plan) if p["label"]]
+    out = []
+    for g, j, tx in zip(got, owners, texts):
+        if g["line"] == j:
+            continue
+        own = float(C._box_seg_dist(np.repeat(((tx.box - origin) * f)[None], len(lines[j]) - 1, axis=0),
+                                    lines[j][:-1], lines[j][1:]).min())
+        out.append({"label_of": recs[j]["pipes"][0], "text": tx.text,
+                    "went_to": recs[g["line"]]["pipes"][0] if g["line"] is not None else None,
+                    "distance_ft": round(g["distance"] / FT, 3) if g["distance"] is not None else None,
+                    "own_distance_ft": round(own / FT, 3),
+                    "own_longest_segment_ft": round(max(FX._seg_len(recs[j]["pts"])), 1)})
+    return out
+
+
+def part_cad_rebuild(paths: dict) -> dict:
+    """dxf_rebuilds_network: ky4's mains drawn as an R12 drawing by the fixtures' own writer (the bar) and as an R2018
+    drawing by ezdxf (reported), rebuilt at the 6 ft default and scored with task 17's rule."""
+    from . import fixtures as FX
+    from .topology import FT
+    out = {"bar": CAD_BAR, "fixtures": {}}
+    plan = FX.ky4_cad_plan(False)
+    out["drawn"] = {"lines": len(plan), "sizes_in_layer_names": sum(1 for p in plan if p["label"] is None),
+                    "sizes_as_labels": sum(1 for p in plan if p["label"] is not None),
+                    "text_height_ft": FX.CAD_TEXT_H, "label_offsets_heights": list(FX.CAD_OFFSETS_H)}
+    for name in CAD_SCORED:
+        b = _cad(_read_bytes(paths[name]), name)
+        assert b.net is not None and b.inp_text, (name, b.refusal, b.questions)
+        s = score_ky4(b)
+        d = b.drawing
+        out["fixtures"][name] = {
+            "reader": CAD_READERS[name], "version": d.counts.get("version_name"), "lines": len(d.lines),
+            "texts": len(d.texts), "unit": b.unit, "default_tolerance_ft": b.tolerance_m / FT,
+            "score_6ft": _cad_score_keys(s), "size_counts": b.size_counts, "labels": b.labels,
+            "c_counts": b.c_counts, "labels_on_another_line": _labels_elsewhere(b, plan if name == CAD_SCORED[0]
+                                                                                else FX.ky4_cad_plan(True)),
+            "default_sized": [{"pipe": FX.ky4_mains_records()[p["feature"]]["pipes"][0], "piece": p["piece"],
+                               "true_in": FX.ky4_mains_records()[p["feature"]]["diameter_in"],
+                               "given_in": b.diam_in[p["id"]]}
+                              for p in b.net.pipes if b.size_source[p["id"]] == "default"],
+            "bar_met": (s["pipes_rebuilt"] >= CAD_BAR["pipes_at_least"]
+                                                and s["components"] == CAD_BAR["components"]
+                                                and s["diameter_share"] >= CAD_BAR["diameter_share_at_least"])}
+    out["bar_met"] = out["fixtures"][CAD_BAR["fixture"]]["bar_met"]
+    return out
+
+
+def part_cad_tolerance(paths: dict) -> dict:
+    """dxf_tolerance_table_feet: ky4's and ky10's drawings at 0.5, 1, 3, 6 and 12 ft: pipes rebuilt, connected parts,
+    dead ends and real pipes collapsed (both of a pipe's nodes in one rebuilt node), and ky10's node pairs drawn at
+    one spot, which no drawing of pipes can separate."""
+    from . import cad_read as C
+    from . import fixtures as FX
+    from .topology import FT
+    out = {"feet": list(C.DIAGNOSTIC_FT), "networks": {}}
+    for net, name, man in (("ky4", "ky4_r12_handwritten.dxf", None), ("ky10", "ky10_r12.dxf", FX.ky10_manifest())):
+        data = _read_bytes(paths[name])
+        rows = {}
+        for ft in C.DIAGNOSTIC_FT:
+            b = _cad(data, name, tolerance_m=ft * FT)
+            assert b.net is not None, (name, ft, b.refusal)
+            s = score_ky4(b, man=man)
+            if ft == 6.0:
+                sizes_6 = {"size_counts": b.size_counts, "labels": b.labels, "diameters_matched": s["diameters_matched"],
+                           "diameter_share": s["diameter_share"]}
+            rows[f"{ft:g}"] = {"pipes_rebuilt": s["pipes_rebuilt"], "of_pipes": s["of_pipes"],
+                               "components": s["components"], "dead_ends": s["dead_ends"],
+                               "real_pipes_collapsed": len(s["collapsed"]), "collapsed": s["collapsed"],
+                               "extra_pipes": s["extra_pipes"], "pipes_built": s["pipes_built"],
+                               "dropped_pieces": s["dropped_pieces"], "tees_split": s["tees_split"]}
+        out["networks"][net] = {"fixture": name, "by_tolerance_ft": rows, "sizes_at_6ft": sizes_6}
+    man = FX.ky10_manifest()
+    pairs = man["same_spot_pairs"]
+    joined = {}
+    data = _read_bytes(paths["ky10_r12.dxf"])
+    for ft in C.DIAGNOSTIC_FT:
+        b = _cad(data, "ky10_r12.dxf", tolerance_m=ft * FT)
+        votes = {}
+        for j, r in enumerate(man["records"]):
+            for end in (0, 1):
+                n = b.net.end_node.get((j, 0, end))
+                if n is not None:
+                    votes.setdefault(r["ends"][end], {}).setdefault(n, 0)
+                    votes[r["ends"][end]][n] += 1
+        node = {u: max(c.items(), key=lambda x: (x[1], x[0]))[0] for u, c in votes.items()}
+        joined[f"{ft:g}"] = sum(1 for p in pairs if p["nodes"][0] in node and node.get(p["nodes"][0]) ==
+                                node.get(p["nodes"][1]))
+    out["ky10_same_spot_pairs"] = {"pairs": len(pairs), "kinds": sorted({(p["link"] or "none").split()[0] for p in pairs}),
+                                   "list": pairs, "in_one_node_by_tolerance_ft": joined,
+                                   "unrecoverable_from_geometry": True}
+    return out
+
+
+def _sizes_of_feature(b, f: int) -> list:
+    return [(b.size_source[p["id"]], round(b.diam_in[p["id"]], 3)) for p in b.net.pipes if p["feature"] == f]
+
+
+def part_cad_labels(paths: dict) -> dict:
+    """dxf_labels_and_propagation: labels_offset_cases.dxf, each line's size and where it came from, against what
+    the fixture says it should be."""
+    from . import fixtures as FX
+    b = _cad(_read_bytes(paths["labels_offset_cases.dxf"]), "labels_offset_cases.dxf")
+    assert b.net is not None, (b.refusal, b.questions)
+    sizes = [v for k, v in b.diam_in.items() if b.size_source[k] != "default"]
+    default = max(set(round(v, 2) for v in sizes), key=lambda s: (sum(1 for v in sizes if round(v, 2) == s), -s))
+    cases, f = {}, 0
+    for c in FX.LABEL_CASES:
+        got, right = [], True
+        for want_src, want_size in c["want"]:
+            g = _sizes_of_feature(b, f)
+            f += 1
+            want = want_size if want_size is not None else default
+            ok = len(g) == 1 and g[0][0] == want_src and abs(g[0][1] - want) <= 0.01 * want
+            right &= ok
+            got.append({"source": g[0][0] if g else None, "size_in": g[0][1] if g else None,
+                        "want_source": want_src, "want_size_in": round(want, 3), "right": ok})
+        cases[c["case"]] = {"lines": got, "right": right}
+    return {"cases": cases, "right": sum(v["right"] for v in cases.values()), "of": len(cases),
+            "size_counts": b.size_counts, "labels": b.labels, "default_size_in": default}
+
+
+def part_cad_blocks(paths: dict) -> dict:
+    """dxf_blocks_and_proxies: xref_block_mains.dxf's mains inside blocks (nested, rotated, scaled, a block array)
+    found where AutoCAD draws them, on the layer it shows them on, the external xref named; Civil 3D objects get the
+    AECTOACAD message, alone (refused) and beside plain lines (built, warned)."""
+    from . import cad_read as C
+    from . import fixtures as FX
+    d = C.read_drawing(_read_bytes(paths["xref_block_mains.dxf"]), "xref_block_mains.dxf")
+    b = C.build_from_drawing(d, C.CadOptions())
+    want = FX.xref_block_expected()
+    used, found, worst = set(), [], 0.0
+    for w in want:
+        W = np.asarray(w["pts"], float)
+        best = None
+        for ln in d.lines:
+            if ln.index in used or len(ln.pts) != 2:
+                continue
+            e = min(float(np.abs(ln.pts - W).max()), float(np.abs(ln.pts[::-1] - W).max()))
+            if best is None or e < best[0]:
+                best = (e, ln)
+        ok = best is not None and best[0] <= 1e-6 and best[1].layer == w["layer"]
+        if ok:
+            used.add(best[1].index)
+            worst = max(worst, best[0])
+            sz = _sizes_of_feature(b, best[1].index)
+            ok = bool(sz) and all(abs(x[1] - w["size_in"]) <= 1e-9 for x in sz)
+        found.append(ok)
+    proxy = C.build_cad(_read_bytes(paths["civil3d_proxy.dxf"]), "civil3d_proxy.dxf")
+    mixed = C.build_cad(_read_bytes(paths["civil3d_proxy_with_lines.dxf"]), "civil3d_proxy_with_lines.dxf")
+    return {"block_lines_expected": len(want), "block_lines_found_in_place": sum(found),
+            "worst_position_error_ft": worst, "lines_from_blocks": d.counts.get("lines_from_blocks", 0),
+            "inserts_exploded": d.counts.get("inserts_exploded", 0), "xrefs": d.xrefs,
+            "xref_warned": any(FX.XREF_PATH in w and "XSITE" in w for w in d.warnings),
+            "civil3d_proxy.dxf": {"refused": proxy.refusal is not None, "aectoacad": "AECTOACAD" in (proxy.refusal or ""),
+                                  "objects": proxy.drawing.proxies + proxy.drawing.civil3d},
+            "civil3d_proxy_with_lines.dxf": {"pipes": len(mixed.net.pipes) if mixed.net else None,
+                                             "aectoacad_warned": any("AECTOACAD" in w for w in mixed.warnings)}}
+
+
+def part_cad_styles(paths: dict) -> dict:
+    """dxf_layer_style_listing: abandoned_linetype.dxf lists the dashed abandoned mains as their own layer style, and
+    leaving that style out removes those lines."""
+    from . import cad_read as C
+    d = C.read_drawing(_read_bytes(paths["abandoned_linetype.dxf"]), "abandoned_linetype.dxf")
+    listing = {C.style_label(k): {"lines": v["lines"], "texts": v["texts"]} for k, v in d.styles.items()}
+    dashed = [k for k in d.styles if k[1].upper() == "DASHED"]
+    all_ = C.build_from_drawing(d, C.CadOptions())
+    less = C.build_from_drawing(d, C.CadOptions(exclude=dashed))
+    return {"styles": listing, "dashed_styles": [C.style_label(k) for k in dashed],
+            "pipes_with_all": len(all_.net.pipes), "pipes_without_dashed": len(less.net.pipes),
+            "lines_left_out": len(all_.net.pipes) - len(less.net.pipes)}
+
+
+def part_cad_units(paths: dict) -> dict:
+    """dxf_units_and_mtext: a unitless drawing asks its unit (and builds once it is given); metres declared on a
+    drawing from an imperial template is flagged; the same with no measurement setting is not (a known limit);
+    millimetres declared on a drawing in feet is asked (its median line is implausible); MTEXT with formatting codes
+    gives its sizes."""
+    from . import fixtures as FX
+    out = {}
+    for name in ("insunits_zero.dxf", "insunits_wrong.dxf", "insunits_wrong_nomeasure.dxf", "insunits_mm.dxf"):
+        b = _cad(_read_bytes(paths[name]), name)
+        out[name] = {"questions": [(q["key"], q["blocking"]) for q in b.questions], "built": b.inp_text is not None,
+                     "unit": b.unit, "insunits": b.drawing.insunits, "measurement": b.drawing.measurement,
+                     "median_ft": round(b.unit_check["median_ft"], 3) if b.unit_check.get("median_ft") else None,
+                     "flagged": bool(b.unit_check.get("measurement_disagrees") or b.unit_check.get("implausible")
+                                     or any(q["key"] == "unit" for q in b.questions))}
+    ft = _cad(_read_bytes(paths["insunits_zero.dxf"]), "insunits_zero.dxf", unit="ft")
+    out["insunits_zero.dxf"]["built_in_feet"] = {"pipes": len(ft.net.pipes), "unit": ft.unit}
+    m = _cad(_read_bytes(paths["mtext_codes.dxf"]), "mtext_codes.dxf")
+    out["mtext_codes.dxf"] = {"texts": [t.text for t in m.drawing.texts],
+                              "sizes": [_sizes_of_feature(m, k) for k in range(len(FX.MTEXT_CASES))],
+                              "want": [c[4] for c in FX.MTEXT_CASES]}
+    return out
+
+
+def part_cad_bak_binary(paths: dict) -> dict:
+    """dxf_bak_and_binary: the ky4 drawing as an ASCII DXF, the same bytes named .bak and the same drawing as binary DXF
+    (the fixtures' own binary writer) give the same skeleton, byte for byte."""
+    import hashlib
+    from .importers import sniff
+    out = {}
+    for name in ("ky4_r12_handwritten.dxf", "ky4_drawing.dxf.bak", "ky4_binary.dxf"):
+        data = _read_bytes(paths[name])
+        b = _cad(data, name)
+        s = sniff(data, name)
+        out[name] = {"sniff": s.kind, "backup": s.backup, "bytes": len(data), "pipes": len(b.net.pipes),
+                     "inp_sha1": hashlib.sha1(b.inp_text.encode("utf-8")).hexdigest()}
+    out["identical"] = len({v["inp_sha1"] for v in out.values()}) == 1
+    return out
+
+
+def part_cad_guidance(paths: dict) -> dict:
+    """dwg_dgn_ifc_get_guidance: a DWG, an AutoCAD backup holding a DWG, DGN V7 and V8 and an IFC file are identified
+    by their content and get what to send instead, with no traceback."""
+    from . import cad_read as C
+    from . import fixtures as FX
+    out = {}
+    for name in FX.CAD_GUIDANCE:
+        d = C.read_drawing(_read_bytes(paths[name]), name)
+        r = d.refusal or ""
+        out[name] = {"sniff": d.sniff_kind, "first_sentence": r.split(". ")[0] + ".",
+                     "says_dxf": "DXF" in r, "oda_link": C.ODA_LINK in r, "rename_to_dwg": "rename it to .dwg" in r}
+    return out
+
+
+def part_cad_hostile(paths: dict) -> dict:
+    """cad_reads_in_linear_time: each hostile drawing, read with the local and the hosted demo's limits: what was read
+    or why it was refused (the check times each read)."""
+    from . import cad_read as C
+    from . import cloud
+    from . import fixtures as FX
+    nb, fb = FX.HOSTILE_NEG_MINSERT
+    out = {"sizes": {"mtext_codes_chars": FX.HOSTILE_MTEXT_CHARS, "stacked_mtexts": FX.HOSTILE_STACK_TEXTS[0],
+                     "stacked_mtext_chars": FX.HOSTILE_STACK_TEXTS[1], "bomb_depth": FX.HOSTILE_BOMB[0],
+                     "bomb_fan": FX.HOSTILE_BOMB[1], "bomb_lines": FX.HOSTILE_BOMB[1] ** (FX.HOSTILE_BOMB[0] - 1),
+                     "minsert_copies": FX.HOSTILE_MINSERT[0] * FX.HOSTILE_MINSERT[1],
+                     "spline_points": FX.HOSTILE_SPLINE_POINTS, "long_name_chars": FX.HOSTILE_LAYER_CHARS,
+                     "upload_limit_bytes": cloud.UPLOAD_MB * 1_000_000,
+                     # since the review
+                     "tall_label_lines": FX.HOSTILE_TALL[0], "tall_label_points": FX.HOSTILE_TALL[0] * FX.HOSTILE_TALL[1],
+                     "tall_labels": FX.HOSTILE_TALL[2], "tall_label_height_ft": FX.HOSTILE_TALL[3],
+                     "crowded_labels": FX.HOSTILE_CROWDED[2], "crowded_label_height_ft": FX.HOSTILE_CROWDED[3],
+                     "negative_minsert_depth": nb, "negative_minsert_fan": fb,
+                     "negative_minsert_lines": fb * (fb + 1) ** (nb - 1),
+                     "bulge_vertices": FX.HOSTILE_BULGES[0],
+                     "bulge_points": 1 + FX.HOSTILE_BULGES[0] * C.MAX_ARC_SEGMENTS,
+                     "cloud_text_limit": cloud.CAD_MAX_TEXTS, "cloud_label_pairs_limit": cloud.CAD_MAX_LABEL_PAIRS,
+                     "local_label_pairs_limit": C.MAX_LABEL_PAIRS,
+                     # since the final verification
+                     "long_handle_hex_digits": FX.HOSTILE_LONG_HANDLE[0], "zero_handle_lines": FX.HOSTILE_LONG_HANDLE[1],
+                     "inf_bulge_vertices": FX.HOSTILE_INF_BULGES, "handle_hex_digits_max": 16}}
+    for name in FX.HOSTILE_FIXTURES:
+        data = _read_bytes(paths[name])
+        row = {"bytes": len(data)}
+        if name == "hostile_long_handle.dxf":       # the final verification: what renumbering makes of the file
+            repaired, info = C._repair_ascii(data)
+            row["repaired_bytes"], row["handles_renumbered"] = len(repaired), info["handles_renumbered"]
+            row["repaired_over_input"] = round(len(repaired) / len(data), 3)
+        for label, lim in (("local", None), ("cloud", cloud.cad_limits())):
+            d = C.read_drawing(data, name, lim)
+            row[label] = {"lines": len(d.lines), "texts": len(d.texts), "refused": d.refusal is not None,
+                          "refusal": (d.refusal or "").split(". ")[0], "warnings": [w.split(". ")[0] for w in d.warnings],
+                          "texts_too_long": d.counts.get("texts_too_long", 0)}
+            if name == "hostile_inf_bulges.dxf":    # the final verification: left out before its arcs are drawn
+                row[label].update(lines_not_finite=d.counts.get("lines_not_finite", 0), points=d.counts.get("points"))
+            if name in ("hostile_tall_labels.dxf", "hostile_crowded_labels.dxf"):     # the review: the build's bound
+                b = C.build_from_drawing(d, C.CadOptions(to_scale=True), lim)
+                row[label]["build"] = {"refused": b.refusal is not None, "refusal": (b.refusal or "").split(": ")[0],
+                                       "pipes": len(b.net.pipes) if b.net else None, "size_counts": b.size_counts,
+                                       "labels_too_tall": b.labels.get("not_sizes", {}).get("too tall", 0),
+                                       "label_pairs_within_reach": b.labels.get("pairs_within_reach")}
+        out[name] = row
+    return out
+
+
+def part_cad_review(paths: dict) -> dict:
+    """dxf_review_cases: one drawing for each case the review of task 18 found, what the reader and the build now give
+    (and, where the case was ezdxf's own, what ezdxf alone gives)."""
+    import io
+    import logging
+    from ezdxf import recover
+    from . import cad_read as C
+    from . import fixtures as FX
+    from .topology import FT
+    logging.getLogger("ezdxf").setLevel(logging.ERROR)
+    out = {}
+
+    def qs(b):
+        return [[q["key"], q["blocking"]] for q in b.questions]
+
+    # inches declared on a drawing made in feet: asked, both medians shown; in feet it is ky4's skeleton; true inches
+    data = _read_bytes(paths["ky4_inches_declared.dxf"])
+    b, ft, inch = (_cad(data, "ky4_inches_declared.dxf", **kw) for kw in ({}, {"unit": "ft"}, {"unit": "in"}))
+    s = score_ky4(ft)
+    t = _cad(_read_bytes(paths["inches_true.dxf"]), "inches_true.dxf")
+    out["inches"] = {"ky4_inches_declared.dxf": {
+        "insunits": b.drawing.insunits, "questions": qs(b), "built": b.inp_text is not None,
+        "median_ft_read_as_inches": round(b.unit_check["median_ft"], 1),
+        "median_ft_read_as_feet": round(b.unit_check["median_ft_if_feet"], 1),
+        "in_feet": {"pipes_rebuilt": s["pipes_rebuilt"], "of_pipes": s["of_pipes"], "components": s["components"],
+                    "diameter_share": s["diameter_share"]},
+        "in_inches": {"pipes": len(inch.net.pipes), "dropped_pieces": inch.net.report["dropped_pieces"],
+                      "median_pipe_ft": round(float(np.median([p["length_m"] for p in inch.net.pipes])) / FT, 1)}},
+        "inches_true.dxf": {"questions": qs(t), "unit": t.unit, "median_ft": round(t.unit_check["median_ft"], 1),
+                            "median_ft_read_as_feet": round(C._median_ft(t.drawing.lines, FT), 1),
+                            "pipes": len(t.net.pipes)}}
+    # numbers in layer names that are no sizes
+    z = _read_bytes(paths["zone_layers.dxf"])
+    runs = {"asked": {}, "not_sizes": {"layer_numbers": "none"}, "inches": {"layer_numbers": "in"},
+            "layer_names_off": {"layer_sizes": False}}
+    zone = {}
+    for k, kw in runs.items():
+        bz = _cad(z, "zone_layers.dxf", **kw)
+        zone[k] = {"questions": qs(bz), "built": bz.inp_text is not None, "size_counts": bz.size_counts,
+                   "sizes_in": sorted({round(v, 3) for v in bz.diam_in.values()}),
+                   "labels_win": bz.labels.get("layers_whose_labels_win", []),
+                   "warned_labels_win": any("the labels are used on that layer" in w for w in bz.warnings)}
+    zone["layer_names"] = {n: {k: C.layer_size(n)[k] for k in ("value", "unit", "cued")}
+                           for n in ("WATER-ZONE-2", "WATER-PHASE-2", "SHEET-12", "W-DIST-10", "W_8_PVC", "WATER-8IN",
+                                     "WTR-200MM", "MAINS-8-DIA")}
+    out["zone_layers.dxf"] = zone
+    # bytes invalid in the drawing's encoding (cp1252 in an R2018 file)
+    data = _read_bytes(paths["latin1_r2018.dxf"])
+    doc, _ = recover.read(io.BytesIO(data))
+    d = C.read_drawing(data, "latin1_r2018.dxf")
+    names = [k[0] for k in d.styles]
+    out["latin1_r2018.dxf"] = {"ezdxf_default_gives_surrogates": any(C._SURROGATES.search(str(x.dxf.layer)) for x in
+                                                                     doc.modelspace()),
+                               "layer_names": names, "utf8_writable": all(C._SURROGATES.search(n) is None for n in names),
+                               "pipes": len(C.build_from_drawing(d, C.CadOptions()).net.pipes)}
+    # handles drawn twice, or 0
+    for n in ("dup_handles.dxf", "zero_handles.dxf"):
+        data = _read_bytes(paths[n])
+        try:
+            alone = len(recover.read(io.BytesIO(data))[0].modelspace())
+        except Exception as e:  # noqa: BLE001  (ezdxf refuses the file)
+            alone = type(e).__name__
+        bh = _cad(data, n)
+        out[n] = {"ezdxf_alone_lines": alone, "lines": len(bh.drawing.lines), "refused": bh.refusal is not None,
+                  "handles_renumbered": bh.drawing.counts.get("handles_renumbered", 0),
+                  "pipes": len(bh.net.pipes) if bh.net else None,
+                  "components": bh.net.report["components"] if bh.net else None,
+                  "noted": any("given new ones" in x for x in bh.drawing.notes)}
+    # a spline-fit POLYLINE's control frame
+    d = C.read_drawing(_read_bytes(paths["spline_fit_polyline.dxf"]), "spline_fit_polyline.dxf")
+    ln = d.lines[0]
+    curve = np.array(FX.spline_fit_curve(), float)
+    with_frame = np.vstack([np.array(FX.SPLINE_FRAME, float), curve])
+    length = lambda P: round(float(np.hypot(*(P[1:] - P[:-1]).T).sum()), 1)
+    out["spline_fit_polyline.dxf"] = {"points_read": len(ln.pts), "length_read_ft": length(ln.pts),
+                                      "curve_length_ft": length(curve), "length_with_frame_ft": length(with_frame)}
+    # layers AutoCAD hides
+    d = C.read_drawing(_read_bytes(paths["frozen_layers.dxf"]), "frozen_layers.dxf")
+    fz = {"hidden_layers": d.hidden_layers, "default_excluded": [C.style_label(k) for k in C.default_excluded(d)],
+          "in_frozen_blocks": d.counts.get("in_frozen_blocks", {})}
+    for k, kw in (("default", {}), ("frozen_blocks", {"frozen_blocks": True}), ("all_hidden", {"include_hidden": True})):
+        bf = C.build_from_drawing(d, C.CadOptions(to_scale=True, **kw))
+        fz[k] = {"lines_used": bf.lines_used, "pipes": len(bf.net.pipes), "size_counts": bf.size_counts,
+                 "sizes_in": sorted({round(v, 3) for v in bf.diam_in.values()}),
+                 "notes": [x.split(";")[0] for x in bf.notes if "frozen" in x]}
+    out["frozen_layers.dxf"] = fz
+    # files cut short
+    for n in [f"ky4_cut_{round(100 * x)}.dxf" for x in FX.CUT_SHORT_SHARES] + ["ky4_no_eof.dxf"]:
+        data = _read_bytes(paths[n])
+        bc = _cad(data, n)
+        out[n] = {"bytes": len(data), "ezdxf_alone_lines": len(recover.read(io.BytesIO(data))[0].modelspace()),
+                  "lines": len(bc.drawing.lines), "texts": len(bc.drawing.texts), "pipes": len(bc.net.pipes),
+                  "warned_cut_short": any(w.startswith("The file looks cut short") for w in bc.warnings),
+                  "refused": bc.refusal is not None}
+    # AutoCAD's diameter sign, U+2205
+    d = C.read_drawing(_read_bytes(paths["diameter_sign.dxf"]), "diameter_sign.dxf")
+    bd = C.build_from_drawing(d, C.CadOptions(to_scale=True))
+    out["diameter_sign.dxf"] = {"labels": [[t.text, C.label_size(t.text)["value"], C.label_size(t.text)["marked"]]
+                                           for t in d.texts], "size_counts": bd.size_counts,
+                                "sizes_in": sorted({round(v, 3) for v in bd.diam_in.values()})}
+    # C from a label's material on a line whose layer names its size
+    bc = _cad(_read_bytes(paths["c_from_label.dxf"]), "c_from_label.dxf")
+    out["c_from_label.dxf"] = {"size_counts": bc.size_counts, "c_counts": bc.c_counts}
+    # no size anywhere: asked, built only at the size the operator gives, and said so
+    data = _read_bytes(paths["no_sizes.dxf"])
+    ask, given = _cad(data, "no_sizes.dxf"), _cad(data, "no_sizes.dxf", default_diameter_in=8.0)
+    out["no_sizes.dxf"] = {"questions": qs(ask), "built": ask.inp_text is not None,
+                           "given": {"built": given.inp_text is not None, "default_size": given.default_size,
+                                     "warned_size_you_gave": any("the size you gave" in w for w in given.warnings)}}
+    # a text too long to be read is said
+    d = C.read_drawing(_read_bytes(paths["long_label.dxf"]), "long_label.dxf")
+    out["long_label.dxf"] = {"texts_too_long": d.counts.get("texts_too_long", 0),
+                             "noted": any(x.startswith("1 text longer than") for x in d.notes)}
+    # the readiness report's Diameters row: from the file only for layer names; a label is matched by distance
+    from .importers import prepare_inp
+    rows = {}
+    for k, bb in (("layer names only", bc), ("labels only", bd), ("the size you gave", given)):
+        with tempfile.TemporaryDirectory(prefix="rm_t18_ready_") as tmp:
+            _, rep = prepare_inp(bb.inp_text.encode("utf-8"), tmp, "free_chlorine", name="skeleton.inp")
+        row = next(r for r in C.readiness(bb, rep).rows if r[0] == "Diameters")
+        rows[k] = {"value": row[1], "source": row[2]}
+    out["diameters_row"] = rows
+    return out
+
+
+LAYER_CUE_NAMES = ("W-MAIN-CL-ZONE-2", "WATER-CL-PHASE-3", "C-WATR-PIPE-CL-2", "WATER-ST-12", "W-PE-SHEET-4",
+                   "WATER-ZONE-2-PVC", "PVC-ZONE-3", "W-POLY-ZONE-3", "W-AC-DIST-10", "WS-ZONE-2", "W_8_CL",
+                   "WATER-ZONE-2", "W_8_PVC", "PVC-8", "W-8PVC", "W-\u22058", "MAINS-8-DIA", "WATER-8IN")
+NEAR_LIMIT_TOL_FT = 1.0                       # the near-limit drawing's rows are 2 ft apart: joined within 1 ft
+
+
+def near_limit_build(path: str) -> dict:
+    """The final verification of task 18, in a process of its own (cloud.run_in_folder), so its peak memory is its
+    own: label_pairs_near_limit.dxf read, its pairs of a label and a segment counted (a build whose limit is one pair
+    refuses with the count), then built with the local limits; the peak resident memory after the read and after the
+    build (GB) and the build's seconds, which vary from run to run, beside what the build gave."""
+    import resource
+    import sys as _sys
+    import time as _time
+    from . import cad_read as C
+    from .topology import FT
+    _quiet()
+    scale = 1.0 if _sys.platform == "darwin" else 1024.0        # ru_maxrss is in bytes on macOS, KiB on Linux
+    peak = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale / 1e9
+    d = C.read_drawing(_read_bytes(path), os.path.basename(path))
+    after_read = peak()
+    opts = C.CadOptions(to_scale=True, tolerance_m=NEAR_LIMIT_TOL_FT * FT)
+    counted = C.build_from_drawing(d, opts, {"max_label_pairs": 1}).labels.get("pairs_within_reach")
+    t = _time.perf_counter()
+    b = C.build_from_drawing(d, opts)
+    secs = _time.perf_counter() - t
+    return {"lines": len(d.lines), "texts": len(d.texts), "pairs_within_reach": counted,
+            "under_local_limit": counted is not None and counted <= C.MAX_LABEL_PAIRS, "refused": b.refusal is not None,
+            "pipes": len(b.net.pipes) if b.net else None, "assigned": b.labels.get("assigned"),
+            "size_counts": b.size_counts, "_measured": {"peak_gb_after_read": round(after_read, 3),
+                                                        "peak_gb_after_build": round(peak(), 3),
+                                                        "build_s": round(secs, 1)}}
+
+
+def part_cad_final(paths: dict) -> dict:
+    """dxf_final_verification: one case for each issue the final verification of task 18 found that the hostile part
+    does not hold: which layer names cue their number as a size; a cued number its labels dispute (asked); a byte
+    order mark before a drawing whose handles are drawn twice, or that is cut short; a binary DXF whose handles are
+    drawn twice (not repaired: a recorded limit); the points a bulge between infinite vertices is charged; and the
+    drawing just under the local limit of pairs of a label and a segment, built in a process of its own.  Its key
+    '_measured' (peak memory and seconds, which vary from run to run) is not part of the record."""
+    import io
+    import logging
+    import tempfile as _tf
+    from ezdxf import recover
+    from . import cad_read as C
+    from . import cloud
+    from . import fixtures as FX
+    logging.getLogger("ezdxf").setLevel(logging.ERROR)
+    out = {"layer_cues": {n: {k: C.layer_size(n)[k] for k in ("value", "unit", "cued")} for n in LAYER_CUE_NAMES},
+           "cue_ambiguous": list(C.CUE_AMBIGUOUS), "dispute_lines": C.DISPUTE_LINES}
+    # a number its name cues (W-2-PVC) that the labels on its lines dispute, beside one stray label (W-8-PVC)
+    data = _read_bytes(paths["disputed_layer.dxf"])
+    disp = {}
+    for k, kw in (("asked", {}), ("not_sizes", {"layer_numbers": "none"}), ("inches", {"layer_numbers": "in"})):
+        bd = _cad(data, "disputed_layer.dxf", to_scale=True, **kw)
+        q = next((x["text"] for x in bd.questions if x["key"] == "layer_numbers"), "")
+        disp[k] = {"questions": [[x["key"], x["blocking"]] for x in bd.questions], "built": bd.inp_text is not None,
+                   "size_counts": bd.size_counts, "sizes_in": sorted({round(v, 3) for v in bd.diam_in.values()}),
+                   "disputed": bd.labels.get("layers_disputed", []),
+                   "question_names": [n for n in FX.DISPUTED_LAYERS if n in q],
+                   "warned_stray_label": any("with a label of another size near" in w for w in bd.warnings)}
+    out["disputed_layer.dxf"] = disp
+    # a byte order mark before the first group code
+    for n, plain in (("bom_dup_handles.dxf", "dup_handles.dxf"), ("bom_ky4_no_eof.dxf", "ky4_no_eof.dxf")):
+        data = _read_bytes(paths[n])
+        d = C.read_drawing(data, n)
+        try:
+            alone = len(recover.read(io.BytesIO(data))[0].modelspace())
+        except Exception as e:  # noqa: BLE001  (ezdxf refuses the file)
+            alone = type(e).__name__
+        out[n] = {"starts_with_bom": data.startswith(C._BOM), "same_as": plain, "lines": len(d.lines),
+                  "ezdxf_alone_lines": alone, "handles_renumbered": d.counts.get("handles_renumbered", 0),
+                  "cut_short": bool(d.counts.get("cut_short")), "refused": d.refusal is not None,
+                  "warned_cut_short": any(w.startswith("The file looks cut short") for w in d.warnings)}
+    # a binary DXF whose handles are drawn twice: read as it is, the audit's removals warned (a recorded limit)
+    d = C.read_drawing(_read_bytes(paths["binary_dup_handles.dxf"]), "binary_dup_handles.dxf")
+    out["binary_dup_handles.dxf"] = {"kind": d.kind, "lines": len(d.lines), "of_lines": 10,
+                                     "audit_removed": d.counts.get("audit_removed", 0),
+                                     "handles_renumbered": d.counts.get("handles_renumbered", 0),
+                                     "warned": any(w.startswith("The DXF repair removed") for w in d.warnings)}
+    # a bulge between two vertices that compare equal but whose chord is not 0 (infinite ones): charged what it makes
+    inf = float("inf")
+    out["bulge_counts"] = [{"vertices": [[str(x), str(y), b] for x, y, b in xyb],
+                            "counted": C._bulged_points(xyb, False), "made": len(C._poly_with_bulges(xyb, False))}
+                           for xyb in ([(0.0, 0.0, 1.0), (10.0, 0.0, 0.0)], [(inf, inf, 1.0), (inf, inf, 0.0)],
+                                       [(inf, 0.0, 1.0), (inf, 0.0, 0.0)], [(5.0, 5.0, 1.0), (5.0, 5.0, 0.0)])]
+    n = FX.HOSTILE_INF_BULGES                   # hostile_inf_bulges.dxf's polyline: what flattening it would make
+    out["inf_polyline"] = {"vertices": n, "points_its_arcs_make": C._bulged_points([(inf, inf, 1.0)] * n, False)}
+    # just under the local limit of pairs: built in a process of its own, its peak memory measured
+    from . import intake_exp as this      # so the child unpickles the function under -m too (not as __main__'s)
+    with _tf.TemporaryDirectory(prefix="rm_t18_near_") as tmp:
+        near = cloud.run_in_folder(tmp, this.near_limit_build, paths["label_pairs_near_limit.dxf"])
+    out["label_pairs_near_limit.dxf"] = near
+    out["_measured"] = {"label_pairs_near_limit.dxf": near.pop("_measured")}
+    return out
+
+
+RECORD_18_TIMING = os.path.join(OUT, "cad_mtext_timing.json")
+MTEXT_TIMING_CHARS = (200_000, 400_000, 800_000)
+MTEXT_SHAPES = {"codes_A": "\\A1;", "stack_S": "\\S1^2;", "height_H": "\\H1.5x;", "paragraphs": "\\P",
+                "font_f": "\\fArial;"}
+LOADER_SHAPES = ("text_spaces", "layer_long", "float_long", "many_lines")
+
+
+def _timing_dxf(pairs: list) -> bytes:
+    head = [(0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, "AC1015"), (9, "$INSUNITS"), (70, 2), (0, "ENDSEC"),
+            (0, "SECTION"), (2, "ENTITIES")]
+    return ("\r\n".join(f"{c}\r\n{v}" for c, v in head + pairs + [(0, "ENDSEC"), (0, "EOF")]) + "\r\n").encode("latin-1")
+
+
+def _timing_mtext(s: str) -> list:
+    return [(0, "MTEXT"), (5, "1A"), (100, "AcDbEntity"), (8, "T"), (100, "AcDbMText"), (10, 0.0), (20, 0.0), (40, 2.0),
+            (71, 1), (1, s)]
+
+
+def _loader_case(shape: str, n: int) -> list:
+    if shape == "text_spaces":
+        return [(0, "TEXT"), (5, "1B"), (100, "AcDbEntity"), (8, "T"), (100, "AcDbText"), (10, 0.0), (20, 0.0),
+                (40, 2.0), (1, " " * n + '8"')]
+    if shape == "layer_long":
+        return [(0, "TEXT"), (5, "1B"), (100, "AcDbEntity"), (8, "L" * n), (100, "AcDbText"), (10, 0.0), (20, 0.0),
+                (40, 2.0), (1, "8")]
+    if shape == "float_long":
+        return [(0, "LINE"), (5, "1D"), (100, "AcDbEntity"), (8, "W"), (100, "AcDbLine"), (10, "1" * n), (20, 0.0),
+                (11, 1.0), (21, 0.0)]
+    return [p for i in range(n // 60) for p in [(0, "LINE"), (8, "W"), (10, float(i)), (20, 0.0), (11, float(i) + 1),
+                                               (21, 0.0)]]
+
+
+def cad_mtext_timing() -> dict:
+    """The probe that found ezdxf's default MTEXT reader quadratic, rerun and kept (the review of task 18): seconds to
+    load a one-MTEXT drawing in recover mode and read its text with the default reader (plain_text, its 'fast' mode)
+    and with the accurate parser cad_read uses (plain_mtext), for runs of formatting codes of 200,000, 400,000 and
+    800,000 characters, and the loader alone on other shapes.  Timed on this Mac, so it varies from run to run and no
+    check reruns it; written by python -m residualmap.intake_exp cad_timing."""
+    import io
+    import logging
+    import platform
+    import time
+    import ezdxf
+    from ezdxf import recover
+    from ezdxf.tools.text import plain_mtext
+    from . import fixtures as FX
+    logging.getLogger("ezdxf").setLevel(logging.ERROR)
+
+    def timed(data: bytes, read) -> float:
+        t = time.perf_counter()
+        doc, _ = recover.read(io.BytesIO(data))
+        for e in doc.modelspace():
+            if e.dxftype() in ("TEXT", "MTEXT"):
+                read(e)
+        return round(time.perf_counter() - t, 3)
+
+    def growth(row: dict) -> dict:
+        ks = sorted(row, key=int)
+        return {f"{b}_over_{a}": round(row[b] / max(row[a], 1e-6), 2) for a, b in zip(ks, ks[1:])}
+
+    out = {"about": " ".join(cad_mtext_timing.__doc__.split("\n\n")[0].split()),
+           "written": time.strftime("%Y-%m-%d %H:%M"), "ezdxf": ezdxf.__version__, "python": platform.python_version(),
+           "machine": platform.machine(), "chars": list(MTEXT_TIMING_CHARS)}
+    fast = {str(n): timed(_timing_dxf(_timing_mtext("\\A1;" * (n // 4))), lambda e: e.plain_text())
+            for n in MTEXT_TIMING_CHARS}
+    out["default_reader_codes_A_s"] = fast
+    out["default_reader_growth"] = growth(fast)
+    hi = MTEXT_TIMING_CHARS[-1]
+    # an extrapolation, not a run: time grows with the square of the characters, so the hosted demo's largest MTEXT
+    # (the hostile fixture's 4,800,000 characters) would take (4,800,000 / 800,000) squared times the 800,000 run
+    out["extrapolated_default_reader_s_at_hostile_chars"] = {
+        "chars": FX.HOSTILE_MTEXT_CHARS, "seconds": round(fast[str(hi)] * (FX.HOSTILE_MTEXT_CHARS / hi) ** 2),
+        "minutes": round(fast[str(hi)] * (FX.HOSTILE_MTEXT_CHARS / hi) ** 2 / 60), "is_extrapolation": True}
+    acc = {}
+    for shape, code in MTEXT_SHAPES.items():
+        acc[shape] = {str(n): timed(_timing_dxf(_timing_mtext(code * (n // len(code)))), lambda e: plain_mtext(e.text))
+                      for n in MTEXT_TIMING_CHARS[1:]}
+        acc[shape]["growth"] = growth({k: v for k, v in acc[shape].items()})
+    out["accurate_parser_s"] = acc
+    loader = {}
+    for shape in LOADER_SHAPES:
+        row = {str(n): timed(_timing_dxf(_loader_case(shape, n)), lambda e: e.plain_text()) for n in MTEXT_TIMING_CHARS[1:]}
+        loader[shape] = {**row, "growth": growth(row)}
+    out["loader_s"] = loader
+    return out
+
+
+def cad_record() -> dict:
+    from . import fixtures as FX
+    _quiet()
+    with tempfile.TemporaryDirectory(prefix="rm_t18_") as d:
+        paths = FX.build_all(os.path.join(d, "fx"), FX.CAD_FIXTURES)
+        return {"about": "Task 18's CAD importer, converter self-consistency on public models drawn by our own writers "
+                         "(residualmap/fixtures.py), never a test on a real drawing (R6): ky4's mains as an R12 drawing "
+                         "written by hand and read by ezdxf against the pre-registered bar, and as an R2018 drawing "
+                         "ezdxf wrote (part 'rebuild'), the tolerance table in feet on ky4 and ky10 (part "
+                         "'tolerance'), labels and propagation, blocks and Civil 3D objects, layer styles, units and "
+                         "MTEXT, the backup and binary copies, DWG, DGN and IFC guidance, hostile drawings (part "
+                         "'hostile'), and since the review of task 18 one drawing for each case it found (part "
+                         "'review') and since its final verification one for each issue that found (part 'final'). "
+                         "Every CAD-built model is topology and sizes only, and needs the operator form. "
+                         "Written by python -m residualmap.intake_exp cad; the task18 checks in residualmap/checks.py "
+                         "rerun every part and compare.",
+                "rebuild": part_cad_rebuild(paths), "tolerance": part_cad_tolerance(paths),
+                "labels": part_cad_labels(paths), "blocks": part_cad_blocks(paths), "styles": part_cad_styles(paths),
+                "units": part_cad_units(paths), "bak_binary": part_cad_bak_binary(paths),
+                "guidance": part_cad_guidance(paths), "hostile": part_cad_hostile(paths),
+                "review": part_cad_review(paths), "final": _unmeasured(part_cad_final(paths))}
+
+
+def _unmeasured(part: dict) -> dict:
+    """A part without its '_measured' key (peak memory and seconds, which vary from run to run)."""
+    return {k: v for k, v in part.items() if k != "_measured"}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", nargs="?", choices=("all", "elevation", "bundled", "record", "timing", "samples",
-                                                "snapping", "zone", "gis"),
+                                                "snapping", "zone", "gis", "cad", "cad_timing"),
                     default="all")
     ap.add_argument("--ky10", action="store_true", help="timing: also time ky10's grid (about 4 minutes)")
     ap.add_argument("--fixed-only", action="store_true", help="timing: rewrite only the records copied from logs "
@@ -2816,6 +3465,12 @@ def main(argv=None) -> int:
         return 0
     if a.what == "gis":                  # task 17 (not part of 'all'); about a minute
         _write(RECORD_17, gis_record())
+        return 0
+    if a.what == "cad":                  # task 18 (not part of 'all')
+        _write(RECORD_18, cad_record())
+        return 0
+    if a.what == "cad_timing":           # task 18's review: the MTEXT timing (about two minutes; not part of 'all')
+        _write(RECORD_18_TIMING, cad_mtext_timing())
         return 0
     if a.what in ("all", "elevation"):      # first: the readiness text quotes it
         _write(ELEVATION_PRV, elevation_prv())

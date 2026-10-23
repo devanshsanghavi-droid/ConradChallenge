@@ -4167,6 +4167,956 @@ FIXTURES.update({"ky4_mains_stdlib_shp.zip": ky4_mains_stdlib_shp_zip, "ky4_main
                  **{n: globals()[n.replace(".", "_")] for n in REVIEW_FIXTURES + FINAL_FIXTURES}})
 
 
+# ----------------------------------------------------------------------------- task 18: CAD drawings
+# Every drawing here is written by hand, group code by group code from the DXF reference, as ASCII (R12 and R2000) or
+# binary DXF (R12), sharing no code with ezdxf, which reads them; the one exception is ky4_r2018_lwpolyline.dxf, which
+# ezdxf writes and ezdxf reads (same-library self-consistency, labelled so).  The ky4 drawing is task 17's mains
+# layer (ky4_mains_records: 43 runs drawn through tees, 19 undershoots of 4 ft, every end jittered by up to 0.3 ft),
+# drawn as POLYLINEs, half the sizes in layer names and half as labels (pre-registered before any reader code: the
+# label 2 ft high, at the middle of its line's longest segment, parallel to it, on a seeded side, the near edge of its
+# box 0.5 to 2.5 heights off the line, so the 3-height reach decides none by float error).
+CAD_TEXT_H = 2.0                       # label height, ft (the reach, 3 heights, is the plan's original 6 ft)
+CAD_OFFSETS_H = (0.5, 2.5)             # the near edge of a label's box off its line, in heights
+CAD_SEED = 181                         # which records carry their size in the layer name, label sides and offsets
+CAD_KY10_SEED = 182                    # ky10's jitter and label sides and offsets
+CAD_JITTER_FT = 0.3
+CAD_CHAR_W = 0.6                       # the writer's own width estimate, in heights per character
+CAD_LAYER_STYLES = ("WATER-{d:g}IN", "W_{d:g}_{mat}", "WTR-{mm}MM")
+CAD_MATERIALS = ("PVC", "DIP", "CI")
+CAD_TEXT_STYLES = ('{d:g}" DIP', "{d:g} in", "{mm} mm", "%%c{mm}")
+CAD_MTEXT_STYLES = (('\\A1;{{\\fArial|b0;{d:g}" DIP}}', '{d:g}" DIP'), ("{{\\H1.0x;{d:g} in PVC}}", "{d:g} in PVC"))
+CAD_MAINS_LAYER, CAD_TEXT_LAYER = "WATER-MAINS", "WATER-TEXT"
+
+
+def _dxf_v(v) -> str:
+    if isinstance(v, bool):
+        return str(int(v))
+    if isinstance(v, float):
+        return repr(v)
+    return str(v)
+
+
+def _dxf_ascii(pairs, encoding: str = "cp1252") -> bytes:
+    """ASCII DXF: each group code right-aligned in 3 characters on its line, its value on the next."""
+    return ("\r\n".join(f"{c:>3}\r\n{_dxf_v(v)}" for c, v in pairs) + "\r\n").encode(encoding)
+
+
+def _bin_kind(code: int) -> str:
+    """A group code's value type in binary DXF (the DXF reference's group code ranges)."""
+    if 0 <= code <= 9 or code in (100, 102, 105) or 300 <= code <= 369 or 390 <= code <= 399 or 410 <= code <= 419 \
+            or 999 <= code <= 1009:
+        return "s"
+    if 10 <= code <= 59 or 110 <= code <= 149 or 210 <= code <= 239 or 460 <= code <= 469 or 1010 <= code <= 1059:
+        return "d"
+    if 60 <= code <= 79 or 170 <= code <= 179 or 270 <= code <= 289 or 370 <= code <= 389 or 400 <= code <= 409 \
+            or 1060 <= code <= 1070:
+        return "h"
+    if 90 <= code <= 99 or 420 <= code <= 429 or 440 <= code <= 449 or code == 1071:
+        return "i"
+    if 290 <= code <= 299:
+        return "b"
+    raise ValueError(f"group code {code} not written")
+
+
+def _dxf_binary_r12(pairs) -> bytes:
+    """Binary DXF of R12: the sentinel, then each group code as one byte (255 and two bytes above 254) and its value
+    typed by the code (a NUL-ended string, a little-endian double, int16 or int32)."""
+    out = [b"AutoCAD Binary DXF\r\n\x1a\x00"]
+    for c, v in pairs:
+        out.append(bytes([c]) if c < 255 else b"\xff" + struct.pack("<H", c))
+        k = _bin_kind(c)
+        if k == "s":
+            out.append(str(v).encode("cp1252") + b"\x00")
+        elif k == "d":
+            out.append(struct.pack("<d", float(v)))
+        elif k == "h":
+            out.append(struct.pack("<h", int(v)))
+        elif k == "i":
+            out.append(struct.pack("<i", int(v)))
+        else:
+            out.append(bytes([1 if v else 0]))
+    return b"".join(out)
+
+
+def _r12_header(insunits: int | None = 2, measurement: int | None = None) -> list:
+    g = [(0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, "AC1009")]
+    if insunits is not None:
+        g += [(9, "$INSUNITS"), (70, insunits)]
+    if measurement is not None:
+        g += [(9, "$MEASUREMENT"), (70, measurement)]
+    return g + [(0, "ENDSEC")]
+
+
+def _r12_polyline(pts, layer: str, linetype: str | None = None, color: int | None = None) -> list:
+    g = [(0, "POLYLINE"), (8, layer)] + ([(6, linetype)] if linetype else []) + ([(62, color)] if color else [])
+    g += [(66, 1), (10, 0.0), (20, 0.0), (30, 0.0), (70, 0)]
+    for x, y in pts:
+        g += [(0, "VERTEX"), (8, layer), (10, float(x)), (20, float(y)), (30, 0.0)]
+    return g + [(0, "SEQEND"), (8, layer)]
+
+
+def _r12_line(a, b, layer: str, linetype: str | None = None, color: int | None = None) -> list:
+    return ([(0, "LINE"), (8, layer)] + ([(6, linetype)] if linetype else []) + ([(62, color)] if color else [])
+            + [(10, float(a[0])), (20, float(a[1])), (30, 0.0), (11, float(b[0])), (21, float(b[1])), (31, 0.0)])
+
+
+def _r12_text(ins, h: float, rot: float, text: str, layer: str = CAD_TEXT_LAYER, halign: int = 0, valign: int = 0,
+              align=None) -> list:
+    g = [(0, "TEXT"), (8, layer), (10, float(ins[0])), (20, float(ins[1])), (30, 0.0), (40, float(h)), (1, text)]
+    if rot:
+        g.append((50, float(rot)))
+    if halign:
+        g.append((72, halign))
+    if align is not None:
+        g += [(11, float(align[0])), (21, float(align[1])), (31, 0.0)]
+    if valign:
+        g.append((73, valign))
+    return g
+
+
+def _r12_doc(entities: list, insunits: int | None = 2, measurement: int | None = None, tables: list | None = None,
+             blocks: list | None = None) -> list:
+    g = _r12_header(insunits, measurement)
+    if tables:
+        g += [(0, "SECTION"), (2, "TABLES")] + tables + [(0, "ENDSEC")]
+    if blocks:
+        g += [(0, "SECTION"), (2, "BLOCKS")] + blocks + [(0, "ENDSEC")]
+    return g + [(0, "SECTION"), (2, "ENTITIES")] + entities + [(0, "ENDSEC"), (0, "EOF")]
+
+
+def _plain(text: str) -> str:
+    """The writer's own plain text of a TEXT value (the %%c code is one character, the diameter symbol)."""
+    return text.replace("%%c", "Ø")
+
+
+def _label_place(pts, n_chars: int, side: int, off_h: float, h: float = CAD_TEXT_H, attach_middle: bool = False):
+    """(insertion point, rotation in degrees) of a label at the middle of the line's longest segment, parallel to it,
+    reading left to right, on side +1 (left of the reading direction) or -1, the near edge of its box off_h heights
+    from the line.  attach_middle: the point is the box's middle left (an MTEXT's attachment point 4), else its lower
+    left corner (a TEXT's insertion point)."""
+    seg = _seg_len(pts)
+    i = int(max(range(len(seg)), key=lambda k: seg[k]))
+    (ax, ay), (bx, by) = pts[i], pts[i + 1]
+    L = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / L, (by - ay) / L
+    if ux < 0 or (ux == 0 and uy < 0):
+        ux, uy = -ux, -uy
+    nx, ny = -uy, ux
+    w = n_chars * h * CAD_CHAR_W
+    sx, sy = (ax + bx) / 2 - ux * w / 2, (ay + by) / 2 - uy * w / 2
+    d = off_h * h
+    k = (d + h / 2) if attach_middle else (d if side > 0 else d + h)
+    k = k if side > 0 else -k
+    return (sx + nx * k, sy + ny * k), math.degrees(math.atan2(uy, ux))
+
+
+@functools.lru_cache(maxsize=2)
+def ky4_cad_plan(mtext: bool = False) -> tuple:
+    """For each ky4 mains record: {'layer', 'size_in' (the layer's), 'label': None or {'text', 'plain', 'kind',
+    'insert', 'rotation', 'side', 'offset_h'}}.  Half the records (floor), chosen by a seeded permutation, carry their
+    size in the layer name; the rest are on WATER-MAINS with a label.  mtext: every second label an MTEXT (the R2018
+    drawing); the sides and offsets are the same either way."""
+    import numpy as np
+    recs = ky4_mains_records()
+    rng = np.random.default_rng(CAD_SEED)
+    perm = rng.permutation(len(recs))
+    by_layer = set(int(i) for i in perm[: len(recs) // 2])
+    out, kl, kt = [], 0, 0
+    for j, r in enumerate(recs):
+        d = r["diameter_in"]
+        mm = round(d * 25.4)
+        if j in by_layer:
+            layer = CAD_LAYER_STYLES[kl % 3].format(d=d, mm=mm, mat=CAD_MATERIALS[(kl // 3) % 3])
+            kl += 1
+            out.append({"layer": layer, "size_in": d, "label": None})
+            continue
+        side = 1 if int(rng.integers(2)) == 1 else -1
+        off = float(rng.uniform(*CAD_OFFSETS_H))
+        if mtext and kt % 2 == 1:
+            raw, plain = CAD_MTEXT_STYLES[(kt // 2) % 2]
+            raw, plain, kind = raw.format(d=d), plain.format(d=d), "MTEXT"
+        else:
+            raw = CAD_TEXT_STYLES[((kt // 2) if mtext else kt) % 4].format(d=d, mm=mm)
+            plain, kind = _plain(raw), "TEXT"
+        ins, rot = _label_place(r["pts"], len(plain), side, off, attach_middle=kind == "MTEXT")
+        kt += 1
+        out.append({"layer": CAD_MAINS_LAYER, "size_in": d,
+                    "label": {"text": raw, "plain": plain, "kind": kind, "insert": ins, "rotation": rot, "side": side,
+                              "offset_h": off}})
+    return tuple(out)
+
+
+@functools.lru_cache(maxsize=1)
+def _ky4_r12_pairs() -> tuple:
+    ents = []
+    for r, pl in zip(ky4_mains_records(), ky4_cad_plan(False)):
+        ents += _r12_polyline(r["pts"], pl["layer"])
+        if pl["label"]:
+            lb = pl["label"]
+            ents += _r12_text(lb["insert"], CAD_TEXT_H, lb["rotation"], lb["text"])
+    return tuple(_r12_doc(ents, insunits=2))
+
+
+def ky4_r12_handwritten_dxf() -> bytes:
+    return _dxf_ascii(_ky4_r12_pairs())
+
+
+def ky4_drawing_dxf_bak() -> bytes:
+    """The same bytes under a backup's name."""
+    return ky4_r12_handwritten_dxf()
+
+
+def ky4_binary_dxf() -> bytes:
+    """The same drawing as binary DXF, by the fixtures' own binary writer."""
+    return _dxf_binary_r12(_ky4_r12_pairs())
+
+
+def ky4_r2018_lwpolyline_dxf() -> bytes:
+    """ky4's mains drawn by ezdxf as R2018 LWPOLYLINEs, every second label an MTEXT (same-library self-consistency)."""
+    import ezdxf
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 2
+    doc.header["$MEASUREMENT"] = 0
+    msp = doc.modelspace()
+    for r, pl in zip(ky4_mains_records(), ky4_cad_plan(True)):
+        msp.add_lwpolyline([tuple(p) for p in r["pts"]], dxfattribs={"layer": pl["layer"]})
+        lb = pl["label"]
+        if lb and lb["kind"] == "MTEXT":
+            msp.add_mtext(lb["text"], dxfattribs={"layer": CAD_TEXT_LAYER, "char_height": CAD_TEXT_H,
+                                                  "insert": (*lb["insert"], 0.0), "attachment_point": 4,
+                                                  "rotation": lb["rotation"]})
+        elif lb:
+            msp.add_text(lb["text"], height=CAD_TEXT_H, rotation=lb["rotation"],
+                         dxfattribs={"layer": CAD_TEXT_LAYER, "insert": (*lb["insert"], 0.0)})
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+@functools.lru_cache(maxsize=1)
+def _ky10_records() -> tuple:
+    """ky10's pipes as one line each (its feet), both ends jittered by up to CAD_JITTER_FT, each with a label."""
+    import numpy as np
+    wn = _wn("ky10")
+    rng = np.random.default_rng(CAD_KY10_SEED)
+    xy = {n: tuple(map(float, wn.get_node(n).coordinates)) for n in wn.node_name_list}
+    recs = []
+    for pn in wn.pipe_name_list:
+        p = wn.get_link(pn)
+        pts = [xy[p.start_node_name]] + [tuple(map(float, v)) for v in p.vertices] + [xy[p.end_node_name]]
+        for end in (0, -1):
+            dx, dy = rng.uniform(-CAD_JITTER_FT, CAD_JITTER_FT, 2)
+            pts[end] = (pts[end][0] + float(dx), pts[end][1] + float(dy))
+        d = round(p.diameter / 0.0254, 3)
+        side = 1 if int(rng.integers(2)) == 1 else -1
+        off = float(rng.uniform(*CAD_OFFSETS_H))
+        text = f'{d:g}" DIP'
+        ins, rot = _label_place(pts, len(text), side, off)
+        recs.append({"pipe": pn, "ends": (p.start_node_name, p.end_node_name), "pts": pts, "diameter_in": d,
+                     "label": {"text": text, "insert": ins, "rotation": rot}})
+    return tuple(recs)
+
+
+def ky10_manifest() -> dict:
+    """What the scorer needs for ky10's drawing: its pipes (start, end, diameter in) and one record per pipe, and the
+    node pairs ky10 draws at one spot (a pump's or a valve's two ends), which no drawing of pipes can separate."""
+    from scipy.spatial import cKDTree
+    import numpy as np
+    wn = _wn("ky10")
+    recs = _ky10_records()
+    names = wn.node_name_list
+    P = np.array([wn.get_node(n).coordinates for n in names], float)
+    pairs = sorted(tuple(sorted((names[a], names[b]))) for a, b in cKDTree(P).query_pairs(0.01))
+    links = {}
+    for ln in wn.pump_name_list + wn.valve_name_list:
+        lk = wn.get_link(ln)
+        links[tuple(sorted((lk.start_node_name, lk.end_node_name)))] = f"{lk.link_type.lower()} {ln}"
+    return {"pipes": {r["pipe"]: (r["ends"][0], r["ends"][1], r["diameter_in"]) for r in recs},
+            "records": [{"pipes": (r["pipe"],), "ends": r["ends"], "tee": None} for r in recs],
+            "same_spot_pairs": [{"nodes": list(p), "link": links.get(p)} for p in pairs]}
+
+
+def ky10_r12_dxf() -> bytes:
+    ents = []
+    for r in _ky10_records():
+        ents += _r12_polyline(r["pts"], CAD_MAINS_LAYER)
+        lb = r["label"]
+        ents += _r12_text(lb["insert"], CAD_TEXT_H, lb["rotation"], lb["text"])
+    return _dxf_ascii(_r12_doc(ents, insunits=2))
+
+
+# labels_offset_cases.dxf: one case a row, 1,000 ft apart; each row's lines, their labels and what each line should
+# get ('label', 'propagated' or 'default', and the size).  Offsets are of the near edge of the label's box, in heights.
+LABEL_CASES = (
+    {"case": "corner_0.5h", "lines": [((0, 0), (300, 0))], "labels": [("corner", 0, 0.5, '4" DIP', 1)],
+     "want": [("label", 4.0)]},
+    {"case": "corner_2.5h", "lines": [((0, 0), (300, 0))], "labels": [("corner", 0, 2.5, '6" DIP', 1)],
+     "want": [("label", 6.0)]},
+    {"case": "below_2h", "lines": [((0, 0), (300, 0))], "labels": [("corner", 0, 2.0, "8 in", -1)],
+     "want": [("label", 8.0)]},
+    {"case": "centred_1h", "lines": [((0, 0), (300, 0))], "labels": [("centre", 0, 1.0, "250 mm", 1)],
+     "want": [("label", 250 / 25.4)]},
+    {"case": "middle_1.5h", "lines": [((0, 0), (300, 0))], "labels": [("middle", 0, 1.5, '12" PVC', 1)],
+     "want": [("label", 12.0)]},
+    {"case": "right_2h", "lines": [((0, 0), (300, 0))], "labels": [("right", 0, 2.0, '16"', -1)],
+     "want": [("label", 16.0)]},
+    {"case": "vertical_1h", "lines": [((150, -150), (150, 150))], "labels": [("corner", 0, 1.0, '3" CI', 1)],
+     "want": [("label", 3.0)]},
+    {"case": "too_far_3.5h", "lines": [((0, 0), (300, 0))], "labels": [("corner", 0, 3.5, '14" DIP', 1)],
+     "want": [("default", None)]},
+    {"case": "run_of_three", "lines": [((0, 0), (200, 0)), ((200, 0), (400, 0)), ((400, 0), (600, 0))],
+     "labels": [("corner", 0, 1.0, '10" DIP', 1)], "want": [("label", 10.0), ("propagated", 10.0), ("propagated", 10.0)]},
+    {"case": "stops_at_a_tee", "lines": [((0, 0), (200, 0)), ((200, 0), (400, 0)), ((200, 0), (200, 200))],
+     "labels": [("corner", 0, 1.0, '12" DIP', 1)], "want": [("label", 12.0), ("default", None), ("default", None)]},
+    {"case": "nearest_of_two", "lines": [((0, 0), (300, 0)), ((0, -9), (300, -9))],
+     "labels": [("corner", 0, 1.0, '6" DIP', 1), ("corner", 1, 1.0, '8" DIP', 1)],
+     "want": [("label", 6.0), ("label", 8.0)]},
+    {"case": "lone_line", "lines": [((0, 0), (300, 0))], "labels": [], "want": [("default", None)]},
+)
+
+
+def _case_text(kind: str, line, off_h: float, text: str, side: int, h: float = CAD_TEXT_H) -> list:
+    """A TEXT label of the line ((x1, y1), (x2, y2)) in one alignment: 'corner' (left, its insertion point the box's
+    corner, centred along the line by the writer's estimate), 'centre' (halign 1 at its baseline's middle), 'middle'
+    (halign 4 at its box's centre) or 'right' (halign 2 at its baseline's right end)."""
+    plain = _plain(text)
+    if kind == "corner":
+        ins, rot = _label_place(list(line), len(plain), side, off_h, h)
+        return _r12_text(ins, h, rot, text)
+    (ax, ay), (bx, by) = line
+    L = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / L, (by - ay) / L
+    nx, ny = -uy, ux
+    mx, my = (ax + bx) / 2, (ay + by) / 2
+    d = off_h * h
+    w = len(plain) * h * CAD_CHAR_W
+    base = (d if side > 0 else d + h) * side          # the baseline's offset from the line
+    if kind == "centre":
+        p = (mx + nx * base, my + ny * base)
+        return _r12_text(p, h, 0.0, text, halign=1, align=p)
+    if kind == "middle":
+        k = (d + h / 2) * side
+        p = (mx + nx * k, my + ny * k)
+        return _r12_text(p, h, 0.0, text, halign=4, align=p)
+    p = (mx + ux * w / 2 + nx * base, my + uy * w / 2 + ny * base)
+    return _r12_text(p, h, 0.0, text, halign=2, align=p)
+
+
+def labels_offset_cases_dxf() -> bytes:
+    ents = []
+    for row, c in enumerate(LABEL_CASES):
+        y0 = -1000.0 * row
+        lines = [((a[0], a[1] + y0), (b[0], b[1] + y0)) for a, b in c["lines"]]
+        for a, b in lines:
+            ents += _r12_line(a, b, CAD_MAINS_LAYER)
+        for kind, li, off, text, side in c["labels"]:
+            ents += _case_text(kind, lines[li], off, text, side)
+    return _dxf_ascii(_r12_doc(ents, insunits=2))
+
+
+# xref_block_mains.dxf: mains inside blocks, nested, rotated and scaled, and a block array, and an external xref.
+XREF_INSERT = {"at": (5000.0, 3000.0), "rotation": 30.0, "scale": 2.0}
+XREF_MINSERT = {"at": (0.0, 0.0), "cols": 2, "rows": 2, "spacing": (500.0, 500.0)}
+XREF_MAINS_A = [((0.0, 0.0), (100.0, 0.0)), ((100.0, 0.0), (100.0, 80.0))]
+XREF_STUB = ((0.0, 0.0), (0.0, 40.0))
+XREF_PATH = "site_mains.dwg"
+
+
+def xref_block_expected() -> list:
+    """The lines a reader must find, in world coordinates (the fixtures' own transform: scale, then rotate, then move),
+    each with the layer AutoCAD shows it on and its size from that layer's name."""
+    s, a = XREF_INSERT["scale"], math.radians(XREF_INSERT["rotation"])
+    X, Y = XREF_INSERT["at"]
+    f = lambda p: (X + s * (p[0] * math.cos(a) - p[1] * math.sin(a)), Y + s * (p[0] * math.sin(a) + p[1] * math.cos(a)))
+    out = [{"pts": [f(p), f(q)], "layer": "WATER-8IN", "size_in": 8.0} for p, q in XREF_MAINS_A]
+    stub0 = f((100.0, 80.0))
+    out.append({"pts": [stub0, f((100.0 + XREF_STUB[1][0], 80.0 + XREF_STUB[1][1]))], "layer": "WATER-6IN",
+                "size_in": 6.0})
+    for r in range(XREF_MINSERT["rows"]):
+        for c in range(XREF_MINSERT["cols"]):
+            dx, dy = c * XREF_MINSERT["spacing"][0], r * XREF_MINSERT["spacing"][1]
+            out.append({"pts": [(dx, dy), (dx + XREF_STUB[1][0], dy + XREF_STUB[1][1])], "layer": "WATER-6IN",
+                        "size_in": 6.0})
+    out.append({"pts": [(0.0, -100.0), (300.0, -100.0)], "layer": "WATER-8IN", "size_in": 8.0})
+    return out
+
+
+def xref_block_mains_dxf() -> bytes:
+    blocks = [(0, "BLOCK"), (8, "0"), (2, "MAINS_A"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, "MAINS_A")]
+    for p, q in XREF_MAINS_A:
+        blocks += _r12_line(p, q, "0")
+    blocks += [(0, "INSERT"), (8, "0"), (2, "STUB"), (10, 100.0), (20, 80.0), (30, 0.0)]
+    blocks += [(0, "ENDBLK"), (8, "0")]
+    blocks += [(0, "BLOCK"), (8, "0"), (2, "STUB"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, "STUB")]
+    blocks += _r12_line(*XREF_STUB, "WATER-6IN") + [(0, "ENDBLK"), (8, "0")]
+    blocks += [(0, "BLOCK"), (8, "0"), (2, "XSITE"), (70, 4), (10, 0.0), (20, 0.0), (30, 0.0), (3, "XSITE"),
+               (1, XREF_PATH), (0, "ENDBLK"), (8, "0")]
+    X, Y = XREF_INSERT["at"]
+    ents = [(0, "INSERT"), (8, "WATER-8IN"), (2, "MAINS_A"), (10, X), (20, Y), (30, 0.0),
+            (41, XREF_INSERT["scale"]), (42, XREF_INSERT["scale"]), (50, XREF_INSERT["rotation"])]
+    mx, my = XREF_MINSERT["at"]
+    ents += [(0, "INSERT"), (8, "WATER-4IN"), (2, "STUB"), (10, mx), (20, my), (30, 0.0),
+             (70, XREF_MINSERT["cols"]), (71, XREF_MINSERT["rows"]), (44, XREF_MINSERT["spacing"][0]),
+             (45, XREF_MINSERT["spacing"][1])]
+    ents += [(0, "INSERT"), (8, "WATER-8IN"), (2, "XSITE"), (10, 0.0), (20, 0.0), (30, 0.0)]
+    ents += _r12_line((0.0, -100.0), (300.0, -100.0), "WATER-8IN")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, blocks=blocks))
+
+
+def _r2000(entities: list, insunits: int | None = 2, measurement: int | None = None, classes: list | None = None,
+           version: str = "AC1015", encoding: str = "cp1252") -> bytes:
+    """A minimal R2000 ASCII DXF (header, classes, entities with handles and subclass markers), written by hand; with
+    version AC1032 an R2018 one (whose text a reader takes as UTF-8), in the given encoding."""
+    g = [(0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, version), (9, "$HANDSEED"), (5, "FFFFF")]
+    if version >= "AC1021":           # R2007 on: UTF-8 by its version, given beside the code page as AutoCAD writes it
+        g += [(9, "$DWGCODEPAGE"), (3, "ANSI_1252")]
+    if insunits is not None:
+        g += [(9, "$INSUNITS"), (70, insunits)]
+    if measurement is not None:
+        g += [(9, "$MEASUREMENT"), (70, measurement)]
+    g += [(0, "ENDSEC")]
+    if classes:
+        g += [(0, "SECTION"), (2, "CLASSES")] + classes + [(0, "ENDSEC")]
+    g += [(0, "SECTION"), (2, "ENTITIES")]
+    for k, ent in enumerate(entities):
+        g += [ent[0], (5, f"{0x100 + k:X}")] + list(ent[1:])
+    return _dxf_ascii(g + [(0, "ENDSEC"), (0, "EOF")], encoding)
+
+
+def _r2000_line(a, b, layer: str) -> list:
+    return [(0, "LINE"), (100, "AcDbEntity"), (8, layer), (100, "AcDbLine"), (10, float(a[0])), (20, float(a[1])),
+            (30, 0.0), (11, float(b[0])), (21, float(b[1])), (31, 0.0)]
+
+
+def _r2000_mtext(ins, h: float, text: str, attach: int, layer: str = CAD_TEXT_LAYER) -> list:
+    return [(0, "MTEXT"), (100, "AcDbEntity"), (8, layer), (100, "AcDbMText"), (10, float(ins[0])), (20, float(ins[1])),
+            (30, 0.0), (40, float(h)), (71, attach), (1, text)]
+
+
+CIVIL3D_CLASSES = [(0, "CLASS"), (1, "AECC_PRESSURE_PIPE"), (2, "AeccDbPressurePipe"), (3, "AeccDbPipeNetwork"),
+                   (90, 1153), (91, 3), (280, 1), (281, 1)]
+
+
+def _civil3d_entities() -> list:
+    ents = []
+    for k in range(3):
+        ents.append([(0, "ACAD_PROXY_ENTITY"), (100, "AcDbEntity"), (8, "C-WATR-PIPE"), (100, "AcDbProxyEntity"),
+                     (90, 498), (91, 500), (95, 2), (70, 0), (92, 0), (93, 0)])
+    for k in range(2):
+        ents.append([(0, "AECC_PRESSURE_PIPE"), (100, "AcDbEntity"), (8, "C-WATR-PIPE"), (100, "AeccDbPressurePipe"),
+                     (10, 100.0 * k), (20, 0.0)])
+    return ents
+
+
+def civil3d_proxy_dxf() -> bytes:
+    """A Civil 3D pressure network saved to DXF as it is: proxy entities and AECC objects only."""
+    return _r2000(_civil3d_entities(), classes=CIVIL3D_CLASSES)
+
+
+def civil3d_proxy_with_lines_dxf() -> bytes:
+    """The same with three plain lines beside it (a drawing that mixes them)."""
+    lines = [_r2000_line((0.0, -500.0), (300.0, -500.0), "W-8IN"), _r2000_line((300.0, -500.0), (600.0, -500.0), "W-8IN"),
+             _r2000_line((300.0, -500.0), (300.0, -800.0), "W-8IN")]
+    return _r2000(_civil3d_entities() + lines, classes=CIVIL3D_CLASSES)
+
+
+# abandoned_linetype.dxf: a small network on WATER-MAINS, with two abandoned mains drawn dashed on the same layer
+ABANDONED_ACTIVE = [((0, 0), (400, 0)), ((400, 0), (800, 0)), ((0, 0), (0, 400)), ((0, 400), (400, 400)),
+                    ((400, 400), (800, 400)), ((800, 0), (800, 400))]
+ABANDONED_DASHED = [((400, 0), (400, 400)), ((0, 400), (0, 800))]
+
+
+def abandoned_linetype_dxf() -> bytes:
+    tables = [(0, "TABLE"), (2, "LTYPE"), (70, 2),
+              (0, "LTYPE"), (2, "CONTINUOUS"), (70, 0), (3, "Solid line"), (72, 65), (73, 0), (40, 0.0),
+              (0, "LTYPE"), (2, "DASHED"), (70, 0), (3, "Dashed __ __ __"), (72, 65), (73, 2), (40, 0.75), (49, 0.5),
+              (49, -0.25), (0, "ENDTAB"),
+              (0, "TABLE"), (2, "LAYER"), (70, 2),
+              (0, "LAYER"), (2, "0"), (70, 0), (62, 7), (6, "CONTINUOUS"),
+              (0, "LAYER"), (2, CAD_MAINS_LAYER), (70, 0), (62, 5), (6, "CONTINUOUS"), (0, "ENDTAB")]
+    ents = []
+    for a, b in ABANDONED_ACTIVE:
+        ents += _r12_line(a, b, CAD_MAINS_LAYER)
+    for a, b in ABANDONED_DASHED:
+        ents += _r12_line(a, b, CAD_MAINS_LAYER, linetype="DASHED", color=8)
+    ents += _case_text("corner", ABANDONED_ACTIVE[0], 1.0, '8" DIP', 1)
+    return _dxf_ascii(_r12_doc(ents, insunits=2, tables=tables))
+
+
+def _units_lines(n: int = 60) -> list:
+    """The first n ky4 mains records (feet), each with its size in the layer name (WATER-<d>IN)."""
+    ents = []
+    for r in ky4_mains_records()[:n]:
+        ents += _r12_polyline(r["pts"], CAD_LAYER_STYLES[0].format(d=r["diameter_in"]))
+    return ents
+
+
+def insunits_zero_dxf() -> bytes:
+    return _dxf_ascii(_r12_doc(_units_lines(), insunits=0))
+
+
+def insunits_wrong_dxf() -> bytes:
+    """Metres declared, feet drawn: a drawing from an imperial template ($MEASUREMENT 0) whose units say metres."""
+    return _dxf_ascii(_r12_doc(_units_lines(), insunits=6, measurement=0))
+
+
+def insunits_wrong_nomeasure_dxf() -> bytes:
+    """The same with no measurement setting: the mistake the reader cannot see (a known limit, recorded)."""
+    return _dxf_ascii(_r12_doc(_units_lines(), insunits=6))
+
+
+def insunits_mm_dxf() -> bytes:
+    """Millimetres declared (a metric template's default), feet drawn: the median line is then 0.5 m long."""
+    return _dxf_ascii(_r12_doc(_units_lines(), insunits=4, measurement=1))
+
+
+MTEXT_CASES = ((((0.0, 0.0), (300.0, 0.0)), (100.0, 2.0), 7, '\\A1;{\\fArial|b0;8" DIP}', 8.0),
+               (((0.0, -1000.0), (300.0, -1000.0)), (100.0, -1002.0), 1, "{\\H1.0x;6 in PVC}", 6.0),
+               (((0.0, -2000.0), (300.0, -2000.0)), (150.0, -1997.0), 5, "\\pxqc;{\\C1;\\L12\\l\" DIP}", 12.0))
+
+
+def mtext_codes_dxf() -> bytes:
+    """Three lines, each labelled by an MTEXT with formatting codes (bottom left, top left and middle centre attachment,
+    the near edge of each box 1 height off its line)."""
+    ents = []
+    for line, ins, attach, text, _ in MTEXT_CASES:
+        ents.append(_r2000_line(*line, CAD_MAINS_LAYER))
+        ents.append(_r2000_mtext(ins, CAD_TEXT_H, text, attach))
+    return _r2000(ents)
+
+
+# the review of task 18: one drawing for each case it found, written by these writers (none by ezdxf)
+def _ky4_entities() -> list:
+    """ky4's R12 drawing's entities (its mains and labels), as _ky4_r12_pairs writes them."""
+    pairs = list(_ky4_r12_pairs())
+    start = next(i for i, p in enumerate(pairs) if p == (2, "ENTITIES")) + 1
+    return pairs[start:-2]
+
+
+def ky4_inches_declared_dxf() -> bytes:
+    """ky4's drawing, in feet, whose insertion units say inches (INSUNITS 1, the unit AutoCAD's imperial template
+    starts with): read in inches every length is twelve times too short, yet the median line (42 ft) is plausible."""
+    return _dxf_ascii(_r12_doc(_ky4_entities(), insunits=1, measurement=0))
+
+
+REVIEW_INCH_LINES = [((0.0, 0.0), (7200.0, 0.0)), ((7200.0, 0.0), (14400.0, 0.0)), ((7200.0, 0.0), (7200.0, 7200.0)),
+                     ((7200.0, 7200.0), (14400.0, 7200.0))]       # 600 ft mains drawn in inches
+
+
+def inches_true_dxf() -> bytes:
+    """Four 600 ft mains drawn in inches (INSUNITS 1): read in feet the median line would be 7,200 ft, implausible, so
+    inches are taken without a question."""
+    ents = []
+    for a, b in REVIEW_INCH_LINES:
+        ents += _r12_line(a, b, "WATER-8IN")
+    return _dxf_ascii(_r12_doc(ents, insunits=1, measurement=0))
+
+
+ZONE_LAYERS = ("WATER-ZONE-2", "WATER-ZONE-3", "PVC-ZONE-3", "WATER-ZONE-2-PVC")
+
+
+def _zone_label(layer: str) -> str:
+    return '8" PVC' if "PVC" in layer else '8" DIP'
+
+
+def zone_layers_dxf() -> bytes:
+    """Nineteen mains on four layers whose names carry a zone number (WATER-ZONE-2 and -3, and since the final
+    verification PVC-ZONE-3 and WATER-ZONE-2-PVC, whose material word once cued the zone number as a size), in four
+    rows joined by three mains up the left side, each main with an 8 in label beside it: the zone number is no size
+    (the review's zones.dxf)."""
+    ents = []
+    for k, lay in enumerate(ZONE_LAYERS):
+        y = 600.0 * k
+        for i in range(4):
+            ents += _r12_line((300.0 * i, y), (300.0 * (i + 1), y), lay)
+            ents += _r12_text((300.0 * i + 100, y + 1.0), CAD_TEXT_H, 0.0, _zone_label(lay))
+    for k, lay in enumerate(ZONE_LAYERS[:-1]):
+        ents += _r12_line((0.0, 600.0 * k), (0.0, 600.0 * (k + 1)), lay)
+        ents += _r12_text((1.0, 600.0 * k + 300.0), CAD_TEXT_H, 90.0, _zone_label(lay))
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def latin1_r2018_dxf() -> bytes:
+    """An R2018 drawing (UTF-8 by its version) whose writer put cp1252 bytes in a layer name: three mains on
+    'TUBERÍA-8IN' as the byte 0xCD, invalid in UTF-8."""
+    lay = "TUBERÍA-8IN"
+    ents = [_r2000_line(a, b, lay) for a, b in (((0.0, 0.0), (300.0, 0.0)), ((300.0, 0.0), (300.0, 300.0)),
+                                                ((300.0, 300.0), (600.0, 300.0)))]
+    return _r2000(ents, measurement=0, version="AC1032", encoding="cp1252")
+
+
+def _handled_line(a, b, handle: str, layer: str = "WATER-8IN") -> list:
+    return [(0, "LINE"), (5, handle), (8, layer), (10, float(a[0])), (20, float(a[1])), (30, 0.0), (11, float(b[0])),
+            (21, float(b[1])), (31, 0.0)]
+
+
+def dup_handles_dxf() -> bytes:
+    """An R12 chain of ten mains from a writer that reuses handles: each pair of lines shares one (ezdxf's audit
+    removed the second of each, half the mains, without a word)."""
+    ents = []
+    for i in range(10):
+        ents += _handled_line((300.0 * i, 0.0), (300.0 * (i + 1), 0.0), f"{0x20 + i // 2:X}")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def zero_handles_dxf() -> bytes:
+    """Three mains whose handles are all 0 (refused outright as damaged before the review)."""
+    ents = []
+    for a, b in (((0.0, 0.0), (300.0, 0.0)), ((300.0, 0.0), (300.0, 300.0)), ((300.0, 300.0), (600.0, 300.0))):
+        ents += _handled_line(a, b, "0")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+SPLINE_FRAME = ((0.0, 0.0), (300.0, 300.0), (600.0, 0.0))
+
+
+def spline_fit_curve() -> list:
+    """The fitted vertices of spline_fit_polyline.dxf: a parabola from (0, 0) to (600, 0), 150 ft high."""
+    return [(0.0, 0.0)] + [(600.0 * t, 600.0 * t * (1 - t)) for t in (k / 10 for k in range(1, 10))] + [(600.0, 0.0)]
+
+
+def spline_fit_polyline_dxf() -> bytes:
+    """A spline-fit 2D POLYLINE as AutoCAD keeps it (PEDIT Spline): polyline flag 4, its control frame's three
+    vertices (flag 16), which AutoCAD does not draw, then the fitted curve's (flag 8), and a plain main after it."""
+    g = [(0, "POLYLINE"), (8, "WATER-8IN"), (66, 1), (10, 0.0), (20, 0.0), (30, 0.0), (70, 4), (75, 6)]
+    for x, y in SPLINE_FRAME:
+        g += [(0, "VERTEX"), (8, "WATER-8IN"), (10, x), (20, y), (30, 0.0), (70, 16)]
+    for x, y in spline_fit_curve():
+        g += [(0, "VERTEX"), (8, "WATER-8IN"), (10, float(x)), (20, float(y)), (30, 0.0), (70, 8)]
+    g += [(0, "SEQEND"), (8, "WATER-8IN")]
+    g += _r12_line((600.0, 0.0), (900.0, 0.0), "WATER-8IN")
+    return _dxf_ascii(_r12_doc(g, insunits=2, measurement=0))
+
+
+def _layer_row(name: str, flags: int = 0, color: int = 7) -> list:
+    return [(0, "LAYER"), (2, name), (70, flags), (62, color), (6, "CONTINUOUS")]
+
+
+def frozen_layers_dxf() -> bytes:
+    """Layers AutoCAD hides: a main on 'old-mains' (the table names OLD-MAINS, frozen: layer names are
+    case-insensitive), an old label '12\" CI' on the frozen OLD-TEXT beside an unsized main, and a block of three 12 in
+    mains inserted on the frozen XREF-PROPOSED (a bound proposal, frozen), beside three 8 in mains in service."""
+    tables = [(0, "TABLE"), (2, "LAYER"), (70, 5)] + _layer_row("WATER-8IN") + _layer_row("OLD-MAINS", 1) + \
+        _layer_row("OLD-TEXT", 1) + _layer_row("XREF-PROPOSED", 1) + _layer_row("PROPOSED$0$WATER-12IN") + \
+        [(0, "ENDTAB")]
+    blk = [(0, "BLOCK"), (8, "0"), (2, "PROPOSED"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, "PROPOSED")]
+    for i in range(3):
+        blk += _r12_line((300.0 * i, -500.0), (300.0 * (i + 1), -500.0), "PROPOSED$0$WATER-12IN")
+    blk += [(0, "ENDBLK"), (8, "0")]
+    ents = []
+    for a, b in (((0.0, 0.0), (300.0, 0.0)), ((300.0, 0.0), (600.0, 0.0)), ((0.0, 0.0), (0.0, -500.0))):
+        ents += _r12_line(a, b, "WATER-8IN")
+    ents += _r12_line((600.0, 0.0), (900.0, 0.0), "old-mains")
+    ents += _r12_line((0.0, 0.0), (0.0, 300.0), "WATER")
+    ents += _r12_text((2.0, 100.0), CAD_TEXT_H, 90.0, '12" CI', "OLD-TEXT")
+    ents += [(0, "INSERT"), (8, "XREF-PROPOSED"), (2, "PROPOSED"), (10, 0.0), (20, 0.0), (30, 0.0)]
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0, tables=tables, blocks=blk))
+
+
+CUT_SHORT_SHARES = (0.99, 0.9, 0.5)
+
+
+def ky4_cut_short_dxf(share: float = 0.9) -> bytes:
+    """ky4's drawing cut to a share of its bytes, as after an interrupted copy or upload (no '0 EOF')."""
+    data = ky4_r12_handwritten_dxf()
+    return data[:int(len(data) * share)]
+
+
+def ky4_no_eof_dxf() -> bytes:
+    """ky4's drawing with only its last '0 ENDSEC 0 EOF' missing."""
+    data = ky4_r12_handwritten_dxf()
+    cut = data.rindex(b"  0\r\nENDSEC")
+    return data[:cut]
+
+
+def diameter_sign_dxf() -> bytes:
+    """Labels with AutoCAD's diameter sign U+2205: a TEXT '∅8' and an MTEXT '∅12', each beside its main, in an
+    R2018 drawing (UTF-8)."""
+    ents = [_r2000_line((0.0, 0.0), (300.0, 0.0), CAD_MAINS_LAYER), _r2000_line((300.0, 0.0), (600.0, 0.0), CAD_MAINS_LAYER),
+            [(0, "TEXT"), (100, "AcDbEntity"), (8, CAD_TEXT_LAYER), (100, "AcDbText"), (10, 100.0), (20, 1.0), (30, 0.0),
+             (40, CAD_TEXT_H), (1, "\u22058"), (100, "AcDbText")],
+            _r2000_mtext((400.0, 3.0), CAD_TEXT_H, "\u220512", 7)]
+    return _r2000(ents, measurement=0, version="AC1032", encoding="utf-8")
+
+
+def c_from_label_dxf() -> bytes:
+    """Two mains on WATER-8IN, each with an '8\" CI' label: the layer gives the size, the label the material."""
+    ents = []
+    for i in range(2):
+        ents += _r12_line((300.0 * i, 0.0), (300.0 * (i + 1), 0.0), "WATER-8IN")
+        ents += _r12_text((300.0 * i + 100, 1.0), CAD_TEXT_H, 0.0, '8" CI')
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def no_sizes_dxf() -> bytes:
+    """Five mains on WATER-MAINS with no size anywhere: the size of every pipe is asked."""
+    ents = []
+    for a, b in (((0.0, 0.0), (300.0, 0.0)), ((300.0, 0.0), (600.0, 0.0)), ((300.0, 0.0), (300.0, 300.0)),
+                 ((300.0, 300.0), (600.0, 300.0)), ((600.0, 0.0), (600.0, 300.0))):
+        ents += _r12_line(a, b, CAD_MAINS_LAYER)
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+LONG_LABEL_CHARS = 3_000
+
+
+def long_label_dxf() -> bytes:
+    """A main and a label of 3,000 characters (over cad_read's cap), which is not read: the drawing says so."""
+    ents = _r12_line((0.0, 0.0), (300.0, 0.0), "WATER-8IN") + _r12_line((300.0, 0.0), (600.0, 0.0), "WATER-8IN")
+    ents += _r12_text((100.0, 1.0), CAD_TEXT_H, 0.0, "x" * (LONG_LABEL_CHARS - 4) + "8 in")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+REVIEW_18_FIXTURES = ("ky4_inches_declared.dxf", "inches_true.dxf", "zone_layers.dxf", "latin1_r2018.dxf",
+                      "dup_handles.dxf", "zero_handles.dxf", "spline_fit_polyline.dxf", "frozen_layers.dxf",
+                      *(f"ky4_cut_{round(100 * s)}.dxf" for s in CUT_SHORT_SHARES), "ky4_no_eof.dxf",
+                      "diameter_sign.dxf", "c_from_label.dxf", "no_sizes.dxf", "long_label.dxf")
+
+
+# hostile drawings, each within the hosted demo's 5 MB upload limit: each must be read, or refused, in time linear in
+# the file (cad_read's text cap, block weights and limits)
+HOSTILE_MTEXT_CHARS = 4_800_000        # one MTEXT of formatting codes (ezdxf's fast reader: outputs/intake/cad_mtext_timing.json)
+HOSTILE_STACK_TEXTS = (1_000, 1_990)   # MTEXTs of '\\S1^2;' stacks, each just under cad_read's text cap
+HOSTILE_BOMB = (9, 10)                 # blocks nested 9 deep, each but the last inserting the next 10 times: 10**8 lines
+HOSTILE_MINSERT = (1000, 1000)         # one block array of a million copies
+HOSTILE_SPLINE_POINTS = 60_000         # control points of one spline
+HOSTILE_LAYER_CHARS = 1_000_000        # a layer name, and a TEXT of as many spaces before its size
+
+
+def hostile_mtext_codes_dxf() -> bytes:
+    ents = [_r2000_line((0.0, 0.0), (300.0, 0.0), CAD_MAINS_LAYER),
+            _r2000_mtext((100.0, 2.0), CAD_TEXT_H, "\\A1;" * (HOSTILE_MTEXT_CHARS // 4), 7)]
+    return _r2000(ents)
+
+
+def hostile_stacked_mtext_dxf() -> bytes:
+    n, chars = HOSTILE_STACK_TEXTS
+    ents = [_r2000_line((0.0, 0.0), (300.0, 0.0), CAD_MAINS_LAYER)]
+    ents += [_r2000_mtext((float(k), 2.0), CAD_TEXT_H, "\\S1^2;" * (chars // 6), 7) for k in range(n)]
+    return _r2000(ents)
+
+
+def hostile_block_bomb_dxf() -> bytes:
+    depth, fan = HOSTILE_BOMB
+    blocks = []
+    for k in range(depth):
+        blocks += [(0, "BLOCK"), (8, "0"), (2, f"B{k}"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, f"B{k}")]
+        if k == depth - 1:
+            blocks += _r12_line((0.0, 0.0), (10.0, 0.0), "0")
+        else:
+            for j in range(fan):
+                blocks += [(0, "INSERT"), (8, "0"), (2, f"B{k + 1}"), (10, float(j)), (20, 0.0), (30, 0.0)]
+        blocks += [(0, "ENDBLK"), (8, "0")]
+    ents = [(0, "INSERT"), (8, CAD_MAINS_LAYER), (2, "B0"), (10, 0.0), (20, 0.0), (30, 0.0)]
+    return _dxf_ascii(_r12_doc(ents, insunits=2, blocks=blocks))
+
+
+def hostile_minsert_dxf() -> bytes:
+    cols, rows = HOSTILE_MINSERT
+    blocks = [(0, "BLOCK"), (8, "0"), (2, "S"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, "S")]
+    blocks += _r12_line((0.0, 0.0), (10.0, 0.0), "0") + [(0, "ENDBLK"), (8, "0")]
+    ents = [(0, "INSERT"), (8, CAD_MAINS_LAYER), (2, "S"), (10, 0.0), (20, 0.0), (30, 0.0), (70, cols), (71, rows),
+            (44, 20.0), (45, 20.0)]
+    ents += _r12_line((0.0, -100.0), (300.0, -100.0), "WATER-8IN") + _r12_line((300.0, -100.0), (600.0, -100.0),
+                                                                                  "WATER-8IN")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, blocks=blocks))
+
+
+def hostile_spline_dxf() -> bytes:
+    n = HOSTILE_SPLINE_POINTS
+    sp = [(0, "SPLINE"), (100, "AcDbEntity"), (8, CAD_MAINS_LAYER), (100, "AcDbSpline"), (70, 8), (71, 3),
+          (72, n + 4), (73, n), (74, 0)]
+    sp += [(40, float(max(0, min(k - 3, n - 3)))) for k in range(n + 4)]
+    for k in range(n):
+        sp += [(10, float(k)), (20, float(k % 7)), (30, 0.0)]
+    ents = [sp, _r2000_line((0.0, -100.0), (300.0, -100.0), "WATER-8IN"),
+            _r2000_line((300.0, -100.0), (600.0, -100.0), "WATER-8IN")]
+    return _r2000(ents)
+
+
+def hostile_long_names_dxf() -> bytes:
+    n = HOSTILE_LAYER_CHARS
+    ents = _r12_line((0.0, 0.0), (300.0, 0.0), "W" * n) + _r12_line((300.0, 0.0), (600.0, 0.0), "WATER-8IN")
+    ents += _r12_text((100.0, 2.0), CAD_TEXT_H, 0.0, " " * n + '8"')
+    ents += _r12_text((100.0, 4.0), CAD_TEXT_H, 0.0, "(" * (n // 2) + "8 in")
+    return _dxf_ascii(_r12_doc(ents, insunits=2))
+
+
+# the review of task 18: hostile drawings it found the reader or the build unbounded on
+HOSTILE_TALL = (600, 50, 2_000, 1e7)        # 600 lines of 50 points, and 2,000 labels '8 in' of height 10**7 ft
+HOSTILE_CROWDED = (600, 50, 2_000, 100.0)   # the same lines 1 ft apart, and 2,000 labels 100 ft high among them
+HOSTILE_NEG_MINSERT = (8, 10)               # blocks nested 8 deep, each inserting the next 10 times and once as a
+                                            # MINSERT of -10 rows (a negative count once read as negative copies)
+HOSTILE_BULGES = (120_000, 100.0)           # one LWPOLYLINE of 120,000 vertices, each segment a near circle (bulge 100)
+
+
+def _grid_mains(n_lines: int, n_pts: int, dx: float, dy: float, layer: str = "WATER-8IN") -> list:
+    ents = []
+    for i in range(n_lines):
+        ents += _r12_polyline([(float(j * dx), float(i * dy)) for j in range(n_pts)], layer)
+    return ents
+
+
+def hostile_tall_labels_dxf() -> bytes:
+    """Within the hosted demo's line and point limits: 600 lines of 50 points, and 2,000 labels of a size whose height
+    makes each reach every line (the review measured seconds and gigabytes for a few hundred such labels)."""
+    n, p, k, h = HOSTILE_TALL
+    ents = _grid_mains(n, p, 10.0, 40.0)
+    for _ in range(k):
+        ents += _r12_text((0.0, 0.0), h, 0.0, "8 in", "T")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def hostile_crowded_labels_dxf() -> bytes:
+    """600 lines of 50 points, 1 ft apart, and 2,000 labels 100 ft high among them, a plausible height: every label
+    reaches every segment."""
+    n, p, k, h = HOSTILE_CROWDED
+    ents = _grid_mains(n, p, 1.0, 1.0)
+    for i in range(k):
+        ents += _r12_text((float(i % p), float(i % n)), h, 0.0, "8 in", "T")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def hostile_negative_minsert_dxf() -> bytes:
+    depth, fan = HOSTILE_NEG_MINSERT
+    blocks = []
+    for k in range(1, depth + 1):
+        blocks += [(0, "BLOCK"), (8, "0"), (2, f"B{k}"), (70, 0), (10, 0.0), (20, 0.0), (30, 0.0), (3, f"B{k}")]
+        if k == depth:
+            for i in range(fan):
+                blocks += _r12_line((0.0, float(i)), (300.0, float(i)), "0")
+        else:
+            blocks += [(0, "INSERT"), (8, "0"), (2, f"B{k + 1}"), (10, 0.0), (20, 0.0), (30, 0.0), (70, 1),
+                       (71, -fan), (44, 1.0), (45, 1.0)]
+            for _ in range(fan):
+                blocks += [(0, "INSERT"), (8, "0"), (2, f"B{k + 1}"), (10, 0.0), (20, 0.0), (30, 0.0)]
+        blocks += [(0, "ENDBLK"), (8, "0")]
+    ents = [(0, "INSERT"), (8, "WATER-8IN"), (2, "B1"), (10, 0.0), (20, 0.0), (30, 0.0)]
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0, blocks=blocks))
+
+
+def hostile_bulges_dxf() -> bytes:
+    n, b = HOSTILE_BULGES
+    lw = [(0, "LWPOLYLINE"), (100, "AcDbEntity"), (8, "WATER-8IN"), (100, "AcDbPolyline"), (90, n), (70, 0)]
+    for k in range(n):
+        lw += [(10, float(10 * k)), (20, 0.0), (42, b)]
+    return _r2000([lw], measurement=0)
+
+
+# the final verification of task 18: what its fixes still left open
+HOSTILE_LONG_HANDLE = (100_000, 3_000)      # one handle of 100,000 hex digits, and 3,000 lines whose handle is 0
+HOSTILE_INF_BULGES = 160_000                # one LWPOLYLINE of 160,000 vertices at infinity, each with bulge 1
+NEAR_LIMIT = (190, 10, 10, 4.0, 2.0)        # rows, polylines a row, segments a polyline, segment length, row spacing (ft)
+NEAR_LIMIT_LABELS = (1_000, 100.0, 7)       # labels '8 in', their height (ft), the seed of their places
+DISPUTED_LAYERS = ("W-2-PVC", "W-8-PVC")    # a cued zone number its labels dispute; a cued size one stray label does not
+
+
+def hostile_long_handle_dxf() -> bytes:
+    """One main whose handle is HOSTILE_LONG_HANDLE[0] hex digits long, one whose handle is the largest a 64-bit handle
+    can be, and HOSTILE_LONG_HANDLE[1] whose handle is 0: each renumbered handle was written as long as the long one
+    (the final verification: 0.4 MB repaired to 300 MB)."""
+    n_hex, n_zero = HOSTILE_LONG_HANDLE
+    ents = _handled_line((0.0, 0.0), (300.0, 0.0), "F" * n_hex) + \
+        _handled_line((300.0, 0.0), (600.0, 0.0), "FFFFFFFFFFFFFFFF")
+    for i in range(n_zero):
+        ents += _handled_line((300.0 * (i + 2), 0.0), (300.0 * (i + 3), 0.0), "0")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def hostile_inf_bulges_dxf() -> bytes:
+    """An R2000 drawing within the hosted demo's upload limit: one LWPOLYLINE of HOSTILE_INF_BULGES vertices, all at
+    (inf, inf) with bulge 1, beside two plain mains (the final verification: its arcs were charged no points, and
+    made 5.8 million)."""
+    lw = [(0, "LWPOLYLINE"), (100, "AcDbEntity"), (8, "WATER-8IN"), (100, "AcDbPolyline"), (90, HOSTILE_INF_BULGES),
+          (70, 0)]
+    for _ in range(HOSTILE_INF_BULGES):
+        lw += [(10, "inf"), (20, "inf"), (42, 1.0)]
+    return _r2000([lw, _r2000_line((0.0, 0.0), (300.0, 0.0), "WATER-8IN"),
+                   _r2000_line((300.0, 0.0), (600.0, 0.0), "WATER-8IN")], measurement=0)
+
+
+HOSTILE_FIXTURES = ("hostile_mtext_codes.dxf", "hostile_stacked_mtext.dxf", "hostile_block_bomb.dxf",
+                    "hostile_minsert.dxf", "hostile_spline.dxf", "hostile_long_names.dxf",
+                    "hostile_tall_labels.dxf", "hostile_crowded_labels.dxf", "hostile_negative_minsert.dxf",
+                    "hostile_bulges.dxf", "hostile_long_handle.dxf", "hostile_inf_bulges.dxf")
+
+
+def label_pairs_near_limit_dxf() -> bytes:
+    """Just under the local limit of pairs of a label and a segment (cad_read.MAX_LABEL_PAIRS): NEAR_LIMIT[0] rows of
+    NEAR_LIMIT[1] polylines of NEAR_LIMIT[2] segments each, end to end, and NEAR_LIMIT_LABELS[0] labels '8 in' 100 ft
+    high (a height the build takes as a label's) among them, each reaching every segment: 19,000,000 pairs (the final
+    verification measured 5.2 GB for as many pairs over separate lines, and 1.3 GB over long polylines)."""
+    import numpy as np
+    rows, per_row, segs, seg_ft, dy = NEAR_LIMIT
+    n, h, seed = NEAR_LIMIT_LABELS
+    ents = []
+    for j in range(rows):
+        for k in range(per_row):
+            x0 = k * segs * seg_ft
+            ents += _r12_polyline([(x0 + seg_ft * i, dy * j) for i in range(segs + 1)], CAD_MAINS_LAYER)
+    rng = np.random.default_rng(seed)
+    for x, y in rng.uniform(0.0, 200.0, (n, 2)):
+        ents += _r12_text((100.0 + float(x), 90.0 + float(y)), h, 0.0, "8 in", "T")
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def disputed_layer_dxf() -> bytes:
+    """Two rows of eight mains joined by one: on W-2-PVC, whose 2 the material beside it cues as a size, three mains
+    carry '8\" PVC' labels (a zone or phase number, disputed by its labels: asked); on W-8-PVC one main carries a
+    stray '12\" PVC' label (one label is not enough: the layer's 8 in is kept, and warned, as on ky4's drawing)."""
+    ents = []
+    for k, lay in enumerate(DISPUTED_LAYERS):
+        y = 600.0 * k
+        for i in range(8):
+            ents += _r12_line((300.0 * i, y), (300.0 * (i + 1), y), lay)
+        for i in ((0, 3, 6) if k == 0 else (4,)):
+            ents += _r12_text((300.0 * i + 100, y + 1.0), CAD_TEXT_H, 0.0, '8" PVC' if k == 0 else '12" PVC')
+    ents += _r12_line((0.0, 0.0), (0.0, 600.0), DISPUTED_LAYERS[1])
+    return _dxf_ascii(_r12_doc(ents, insunits=2, measurement=0))
+
+
+def bom_dup_handles_dxf() -> bytes:
+    """dup_handles.dxf after a UTF-8 byte order mark (the final verification: the repair skipped such a file)."""
+    return b"\xef\xbb\xbf" + dup_handles_dxf()
+
+
+def bom_ky4_no_eof_dxf() -> bytes:
+    """ky4_no_eof.dxf after a UTF-8 byte order mark."""
+    return b"\xef\xbb\xbf" + ky4_no_eof_dxf()
+
+
+def binary_dup_handles_dxf() -> bytes:
+    """dup_handles.dxf's ten mains as a binary DXF (the fixtures' own binary writer): the repair is for ASCII DXF only,
+    so ezdxf's audit removes half of them, and the reader warns (a recorded limit)."""
+    pairs = _r12_header(2, 0) + [(0, "SECTION"), (2, "ENTITIES")]
+    for i in range(10):
+        pairs += _handled_line((300.0 * i, 0.0), (300.0 * (i + 1), 0.0), f"{0x20 + i // 2:X}")
+    return _dxf_binary_r12(pairs + [(0, "ENDSEC"), (0, "EOF")])
+
+
+FINAL_18_FIXTURES = ("disputed_layer.dxf", "bom_dup_handles.dxf", "bom_ky4_no_eof.dxf", "binary_dup_handles.dxf",
+                     "label_pairs_near_limit.dxf")
+CAD_FIXTURES = ("ky4_r12_handwritten.dxf", "ky4_r2018_lwpolyline.dxf", "ky4_drawing.dxf.bak", "ky4_binary.dxf",
+                "ky10_r12.dxf", "labels_offset_cases.dxf", "xref_block_mains.dxf", "civil3d_proxy.dxf",
+                "civil3d_proxy_with_lines.dxf", "abandoned_linetype.dxf", "insunits_zero.dxf", "insunits_wrong.dxf",
+                "insunits_wrong_nomeasure.dxf", "insunits_mm.dxf", "mtext_codes.dxf",
+                "dwg_ac1027.dwg", "drawing.bak", "dgn_v7.dgn", "ole_dgn_v8.dgn", "plant.ifc") + HOSTILE_FIXTURES \
+    + REVIEW_18_FIXTURES + FINAL_18_FIXTURES
+CAD_GUIDANCE = ("dwg_ac1027.dwg", "drawing.bak", "dgn_v7.dgn", "ole_dgn_v8.dgn", "plant.ifc")
+FIXTURES.update({"ky4_r12_handwritten.dxf": ky4_r12_handwritten_dxf, "ky4_r2018_lwpolyline.dxf": ky4_r2018_lwpolyline_dxf,
+                 "ky4_drawing.dxf.bak": ky4_drawing_dxf_bak, "ky4_binary.dxf": ky4_binary_dxf,
+                 "ky10_r12.dxf": ky10_r12_dxf, "labels_offset_cases.dxf": labels_offset_cases_dxf,
+                 "xref_block_mains.dxf": xref_block_mains_dxf, "civil3d_proxy.dxf": civil3d_proxy_dxf,
+                 "civil3d_proxy_with_lines.dxf": civil3d_proxy_with_lines_dxf,
+                 "abandoned_linetype.dxf": abandoned_linetype_dxf, "insunits_zero.dxf": insunits_zero_dxf,
+                 "insunits_wrong.dxf": insunits_wrong_dxf, "insunits_wrong_nomeasure.dxf": insunits_wrong_nomeasure_dxf,
+                 "insunits_mm.dxf": insunits_mm_dxf, "mtext_codes.dxf": mtext_codes_dxf,
+                 **{n: globals()[n.replace(".", "_")] for n in HOSTILE_FIXTURES},
+                 **{n: globals()[n.replace(".", "_")] for n in REVIEW_18_FIXTURES if not n.startswith("ky4_cut_")},
+                 **{n: globals()[n.replace(".", "_")] for n in FINAL_18_FIXTURES},
+                 **{f"ky4_cut_{round(100 * s)}.dxf": functools.partial(ky4_cut_short_dxf, s) for s in CUT_SHORT_SHARES}})
+
+
 def build(name: str, dest: str) -> str:
     path = os.path.join(dest, name)
     with open(path, "wb") as fh:
