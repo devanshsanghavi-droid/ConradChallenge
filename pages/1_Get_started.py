@@ -63,6 +63,12 @@ left out; a block inserted on a frozen layer gets a control of its own, and laye
 numbers in layer names with no unit beside them are asked; the size of every pipe, asked when none can be read, starts
 empty, so nothing is built until it is given; and in cloud mode a model or GIS file over the upload limit no longer
 stops the page before the later steps.
+
+Iteration 5, task 21 (residualmap/contract.py, docs/io_contract.md): the template downloads and their labels come from
+the contract, and step 3 opens with 'What files it takes', the contract's table of every file ResidualMap takes, what
+it holds, where it goes and whether it is needed.  It is a table, not a widget, so no widget moves, and it is shown
+where files can be given: on the laptop, and in the hosted demo only when its uploads are turned on (with them off,
+the page stops before it, as before).
 """
 from __future__ import annotations
 
@@ -74,6 +80,7 @@ import os
 import re
 import sys
 
+import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
 
@@ -83,6 +90,7 @@ if APP_ROOT not in sys.path:
 
 from residualmap import cad_read as CAD  # noqa: E402
 from residualmap import cloud  # noqa: E402
+from residualmap import contract as IO  # noqa: E402
 from residualmap import gis_read as G  # noqa: E402
 from residualmap import topology as TOPO  # noqa: E402
 from residualmap.importers import (LOG_WINDOW_MONTHS, LogRefused, dropped_lines, guess_log_columns,  # noqa: E402
@@ -93,11 +101,9 @@ GUIDE = os.path.join(APP_ROOT, "docs", "how_to_export_your_model.md")
 TEMPLATES = os.path.join(APP_ROOT, "docs", "templates")
 CHECK_DIR = os.path.join(APP_ROOT, "outputs", "private", "check_a_file")     # git-ignored; emptied after each check
 SAMPLES_SECTION = "Your grab samples"
-TEMPLATE_FILES = (("grab_log_template.csv", "Grab log, free chlorine (CSV)"),
-                  ("grab_log_total_template.csv", "Grab log, total chlorine for a chloraminated system (CSV)"),
-                  ("tap_map_by_id_template.csv", "Tap map by ID (CSV)"),
-                  ("plant_log_template.csv", "Plant log, optional, read by the pilot script only (CSV)"))
-XLSX_TEMPLATE = ("grab_log_template.xlsx", "Grab log, free chlorine (Excel)")
+TEMPLATE_FILES = IO.TEMPLATE_FILES          # task 21: the downloads and their labels come from the contract
+XLSX_TEMPLATE = IO.XLSX_TEMPLATE
+FILES_TITLE = "What files it takes"         # task 21: the contract's table, where files can be given
 DISINFECTANTS = {"Free chlorine": "free_chlorine", "Chloramine (total chlorine)": "chloramine"}
 CLOUD = cloud.is_cloud(APP_ROOT)              # task 20: the hosted demo
 UPLOADS = cloud.uploads_allowed(APP_ROOT)     # always True in local mode
@@ -621,6 +627,9 @@ st.header("Step 3. Check a file")
 if not UPLOADS:      # task 20: the hosted demo, examples only
     st.caption(cloud.CHECK_OFF)
     st.stop()
+# task 21: every file ResidualMap takes, read from residualmap/contract.py (a table, so no widget moves)
+st.subheader(FILES_TITLE)
+st.table(pd.DataFrame(list(IO.FILES_TABLE), columns=list(IO.FILES_TABLE_COLUMNS)).set_index(IO.FILES_TABLE_COLUMNS[0]))
 st.caption("Give it any file: a model, a drawing, a GIS layer, a grab log, a tap map. It says what the file is, by what "
            "is inside it, and what to send instead. A model gets the same readiness report as on the main page: the "
            "model is opened and run for one hour to make sure it works, but no map is built. Nothing is kept.")

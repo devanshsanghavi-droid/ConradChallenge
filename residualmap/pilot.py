@@ -73,9 +73,12 @@ plant_log.csv : month (YYYY-MM), temp_C                                      [op
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
+import math
 import os
+import re
 import sys
 import types
 
@@ -83,13 +86,15 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from .chemistry import Chemistry, Warming
+from .chemistry import DEFAULT_THRESHOLD_MGL, Chemistry, Warming
 from .chloramine import CA_DOSE_MGL, ca_condition
+from .contract import CLI as CONTRACT_CLI, GRAB_LOG_MAPPING_KEYS
 from .features import build_features
-from .importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_APP_ROUTE, INLET_PILOT_ROUTE, INLET_ZONE_NOTE, LogRefused,
-                        Readiness, _clock, clock_label,
+from .importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_APP_ROUTE, INLET_PILOT_ROUTE, INLET_ZONE_NOTE, LARGE_JUNCTIONS,
+                        LogRefused,
+                        Readiness, _cell_text, _clock, clock_label,
                         combine_inlet_residuals, dropped_lines, inlet_ratios_from, inlet_tap_residuals, prepare_inp,
-                        read_grab_log, read_inlet_residuals, shows_clock, size_gate, stem as inp_stem)
+                        read_grab_log, read_inlet_residuals, read_table, shows_clock, size_gate, stem as inp_stem)
 from .simgp import DAY_HOURS, SimGP24, grid_cache_path
 from .simulate import build_scenario, load, net_path, nominal_scenario
 
@@ -268,13 +273,90 @@ def synthetic_log(network: str = "Net3", months: int = 6, per_month: int = 10, r
     return out + ((truths,) if return_truth else ())
 
 
+PLANT_MONTH = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])")     # a plant log's month: YYYY-MM
+PLANT_NUMBERS = ("temp_C", "toc_mgL", "dose_mgL")         # read as numbers (a decimal comma too); the rest as text
+
+
+def _plant_number(v) -> float | None:
+    """A plant log cell as a number: None when blank; ValueError when it is text that is not a number."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return None
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return float(v)
+    s = _cell_text(v).strip()
+    if not s:
+        return None
+    if not re.fullmatch(r"-?(?:\d+(?:[.,]\d+)?|[.,]\d+)", s):
+        raise ValueError(s)
+    return float(s.replace(",", "."))
+
+
+def _plant_month(v) -> str | None:
+    """A plant log's month as YYYY-MM (an Excel date cell gives its year and month), or None."""
+    if isinstance(v, (datetime.date, datetime.datetime)):
+        return f"{v.year:04d}-{v.month:02d}"
+    s = _cell_text(v).strip()
+    return s if PLANT_MONTH.fullmatch(s) else None
+
+
+PLANT_TEMP_C = (0.0, 35.0)      # a plant log's temp_C range: Chemistry's own (chemistry.Chemistry refuses one outside it)
+
+
 def load_plant(path: str) -> pd.DataFrame:
-    """The plant log: month (YYYY-MM), temp_C (required), toc_mgL and dose_mgL (optional), one row per month."""
-    p = pd.read_csv(path, dtype={"month": str})
-    if not {"month", "temp_C"} <= set(p.columns):
-        raise ValueError("the plant log needs the columns month (YYYY-MM) and temp_C")
+    """The plant log: month (YYYY-MM), temp_C (required), toc_mgL and dose_mgL (optional), one row per month.  Read
+    as importers.read_table reads a grab log (any encoding, separator and decimal comma, or an Excel sheet; the task
+    21 review: a plain read_csv stopped the pilot on a semicolon file with a misleading message, and on UTF-16 with a
+    traceback).  A text whose first line holds month and temp_C takes that line as its header, and a row that leaves
+    out the optional cells at its end is read with them blank, as read_csv read it before (the task 21 final
+    verification).  Refused with a ValueError that names the file and the rows: a required column missing, a month
+    not written YYYY-MM or listed twice, a temperature blank, not a number or outside PLANT_TEMP_C (Chemistry's range;
+    when every one is above it, the message says it looks like Fahrenheit), or an optional value that is not a number
+    (a blank one is left empty).  Other columns are kept as text."""
+    name = os.path.basename(path)
+    need = {"month", "temp_C"}
+    with open(path, "rb") as fh:
+        data = fh.read()
+    try:
+        t = read_table(data, name, header_names=tuple(sorted(need)))
+    except LogRefused as e:
+        raise ValueError(f"the plant log {name} cannot be read: {e}") from None
+    if not need <= set(t.header):
+        raise ValueError(f"the plant log {name} needs the columns month (YYYY-MM) and temp_C; its first row, read as "
+                         f"the header, is {', '.join(t.header[:8])}")
+    lo, hi = PLANT_TEMP_C
+    cols, bad, temps = {h: [] for h in t.header}, [], []
+    for r, row_no in zip(t.rows, t.row_numbers):
+        for h, v in zip(t.header, r):
+            if h == "month":
+                m = _plant_month(v)
+                if m is None:
+                    bad.append(f"row {row_no}: month {_cell_text(v)!r} is not written YYYY-MM")
+                cols[h].append(m)
+            elif h in PLANT_NUMBERS:
+                try:
+                    x = _plant_number(v)
+                    if x is None and h == "temp_C":
+                        bad.append(f"row {row_no}: temp_C is blank")
+                    elif h == "temp_C":
+                        temps.append(x)
+                        if not lo <= x <= hi:
+                            bad.append(f"row {row_no}: temp_C {x:g} is outside {lo:g} to {hi:g} C")
+                except ValueError:
+                    bad.append(f"row {row_no}: {h} {_cell_text(v)!r} is not a number")
+                    x = None
+                cols[h].append(np.nan if x is None else x)
+            else:
+                cols[h].append(_cell_text(v))
+    if bad:
+        hint = (f" Every temperature is above {hi:g}, so they look like Fahrenheit: give temp_C in degrees Celsius, "
+                f"(F - 32) / 1.8." if temps and all(x > hi for x in temps) else "")
+        raise ValueError(f"the plant log {name} has {len(bad)} value{'s' if len(bad) != 1 else ''} that cannot be "
+                         f"used: {'; '.join(bad[:6])}{'; ...' if len(bad) > 6 else ''}. Each row needs its month "
+                         f"(YYYY-MM) and the water temperature in C, {lo:g} to {hi:g} (the range of every rate law "
+                         f"used here).{hint}")
+    p = pd.DataFrame(cols)
     if p.month.duplicated().any():
-        raise ValueError(f"months listed twice in the plant log: {sorted(p.month[p.month.duplicated()])}")
+        raise ValueError(f"months listed twice in the plant log {name}: {sorted(p.month[p.month.duplicated()])}")
     return p
 
 
@@ -306,7 +388,7 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
     chloramine grid, its dose axis and likelihood scale).  With the plant's logged pH and Cl2:N (ph, cl2n) the bulk rate
     gets the chloramine mode's prior, model (c), the one held to task 12's bars; without them the prior is uniform,
     model (b).  A plant log is refused (no seasonal chloramine model is built).  dose and threshold default to the
-    disinfectant's (1.2 mg/L free chlorine and 0.2; 2.0 mg/L total chlorine and 0.5).
+    disinfectant's (DEFAULT_DOSE_MGL and chemistry.DEFAULT_THRESHOLD_MGL).
     grid: the free-chlorine grid without a plant log, 'full' (the committed path) or 'full_fixed_gamma' for a file
     with one C value on every pipe (task 15b; importers.grid_for).
     inlet_ratios (task 16c): {entry point: r}, a zone whose inlets carry different residuals, each dosed at r times
@@ -343,7 +425,7 @@ def validate(inp: str, log: pd.DataFrame, dose: float | None = None, threshold: 
     if ph is not None and disinfectant != "chloramine":
         raise ValueError("pH and Cl2:N set the chloramine mode's prior; they are not used with free chlorine")
     dose = DEFAULT_DOSE_MGL[disinfectant] if dose is None else dose
-    threshold = (0.5 if disinfectant == "chloramine" else 0.2) if threshold is None else threshold
+    threshold = DEFAULT_THRESHOLD_MGL[disinfectant] if threshold is None else threshold
     sc = nominal_scenario(inp, sample_hour=14, source_dose=dose)
     if inlet_ratios:     # the review of task 16c: checked as given, before the all-ones shortcut, as the grid checks them
         from .simulate import check_inlet_ratios, source_nodes
@@ -498,11 +580,15 @@ def main():
     ap.add_argument("--inp", help="the utility's EPANET model")
     ap.add_argument("--samples", help="grab log CSV: date,time,tap_id,free_chlorine_mgL (or total_chlorine_mgL)")
     ap.add_argument("--taps", help="tap map CSV: tap_id,junction_id")
+    # the task 21 final verification: a help that quotes a default or a limit renders it from the code's constant (or
+    # takes the contract's words, which are rendered from them), so it cannot go stale
     ap.add_argument("--dose", type=float, default=None,
-                    help="free chlorine leaving the plant, mg/L (default 1.2); with chloramine, total chlorine (default 2.0)")
+                    help=f"free chlorine leaving the plant, mg/L (default {DEFAULT_DOSE_MGL['free_chlorine']:.1f}); with "
+                         f"chloramine, total chlorine (default {DEFAULT_DOSE_MGL['chloramine']:.1f})")
     ap.add_argument("--threshold", type=float, default=None,
-                    help="minimum residual, mg/L: default 0.2 free chlorine, or 0.5 total chlorine with chloramine (a "
-                         "common utility operating target, not a California rule: California requires a detectable residual)")
+                    help=f"minimum residual, mg/L: default {DEFAULT_THRESHOLD_MGL['free_chlorine']:.1f} free chlorine, or "
+                         f"{DEFAULT_THRESHOLD_MGL['chloramine']:.1f} total chlorine with chloramine (a common utility "
+                         f"operating target, not a California rule: California requires a detectable residual)")
     ap.add_argument("--disinfectant", choices=sorted(SPECIES_COLUMN), default="free_chlorine",
                     help="free_chlorine (the default) or chloramine (total chlorine; task 12)")
     ap.add_argument("--ph", type=float, default=None, help="chloramine only: the plant water's logged pH (with --cl2n "
@@ -514,15 +600,15 @@ def main():
     ap.add_argument("--plant", help="plant log CSV: month,temp_C[,toc_mgL,dose_mgL]; makes the model temperature-aware")
     ap.add_argument("--out", default=None, help="where the results go: default outputs/private/pilot (git-ignored) for "
                                                 "real data, outputs/pilot with --synthetic")
-    ap.add_argument("--allow-large", action="store_true", help="build the grid of a model with more than 3,000 junctions "
-                                                               "(task 15b: the readiness report gives its run cost)")
+    ap.add_argument("--allow-large", action="store_true",
+                    help=f"build the grid of a model with more than {LARGE_JUNCTIONS:,} junctions (task 15b: the "
+                         f"readiness report gives its run cost)")
     ap.add_argument("--date-format", default=None,
                     help="how the log's dates are written, when they read two ways (task 16): MDY (month first, "
                          "10/03/2026 is October 3), DMY (day first), YMD, or a strptime format such as "
                          "'%%m/%%d/%%Y %%I:%%M %%p'")
     ap.add_argument("--analyzer-hour", type=float, default=ANALYZER_HOUR,
-                    help="an online analyzer's series (a tap with 12 or more readings a day, minutes apart, on 2 or "
-                         "more days) keeps one reading per day, the one nearest this clock hour (default 10, for 10:00)")
+                    help=CONTRACT_CLI["residualmap.pilot"]["--analyzer-hour"])
     ap.add_argument("--keep-every-reading", action="store_true",
                     help="keep every reading of a tap that looks like an online analyzer (a sampling study)")
     ap.add_argument("--columns", default=None,
@@ -550,7 +636,7 @@ def main():
         ap.error(f"--inlets is refused with --disinfectant chloramine, since {INLETS_NOT_CA}")
     dose_given = a.dose is not None      # task 16c: without --dose, inlet residuals set it to their highest
     if a.threshold is None:
-        a.threshold = 0.5 if a.disinfectant == "chloramine" else 0.2
+        a.threshold = DEFAULT_THRESHOLD_MGL[a.disinfectant]     # task 21: the defaults the contract quotes
     if a.dose is None:
         a.dose = DEFAULT_DOSE_MGL[a.disinfectant]
         if a.disinfectant == "chloramine":
@@ -602,9 +688,8 @@ def main():
             cols = {}
             for part in a.columns.split(";"):
                 k, _, v = part.partition("=")
-                if k.strip() not in ("tap", "reading", "date", "time", "analyte", "unit", "analyte_value"):
-                    ap.error(f"--columns: {k.strip()!r} is not one of tap, reading, date, time, analyte, unit, "
-                             f"analyte_value")
+                if k.strip() not in GRAB_LOG_MAPPING_KEYS:      # task 21: the keys come from the contract
+                    ap.error(f"--columns: {k.strip()!r} is not one of {', '.join(GRAB_LOG_MAPPING_KEYS)}")
                 cols[k.strip()] = v.strip() or None
         start_h = float(report.flags.get("start_clock_h") or 0.0)
         try:            # task 16: each time of day becomes a model hour with the file's START CLOCKTIME
@@ -670,7 +755,10 @@ def main():
                   f"model hour; model hour 0 is {clock_label(0, start_h)} and model hour 3 is "
                   f"{clock_label(3, start_h)}.")
         dose = a.dose
-    plant = load_plant(a.plant) if a.plant else None
+    try:            # the task 21 review: a plant log that cannot be read is a plain message, not a traceback
+        plant = load_plant(a.plant) if a.plant else None
+    except (OSError, ValueError) as e:
+        sys.exit(f"{a.plant}: {e}")
     grid = "full" if a.synthetic or a.disinfectant == "chloramine" or plant is not None else grid
     try:            # task 17's fix of task 16c's leftovers: a refusal inside validate is a plain message, not a traceback
         preds, summary = validate(inp, log, dose=dose, threshold=a.threshold, window_months=a.window, plant=plant,

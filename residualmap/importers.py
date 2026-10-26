@@ -71,9 +71,10 @@ an EPANET model into a file WNTR reads exactly as the model means it, with a pla
   long-format export (one row per analyte) keeps only the chosen species' rows (until the final verification this
   failed when the species sat in brackets or the analytes did not name chlorine in the reader's words: see below).  A reading's unit is read from its
   header or a units column (µg/L divided by 1000), and one above 10 mg/L is not used.  Tap IDs that Excel turned
-  into numbers are matched by number, with a warning.  A tap with 12 or more readings a day, minutes apart, on 2 or
-  more days is an online analyzer and keeps one reading a day, the one nearest 10:00 (or the hour given), unless it
-  is kept whole.  Most grab samples outside 06:00 to 18:00 warns of a UTC export.  Each time of day becomes a model
+  into numbers are matched by number, with a warning.  A tap whose cadence is an online analyzer's (read_grab_log
+  states the rule with its constants, ANALYZER_MIN_PER_DAY and the others; docs/io_contract.md with their values)
+  keeps one reading a day, the one nearest ANALYZER_HOUR (or the hour given) when one lies within
+  ANALYZER_MAX_GAP_MIN of it, unless it is kept whole.  Most grab samples outside 06:00 to 18:00 warns of a UTC export.  Each time of day becomes a model
   hour: the time minus START CLOCKTIME, mod 24 h, minutes truncated (model_hour; clock_label and
   daytime_model_hours go the other way, for display and the route's 07:00 to 17:00 window).  Every row that is not
   used is listed with its reason (dropped_lines, at most 20 runs of rows per reason).  xlsx_bytes writes the Excel
@@ -2636,9 +2637,9 @@ def _read_and_report(read_path: str, out_path: str, rep: Readiness, ids: IdScan,
 # turns it into the pilot's rows (junction, model hour, reading, month, date, tap) and says what it did with every row.
 LOG_WINDOW_MONTHS = 3                  # the app's date window: the last 3 calendar months that hold a reading, as the
                                        # pilot's --window counts months
-ANALYZER_MIN_PER_DAY = 12              # an online analyzer: 12 or more readings a day ...
-ANALYZER_MAX_STEP_MIN = 30             # ... a median step of at most 30 minutes between them (an analyzer day) ...
-ANALYZER_MIN_DAYS = 2                  # ... on 2 or more days; or 12 or more a day on ANALYZER_DENSE_DAYS days or more
+ANALYZER_MIN_PER_DAY = 12              # an online analyzer: this many readings a day or more ...
+ANALYZER_MAX_STEP_MIN = 30             # ... a median step of at most this many minutes between them (an analyzer day)
+ANALYZER_MIN_DAYS = 2                  # ... on this many days or more; or that many a day on ANALYZER_DENSE_DAYS days
 ANALYZER_DENSE_DAYS = 7                # (a historian's hourly export).  An hourly grab-sampling study of a day or two
                                        # is neither, so every one of its readings is kept (the review of task 16)
 ANALYZER_HOUR = 10.0                   # an analyzer series is thinned to the reading nearest this clock hour, per day
@@ -2921,7 +2922,23 @@ def workbook_parts(data: bytes, max_unpacked: int) -> list[zipfile.ZipInfo]:
     return infos
 
 
-def read_table(data: bytes, name: str = "", max_unpacked: int | None = None) -> LogTable:
+def _header_line_layout(text: str, names: tuple) -> tuple[str, int, None] | None:
+    """(delimiter, records before the header, None) when the text's first record (after Excel's 'sep=;' line, if it
+    opens with one) holds every one of names, split by one of the separators; else None.  read_table's header_names
+    (the task 21 final verification: a plant log whose rows leave out its optional trailing cells)."""
+    first = next((ln for ln in _iter_lines(text) if ln.strip()), "")
+    m = _SEP_HINT.match(first)
+    order = [m.group(1)] if m and m.group(1) in _DELIMS else list(_DELIMS)
+    skip = 1 if m and m.group(1) in _DELIMS else 0
+    for d in order:
+        recs = _records(_iter_lines(text), d, skip + 1)
+        if len(recs) > skip and set(names) <= {c.strip().replace("\ufeff", "") for c in recs[skip][1]}:
+            return d, skip, None
+    return None
+
+
+def read_table(data: bytes, name: str = "", max_unpacked: int | None = None,
+               header_names: tuple | None = None) -> LogTable:
     """A grab log or tap map as a table: delimited text in any encoding decode_text reads (a byte-order mark, UTF-16, a
     Windows code page), separated by commas, semicolons, tabs or vertical bars (found by _table_layout, which also
     passes over a title or 'Lab:/Exported' lines before the header and Excel's 'sep=;' line), or an Excel workbook
@@ -2930,7 +2947,11 @@ def read_table(data: bytes, name: str = "", max_unpacked: int | None = None) -> 
     finds).  Each row's number is its line in the file (or its row in the sheet).  Raises LogRefused for anything else
     (a legacy .xls, a PDF, a model), with the sniff's advice.  max_unpacked (task 20, the hosted demo; None, the
     default, as before): a workbook is first held to workbook_parts' limits, so a small file that unpacks to far more
-    is refused before openpyxl opens it."""
+    is refused before openpyxl opens it.  header_names (the task 21 final verification, for the pilot's plant log;
+    None, the default, as before): a text whose first line (after a 'sep=;' line) holds every one of these names,
+    split by one of the separators, takes that line as its header and that separator, so a file whose rows leave out
+    trailing optional cells is read with those cells blank (the layout test wants most rows as long as the header);
+    a row with a filled cell beyond the header is then refused."""
     if len(data) > LOG_MAX_BYTES:
         raise LogRefused(f"The file is {len(data) / 1e6:.0f} MB, more than the {LOG_MAX_BYTES / 1e6:.0f} MB a log is read "
                          f"up to. Send the last few months only.")
@@ -2966,7 +2987,7 @@ def read_table(data: bytes, name: str = "", max_unpacked: int | None = None) -> 
         if sum(1 for _ in zip(range(2), (ln for ln in _iter_lines(text) if ln.strip()))) < 2:
             raise LogRefused("The file has fewer than two lines: a header row and at least one reading are needed.")
         try:
-            layout = _table_layout(text)
+            layout = (_header_line_layout(text, header_names) if header_names else None) or _table_layout(text)
         except csv.Error as e:
             raise LogRefused(f"The file could not be read as a table ({e}). Save it again as CSV.") from None
         if layout is None:
@@ -3008,6 +3029,9 @@ def read_table(data: bytes, name: str = "", max_unpacked: int | None = None) -> 
     for r, n in zip(cells[k + 1:], numbers[k + 1:]):
         if all(_cell_text(c) == "" for c in r):
             continue
+        if header_names and any(_cell_text(c) != "" for c in list(r)[len(header):]):
+            raise LogRefused(f"Row {n} has more cells than the header's {len(header)} ({', '.join(header[:8])}). Save "
+                             f"it again with one value under each column.")
         r = list(r)[:len(header)] + [None] * max(0, len(header) - len(r))
         body.append(r)
         nums.append(n)
@@ -3616,7 +3640,8 @@ def read_grab_log(log_data: bytes, log_name: str = "grab_log.csv", taps_data: by
     0 for every bundled example, so their hours are unchanged.  A tap with ANALYZER_MIN_PER_DAY or more readings a
     day at a median step of ANALYZER_MAX_STEP_MIN minutes or less on ANALYZER_MIN_DAYS days or more (or with that
     many readings a day on ANALYZER_DENSE_DAYS days or more) is an online analyzer: it keeps one reading per day, the
-    one nearest analyzer_hour, unless thin_analyzers is False (a sampling study the operator wants kept whole).  Tap
+    one nearest analyzer_hour when one lies within ANALYZER_MAX_GAP_MIN minutes of it (a day with none keeps none and
+    is listed), unless thin_analyzers is False (a sampling study the operator wants kept whole).  Tap
     IDs that are numbers in the log and not found as written are matched by number (Excel drops leading zeros), with
     a warning.  taps_data None reads each tap ID as its own junction (the Get started page's check of a log alone).
     Raises LogRefused when the log cannot be read as it is (with a question when a date reads two ways or a log has

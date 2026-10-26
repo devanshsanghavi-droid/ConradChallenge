@@ -10,7 +10,7 @@
   "wntr": "1.5.0"
  },
  "all_pass": true,
- "n_pass": 155,
+ "n_pass": 157,
  "n_fail": 0,
  "n_skipped": 1,
  "run_log_only": {
@@ -1307,36 +1307,36 @@
    "pass": true,
    "detail": {
     "unexplained": 0,
-    "registry_ok": 836,
+    "registry_ok": 1015,
     "registry_negative_controls_fail": 2,
     "classified": {
      "allowlist: literature value: Blokker et al. 2014's E/R, about 12,100 K (cited with its source in the pilot protocol, section 5)": 1,
      "citation": 21,
-     "code or path": 2368,
-     "date": 81,
-     "identifier": 848,
+     "code or path": 2593,
+     "date": 92,
+     "identifier": 977,
      "link target": 12,
      "run cost (logs, df)": 8,
      "seed range": 20,
      "setting or literature value written in the code": 17,
-     "time of day": 144
+     "time of day": 148
     },
     "traced": {
-     "iteration-4 outputs": 286,
-     "file cited in its section": 4189,
-     "file cited in its paragraph": 6226,
-     "iteration-5 outputs": 23,
+     "iteration-4 outputs": 281,
+     "file cited in its section": 4302,
+     "file cited in its paragraph": 6466,
+     "iteration-5 outputs": 24,
      "outputs": 7
     },
-    "n_tokens": 10757,
+    "n_tokens": 11106,
     "power_caught_of_tested": {
      "decimal": [
-      1640,
-      10114
+      1690,
+      10207
      ],
      "integer": [
-      1782,
-      10142
+      1808,
+      10707
      ]
     }
    }
@@ -1346,7 +1346,7 @@
    "group": "task14",
    "pass": true,
    "detail": {
-    "iteration4_texts_checked": 63,
+    "iteration4_texts_checked": 69,
     "older_files": {
      "docs/pilot_protocol.md": [
       21,
@@ -3556,6 +3556,110 @@
     "starts_empty": true,
     "built_only_once_given": true,
     "warning_says": "the size you gave"
+   }
+  },
+  {
+   "name": "io_contract_matches_code",
+   "group": "task21",
+   "pass": true,
+   "detail": {
+    "flags": {
+     "residualmap.pilot": 19,
+     "residualmap.importers": 5,
+     "residualmap.gis_read": 5,
+     "residualmap.cad_read": 7,
+     "residualmap.operator_form": 3
+    },
+    "plant_log": {
+     "read_as_the_template": [
+      "UTF-16",
+      "semicolons and decimal commas"
+     ],
+     "refused_by_name": [
+      "a blank temp_C",
+      "a month not written YYYY-MM",
+      "a row with a cell beyond the header",
+      "a temp_C of -40",
+      "a temp_C of 1000",
+      "a temp_C that is not a number"
+     ],
+     "fahrenheit_refused_as_such": true,
+     "short_rows_read_as_before": [
+      "every row",
+      "one row"
+     ]
+    },
+    "columns": {
+     "grab_log_roles": 6,
+     "grab_log_mapping_keys": 7,
+     "tap_map_roles": 3,
+     "inlet_roles": 2,
+     "plant_log": 4,
+     "operator_form_columns": 28,
+     "operator_form_kinds": 13,
+     "operator_form_aliases": 40
+    },
+    "templates": 5,
+    "labels": {
+     "app.py": {
+      "labels": 41,
+      "ranges": 12
+     },
+     "1_Get_started.py": {
+      "labels": 42,
+      "ranges": 4
+     }
+    },
+    "final_verification": {
+     "defaults": 15,
+     "cli_defaults": 5,
+     "options_named": 1,
+     "examples": 6,
+     "analyzer_rule_quoted_whole": 4
+    },
+    "doc": {
+     "tables": 14,
+     "rendered_sentences": 9,
+     "tables_and_sentences": "the contract's",
+     "named_in_the_doc": "everything in the contract"
+    },
+    "page": {
+     "local": {
+      "rows": 8,
+      "columns": 4,
+      "under_step_3_before_the_checker": true
+     },
+     "hosted, uploads on": {
+      "rows": 8,
+      "columns": 4,
+      "under_step_3_before_the_checker": true
+     },
+     "hosted, uploads off": "not shown: the page stops before step 3's checker"
+    },
+    "negative_controls_caught": 22,
+    "scanner_controls": 13,
+    "final_verification_controls_caught": 25,
+    "final_verification_scanner_cases": 15,
+    "write_tables_guarded": true
+   }
+  },
+  {
+   "name": "iteration5_claims_labelled",
+   "group": "task21",
+   "pass": true,
+   "detail": {
+    "units_in_scope": 177,
+    "registry_phrases_from_outputs_intake": 615,
+    "units_quoting_an_importer_number": 57,
+    "unlabelled": 0,
+    "validated_without_in_simulation": 0,
+    "negative_controls_caught": 5,
+    "final_verification": {
+     "claims_caught": 9,
+     "honest_passed": 8,
+     "long_sentence_chars": 153636,
+     "long_sentence_under_1_s": true
+    }
    }
   },
   {

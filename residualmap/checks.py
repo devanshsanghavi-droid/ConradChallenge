@@ -1,7 +1,7 @@
 """
 checks.py: the saved checks for the chemistry work (iteration 4, journal tasks 8 to 14) and for iteration 5's inputs
-and access (task 15 on: groups task15, task15b, task16, task16b, task20, task16c, task17, task18 and task19, files
-built by residualmap/fixtures.py).
+and access (task 15 on: groups task15, task15b, task16, task16b, task20, task16c, task17, task18, task19 and task21,
+files built by residualmap/fixtures.py).
 
     python -m residualmap.checks            # every check, about 990 s on this machine after task 16 (about 530 s
                                             # after task 14; 69 checks after task 14: 68 in the committed report,
@@ -17,10 +17,15 @@ built by residualmap/fixtures.py).
                                             # and fidelity_cached_grids_sha256 in the run
                                             # log only); about 1,310 s after it; 158 after
                                             # its final verification, 156 in the report;
+                                            # 160 after task 21, 158 in the report;
+                                            # still 160 after its final verification,
+                                            # whose cases are in its two checks;
                                             # each run's time is in
                                             # outputs/chem/checks_run.json)
-    python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app and the slow
-                                            # seasonal, organics and chloramine (MSX) checks (about 50 s after task 16)
+    python -m residualmap.checks --quick    # skips the fresh grid, the synthetic pilot, the app (and the page
+                                            # part of io_contract_matches_code, which renders the Get started page
+                                            # three times in a full run) and the slow seasonal, organics and
+                                            # chloramine (MSX) checks (about 50 s after task 16)
     RESIDUALMAP_NAMES_CSV=<private csv> python -m residualmap.checks    # also runs the names check (task 14)
 
 Task 14's app check reads the app's PDF with pypdf (in requirements.txt); without pypdf it still requires the PDF
@@ -93,6 +98,7 @@ FRESH_GRID_SECONDS: list[float] = []   # the fresh Net3 grid's build time in thi
 
 # ----------------------------------------------------------------------------- tiny harness
 CHECKS: list[tuple[str, str, bool, callable]] = []
+QUICK = False           # set by run_checks: a --quick run (io_contract_matches_code then leaves the page alone)
 
 
 class SkipCheck(Exception):
@@ -2514,7 +2520,8 @@ IT5_FILES = ("residualmap/importers.py", "residualmap/fixtures.py", ".streamlit/
              "residualmap/operator_form.py",                                                           # task 19
              "outputs/intake/operator_form.json", "outputs/intake/boundary_valve_ky10.json",
              "outputs/intake/fidelity_Net3.json", "outputs/intake/fidelity_ky4.json",
-             "outputs/intake/fidelity_ky10.json")
+             "outputs/intake/fidelity_ky10.json",
+             "residualmap/contract.py", "docs/io_contract.md")                                    # task 21
 # (em, en) dash counts at commit 1fcf39a (before task 14): task 14 adds none to these files
 DASHES_BEFORE_TASK14 = {"docs/pilot_protocol.md": (21, 6), "app.py": (10, 1), "docs/feature_dictionary.md": (3, 1),
                         "README.md": (27, 28)}
@@ -8333,6 +8340,1542 @@ def get_started_gis_default_size_asked():
     return {"starts_empty": True, "built_only_once_given": True, "warning_says": "the size you gave"}
 
 
+# ----------------------------------------------------------------------------- iteration 5, task 21: the contract
+CONTRACT_DOC = os.path.join(REPO, "docs", "io_contract.md")
+CONTRACT_DOC_PATH = CONTRACT_DOC
+# The scanner's two lists, and the calls it knows to pass over.  Every call on a Streamlit object (st, st.sidebar, a
+# container, column or expander made from one, or a function parameter given one) must be on one of them, or the scan
+# fails: a new kind of input then fails the check until it is listed here and its label is in the contract.
+INPUT_WIDGETS = ("radio", "selectbox", "file_uploader", "number_input", "slider", "toggle", "checkbox", "text_input",
+                 "text_area", "multiselect", "button", "download_button", "page_link", "select_slider", "date_input",
+                 "time_input", "datetime_input", "link_button", "color_picker", "pills", "segmented_control",
+                 "form_submit_button", "camera_input", "audio_input", "chat_input", "feedback")
+HEADINGS = ("title", "header", "subheader")
+LABEL_WIDGETS = INPUT_WIDGETS + HEADINGS          # each must have a label the scanner can read
+CHECKED_ELSEWHERE = ("metric", "data_editor")     # the headline metrics and the typed-samples table, checked by name
+DISPLAY_ONLY = ("caption", "markdown", "write", "info", "warning", "error", "success", "exception", "pyplot", "table",
+                "dataframe", "json", "code", "text", "divider", "image", "latex", "toast", "progress", "html")
+LAYOUT = ("columns", "container", "expander", "empty", "spinner", "form")   # an expander's title is not listed
+CONTROL = ("set_page_config", "stop", "rerun", "switch_page", "cache_data", "cache_resource", "navigation", "Page")
+RANGE_WIDGETS = ("number_input", "slider")
+# the task 21 final verification: the attributes of a Streamlit object that may be used other than by calling them
+# (st.sidebar as a with-block, st.session_state, st.column_config's column types, the cache decorators); any other,
+# such as b = st.sidebar.button, is an input the scanner could not follow, so it fails the scan
+ST_ATTRIBUTES = ("sidebar", "session_state", "column_config", "cache_data", "cache_resource", "secrets", "query_params")
+_UNRESOLVED = object()
+# path -> source text: io_contract_matches_code's final-verification controls read an edited copy of a file through
+# this instead of the file (empty in every real run)
+SOURCE_OVERRIDE: dict[str, str] = {}
+
+
+def _read_source(path: str) -> str:
+    if path in SOURCE_OVERRIDE:
+        return SOURCE_OVERRIDE[path]
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+class _Source:
+    """One file's syntax tree with what the label resolver needs: module-level assignments, imports, functions and
+    the parent of every node."""
+
+    def __init__(self, path: str):
+        import ast
+        self.path = path
+        self.tree = ast.parse(_read_source(path))
+        self.assign, self.imports, self.funcs, self.parent = {}, {}, {}, {}
+        from collections import Counter
+        self.binds = Counter()          # every binding of each name anywhere in the file (the final verification)
+        for node in ast.walk(self.tree):
+            for kid in ast.iter_child_nodes(node):
+                self.parent[kid] = node
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                self.binds[node.id] += 1
+            elif isinstance(node, ast.arg):
+                self.binds[node.arg] += 1
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                self.binds[node.name] += 1
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for a in node.names:
+                    self.binds[(a.asname or a.name).split(".")[0]] += 1
+        for node in self.tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                self.assign.setdefault(node.targets[0].id, node.value)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("residualmap"):
+                for a in node.names:
+                    self.imports[a.asname or a.name] = (node.module, a.name)
+            elif isinstance(node, ast.ImportFrom) and node.level == 1:      # a module of the package: from .x import y
+                for a in node.names:
+                    self.imports[a.asname or a.name] = ("residualmap" + (f".{node.module}" if node.module else ""),
+                                                        a.name)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name.startswith("residualmap"):
+                        self.imports[a.asname or a.name] = (a.name, None)
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.FunctionDef):
+                self.funcs.setdefault(node.name, node)
+        self._containers()
+
+    # --- where a Streamlit call draws: st (its with-blocks decide), st.sidebar, or a container made from either
+    def _st_call(self, node) -> bool:
+        """node is a call of a layout method on a Streamlit object (st.columns(2), box.expander('...'), ...)."""
+        import ast
+        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in LAYOUT
+                and self.is_streamlit(node.func.value))
+
+    def is_streamlit(self, expr) -> bool:
+        """expr is st, st.sidebar, a name bound to a Streamlit container, or a layout call on one of these."""
+        import ast
+        return (ast.unparse(expr) in ("st", "st.sidebar") or self._st_call(expr)
+                or (isinstance(expr, ast.Name) and expr.id in getattr(self, "container", {})))
+
+    def _containers(self) -> None:
+        """self.container: every name bound to a Streamlit container, column or expander (an assignment or a
+        with-item from a layout call, or a function's parameter that a call gives one), with the places it draws."""
+        import ast
+        self.container: dict[str, set] = {}
+        for _ in range(4):                      # a container made from a container, or passed on: to a fixed point
+            before = {k: set(v) for k, v in self.container.items()}
+            for n in ast.walk(self.tree):
+                pairs = []
+                if isinstance(n, ast.Assign) and self._st_call(n.value):
+                    for t in n.targets:
+                        pairs += [t] if isinstance(t, ast.Name) else [e for e in getattr(t, "elts", [])
+                                                                      if isinstance(e, ast.Name)]
+                    where = self.receiver_where(n.value.func.value, n.value)
+                elif isinstance(n, ast.With):
+                    for i in n.items:
+                        if isinstance(i.optional_vars, ast.Name) and self._st_call(i.context_expr):
+                            self.container.setdefault(i.optional_vars.id, set()).add(
+                                self.receiver_where(i.context_expr.func.value, i.context_expr))
+                    continue
+                elif isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in self.funcs:
+                    fn = self.funcs[n.func.id]
+                    params = [a.arg for a in fn.args.args]
+                    given = list(zip(params, n.args)) + [(k.arg, k.value) for k in n.keywords if k.arg in params]
+                    for p, v in given:
+                        if self.is_streamlit(v):
+                            self.container.setdefault(p, set()).add(self.receiver_where(v, n))
+                    continue
+                else:
+                    continue
+                for t in pairs:
+                    self.container.setdefault(t.id, set()).add(where)
+            if self.container == before:
+                break
+
+    def receiver_where(self, expr, node) -> str | None:
+        """'sidebar' or 'main' when expr is a Streamlit object at node, else None."""
+        import ast
+        s = ast.unparse(expr)
+        if s == "st":
+            return self.context_where(node)
+        if s == "st.sidebar":
+            return "sidebar"
+        if isinstance(expr, ast.Name) and expr.id in getattr(self, "container", {}):
+            ws = self.container[expr.id] - {None}
+            assert len(ws) == 1, (os.path.basename(self.path), node.lineno, expr.id, "draws in", sorted(ws))
+            return next(iter(ws))
+        if self._st_call(expr):                 # st.sidebar.expander('...').button(...)
+            return self.receiver_where(expr.func.value, expr)
+        return None
+
+    def context_where(self, node, _seen: tuple = ()) -> str:
+        """Where a call on st draws: the innermost with-block of st.sidebar or of a Streamlit container around it; in
+        a function with none, where every call of that function draws (it fails when they disagree); else main."""
+        import ast
+        p, kid = self.parent.get(node), node
+        while p is not None:
+            if isinstance(p, ast.With) and kid in p.body:
+                for i in p.items:
+                    e = i.context_expr
+                    if ast.unparse(e) == "st.sidebar":
+                        return "sidebar"
+                    if isinstance(e, ast.Name) and e.id in getattr(self, "container", {}):
+                        return self.receiver_where(e, p)
+                    if self._st_call(e):
+                        return self.receiver_where(e.func.value, e)
+            assert not isinstance(p, ast.Lambda), (os.path.basename(self.path), node.lineno, "an input or heading "
+                                                   "drawn in a lambda: the check cannot tell where it draws")
+            if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # the final verification: a function that draws is followed through its direct calls only, so one
+                # passed to another function, put in a tuple or a loop, a method or a decorated one fails the scan
+                assert not isinstance(self.parent.get(p), ast.ClassDef) and not p.decorator_list, (
+                    os.path.basename(self.path), p.name, "a method or a decorated function draws an input or heading: "
+                    "the check cannot tell where it draws")
+                refs = [n for n in ast.walk(self.tree) if isinstance(n, ast.Name) and n.id == p.name
+                        and isinstance(n.ctx, ast.Load)]
+                odd = [n.lineno for n in refs if not (isinstance(self.parent.get(n), ast.Call)
+                                                      and self.parent[n].func is n)]
+                assert not odd and self.binds[p.name] == 1, (os.path.basename(self.path), p.name, "draws an input or "
+                                                             "heading and is used other than by a direct call (line "
+                                                             f"{odd[:1]}) or bound twice: the check cannot tell where it "
+                                                             "draws")
+                calls = [n for n in ast.walk(self.tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                         and n.func.id == p.name] if p.name not in _seen else []
+                ws = {self.context_where(c, _seen + (p.name,)) for c in calls}
+                assert len(ws) <= 1, (os.path.basename(self.path), p.name, "is called in", sorted(ws))
+                return ws.pop() if ws else "main"
+            p, kid = self.parent.get(p), p
+        return "main"
+
+    def module_value(self, name: str):
+        import importlib
+        if name in self.imports:
+            mod, attr = self.imports[name]
+            m = importlib.import_module(mod)
+            if attr is None:
+                return m
+            v = getattr(m, attr, _UNRESOLVED)
+            return importlib.import_module(f"{mod}.{attr}") if v is _UNRESOLVED else v
+        return _UNRESOLVED
+
+    def resolve(self, node, depth: int = 0) -> list:
+        """Every value node can take, as a list ([_UNRESOLVED] when one cannot be read from the source): a constant, an
+        f-string (its values written as {}), both arms of a conditional, a module-level name, a residualmap import, an
+        attribute of a residualmap module, an item of a constant tuple, a function's parameter (every call's argument)
+        and a loop variable over a constant tuple of tuples."""
+        import ast
+        if depth > 12:
+            return [_UNRESOLVED]
+        r = lambda n: self.resolve(n, depth + 1)
+        if isinstance(node, ast.Constant):
+            return [node.value]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
+            return [-node.operand.value]
+        if isinstance(node, ast.JoinedStr):
+            parts = [[""]]
+            for v in node.values:
+                parts.append(r(v) if isinstance(v, ast.Constant) else ["{}"])
+            out = [""]
+            for p in parts:
+                out = [a + (b if isinstance(b, str) else "\0") for a in out for b in p]
+            return [x if "\0" not in x else _UNRESOLVED for x in out]
+        if isinstance(node, ast.IfExp):
+            return r(node.body) + r(node.orelse)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return [a + b if isinstance(a, str) and isinstance(b, str) else _UNRESOLVED
+                    for a in r(node.left) for b in r(node.right)]
+        if isinstance(node, (ast.Tuple, ast.List)):
+            items = [r(e) for e in node.elts]
+            return [tuple(i[0] for i in items)] if all(len(i) == 1 for i in items) else [_UNRESOLVED]
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            m = self.module_value(node.value.id)
+            return [getattr(m, node.attr, _UNRESOLVED) if m is not _UNRESOLVED else _UNRESOLVED]
+        if isinstance(node, ast.Subscript):
+            base, idx = r(node.value), r(node.slice)
+            out = []
+            for b in base:
+                for i in idx:
+                    try:
+                        out.append(b[i])
+                    except Exception:  # noqa: BLE001
+                        out.append(_UNRESOLVED)
+            return out
+        if isinstance(node, ast.Name):
+            fn = self._enclosing_function(node)
+            if fn is not None and node.id in [a.arg for a in fn.args.args]:
+                return self._call_arguments(fn, node.id, depth)
+            loop = self._loop_over(node)
+            if loop is not None:
+                return loop
+            if node.id in self.assign:
+                # the final verification: a name bound more than once in the file (assigned again, at any level) has
+                # no one value the source gives, so its label is unreadable and the check fails
+                return r(self.assign[node.id]) if self.binds[node.id] == 1 else [_UNRESOLVED]
+            v = self.module_value(node.id)
+            return [v] if self.binds[node.id] <= 1 else [_UNRESOLVED]
+        return [_UNRESOLVED]
+
+    def _enclosing_function(self, node):
+        import ast
+        p = self.parent.get(node)
+        while p is not None and not isinstance(p, ast.FunctionDef):
+            p = self.parent.get(p)
+        return p
+
+    def _call_arguments(self, fn, arg: str, depth: int) -> list:
+        import ast
+        i = [a.arg for a in fn.args.args].index(arg)
+        out = []
+        for n in ast.walk(self.tree):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == fn.name:
+                v = n.args[i] if i < len(n.args) else next((k.value for k in n.keywords if k.arg == arg), None)
+                out += self.resolve(v, depth + 1) if v is not None else [_UNRESOLVED]
+        return out or [_UNRESOLVED]
+
+    def _loop_over(self, node):
+        """A loop variable: 'for a, b in CONST' gives CONST's items' parts at b's place."""
+        import ast
+        p = self.parent.get(node)
+        while p is not None:
+            if isinstance(p, ast.For):
+                t = p.target
+                names = [t.id] if isinstance(t, ast.Name) else [e.id for e in t.elts if isinstance(e, ast.Name)]
+                if node.id in names:
+                    vals = self.resolve(p.iter)
+                    if len(vals) != 1 or vals[0] is _UNRESOLVED:
+                        return [_UNRESOLVED]
+                    if isinstance(t, ast.Name):
+                        return list(vals[0])
+                    k = [e.id if isinstance(e, ast.Name) else None for e in t.elts].index(node.id)
+                    return [row[k] for row in vals[0]]
+            p = self.parent.get(p)
+        return None
+
+    def widgets(self, checked_elsewhere: tuple = ()) -> list[dict]:
+        """Every Streamlit call that draws a labelled input, a title or a header: where (sidebar or main: st.sidebar,
+        a `with st.sidebar:` block or a container made in one), kind, every label it can show, and the range of a
+        number.  Fails closed (AssertionError): a call on a Streamlit object whose method is on none of the lists
+        above, an input or heading with no label it can read (none, or one passed through **kwargs), and an input
+        method called on an object the scanner cannot trace to Streamlit; since the final verification also
+        Streamlit imported other than as st, getattr on a Streamlit object, a Streamlit attribute used other than by
+        a call (b = st.sidebar.button), a label name bound twice, a function that draws and is used other than by a
+        direct call, a method, a decorated function or a lambda that draws, and a metric or data editor unless the
+        caller checks them itself (checked_elsewhere: the main page's, by name)."""
+        import ast
+        out = []
+        name = os.path.basename(self.path)
+        known = set(LABEL_WIDGETS + CHECKED_ELSEWHERE + DISPLAY_ONLY + LAYOUT + CONTROL)
+        for n in ast.walk(self.tree):
+            # the final verification: Streamlit is imported only as st (its exceptions from streamlit.errors), an
+            # input is never drawn through getattr, and a Streamlit object's attribute is called where it is named
+            if isinstance(n, ast.Import):
+                assert all(a.name != "streamlit" and not a.name.startswith("streamlit.") or
+                           (a.name == "streamlit" and a.asname == "st") for a in n.names), (
+                    name, n.lineno, "Streamlit imported other than as st: the check reads only st")
+            if isinstance(n, ast.ImportFrom) and n.module and n.module.split(".")[0] == "streamlit":
+                assert n.module == "streamlit.errors", (name, n.lineno, f"from {n.module} import ...: the check reads "
+                                                        f"only st")
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in ("getattr", "vars") \
+                    and n.args and self.is_streamlit(n.args[0]):
+                raise AssertionError((name, n.lineno, f"{n.func.id} on a Streamlit object: the check cannot read what "
+                                                      f"it draws"))
+            if isinstance(n, ast.Attribute) and self.is_streamlit(n.value) and n.attr not in ST_ATTRIBUTES:
+                par = self.parent.get(n)
+                assert isinstance(par, ast.Call) and par.func is n, (
+                    name, n.lineno, f"{ast.unparse(n)} used other than by a call: the check cannot follow it")
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+                continue
+            if not self.is_streamlit(n.func.value):
+                assert n.func.attr not in INPUT_WIDGETS, (name, n.lineno, f"an input ({n.func.attr}) drawn on an object "
+                                                          f"the check cannot trace to Streamlit")
+                continue
+            assert n.func.attr in known, (name, n.lineno, f"a Streamlit call the check does not know: {n.func.attr}")
+            assert n.func.attr not in CHECKED_ELSEWHERE or n.func.attr in checked_elsewhere, (
+                name, n.lineno, f"a {n.func.attr} on a page whose {n.func.attr}s the contract does not hold")
+            if n.func.attr not in LABEL_WIDGETS:
+                continue
+            where = self.receiver_where(n.func.value, n)
+            lab = next((k.value for k in n.keywords if k.arg == "label"), None) or (n.args[0] if n.args else None)
+            assert lab is not None, (name, n.lineno, f"a {n.func.attr} with no label the check can read" + (
+                " (its arguments come through **kwargs)" if any(k.arg is None for k in n.keywords) else ""))
+            rng = None
+            if n.func.attr in RANGE_WIDGETS:
+                kw = {k.arg: k.value for k in n.keywords}
+                pos = list(n.args[1:4]) + [None] * 3
+                vals = []
+                for j, key in enumerate(("min_value", "max_value", "value")):
+                    v = kw.get(key, pos[j])
+                    got = self.resolve(v) if v is not None else [None]
+                    vals.append(got[0] if len(got) == 1 and (got[0] is None or isinstance(got[0], (int, float)))
+                                else "computed")
+                rng = tuple(vals)
+            out.append({"line": n.lineno, "where": where, "kind": n.func.attr, "labels": self.resolve(lab),
+                        "range": rng})
+        return out
+
+
+def _arg_flags(path: str) -> set:
+    """The option strings and positional names every add_argument call in a module's main() declares."""
+    import ast
+    tree = ast.parse(_read_source(path))
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    return {a.value for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "add_argument" for a in n.args if isinstance(a, ast.Constant)}
+
+
+def _add_arguments(path: str):
+    """(the module's _Source, each add_argument call of its main())."""
+    import ast
+    src = _Source(path)
+    fn = next(n for n in src.tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    return src, [n for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "add_argument"]
+
+
+def _arg_defaults(path: str) -> dict:
+    """The task 21 final verification: each add_argument default of a module's main() other than None, read from the
+    source: its first option string -> the value (a constant, a name of the module or of a residualmap import, or
+    os.path.join of constants, joined with '/').  A default the source does not give as one value fails."""
+    import ast
+    src, calls = _add_arguments(path)
+    out = {}
+    for n in calls:
+        v = next((k.value for k in n.keywords if k.arg == "default"), None)
+        if v is None or (isinstance(v, ast.Constant) and v.value is None):
+            continue
+        flag = n.args[0].value
+        if isinstance(v, ast.Call) and ast.unparse(v.func) == "os.path.join" and all(
+                isinstance(a, ast.Constant) for a in v.args):
+            out[flag] = "/".join(a.value for a in v.args)
+            continue
+        got = src.resolve(v)
+        assert len(got) == 1 and got[0] is not _UNRESOLVED, (os.path.basename(path), flag, "a default the check "
+                                                              "cannot read from the source")
+        out[flag] = got[0]
+    return out
+
+
+# an argparse help, or a string of the contract, that quotes a default or a limit with its number (task 21's final
+# verification): such a number must be rendered from the code's constant, never written into the text
+HELP_QUOTE = re.compile(r"\bdefault\W{0,3}\d|\bnearest \d|\bmore than \d|\d[\d,.]*\s*(?:or more |calendar )?"
+                        r"(?:junctions|readings|minutes|days|months|MB|mg/L)\b", re.I)
+
+
+def _help_literals(path: str) -> list[tuple[str, str]]:
+    """(flag, the literal text of its help) of each add_argument of a module's main() whose help is a string or an
+    f-string (its formatted values written {}); a help taken from elsewhere (the contract) is not literal."""
+    import ast
+    _, calls = _add_arguments(path)
+    out = []
+    for n in calls:
+        h = next((k.value for k in n.keywords if k.arg == "help"), None)
+        if isinstance(h, ast.Constant) and isinstance(h.value, str):
+            out.append((n.args[0].value, h.value))
+        elif isinstance(h, ast.JoinedStr):
+            out.append((n.args[0].value, "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in h.values)))
+    return out
+
+
+def _default_in_code(mod: str, const: str, key):
+    """A DEFAULTS entry's value in the code: a module's constant, an item of it, or a function's parameter default; for
+    module 'app.py', a module-level name of the main page read from its source."""
+    import importlib
+    import inspect
+    if mod == "app.py":
+        import ast
+        src = _Source(os.path.join(REPO, "app.py"))
+        got = src.resolve(ast.Name(id=const, ctx=ast.Load()))
+        assert len(got) == 1 and got[0] is not _UNRESOLVED, ("app.py", const, "not one value in the source")
+        v = got[0]
+    else:
+        v = getattr(importlib.import_module(mod), const)
+    if key is None:
+        return v
+    if callable(v):
+        return inspect.signature(v).parameters[key].default
+    return v[key]
+
+
+def _mapping_keys(fn) -> set:
+    """The keys a reader looks up in its `mapping` argument ((mapping or {}).get('k')) and the roles it copies from
+    its column guess ({k: guess[k] for k in (...)})."""
+    import ast
+    import inspect
+    import textwrap
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    keys = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "get" and n.args \
+                and isinstance(n.args[0], ast.Constant) and "mapping" in ast.unparse(n.func.value):
+            keys.add(n.args[0].value)
+        if isinstance(n, ast.DictComp) and "guess" in ast.unparse(n.value):
+            for g in n.generators:
+                if isinstance(g.iter, ast.Tuple):
+                    keys |= {e.value for e in g.iter.elts if isinstance(e, ast.Constant)}
+    return keys
+
+
+def _contract_strings(obj) -> set:
+    """Every string inside the contract's data (keys and values, nested), for the doc's backticked names."""
+    out = set()
+    if isinstance(obj, str):
+        out.add(obj)
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            out |= _contract_strings(k) | _contract_strings(v)
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        for v in obj:
+            out |= _contract_strings(v)
+    return out
+
+
+def _contract_negative_controls(K) -> list[tuple[str, callable]]:
+    """Twenty-two changes to the contract, to a copy of the doc or to a module's constant, each of which
+    io_contract_matches_code must catch: each direction of the labels, a range, each direction of the flags, a
+    template header, a reader's role, a limit, the plant log's required columns, a headline metric, and the doc
+    missing a flag or a label or naming something the contract does not; and, since the task 21 review, a limit
+    changed in its module and in the contract but not in the doc (the date window, 3 to 6 months), a default, a kind
+    and a template header changed in the doc only, a row added to the doc's 'What files it takes' table, the
+    analyzer rule changed in the doc only, and a mixed-case column, a template and a command flag named in the doc
+    only.  A change is a dict of the contract's attributes to replace, with 'MODULE' for a module's constant
+    (module, name, value) and 'DOC' for a copy of the doc."""
+    doc = open(K.DOC, encoding="utf-8").read()
+    pilot = K.CLI["residualmap.pilot"]
+    files_last = "| " + " | ".join(K.FILES_TABLE[-1]) + " |"
+    window = K.LIMITS["date window"]
+
+    def edit(old, new):
+        assert doc.count(old) == 1, old
+        return doc_with(doc.replace(old, new))
+
+    def doc_with(text):
+        d = tempfile.mkdtemp(prefix="rm_t21_doc_")
+        path = os.path.join(d, "io_contract.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return {"DOC": path}
+
+    return [
+        ("a sidebar label missing from the contract", lambda: {"APP_INPUTS": K.APP_INPUTS[1:]}),
+        ("a label in the contract only", lambda: {"PAGE_INPUTS": K.PAGE_INPUTS + (K._w("page", "checkbox", "Ghost", ""),)}),
+        ("a range changed", lambda: {"APP_INPUTS": tuple({**e, "range": (0.2, 4.0, 1.5)} if e["label"].startswith(
+            "Chlorine dose") else e for e in K.APP_INPUTS)}),
+        ("a pilot flag missing", lambda: {"CLI": {**K.CLI, "residualmap.pilot": {k: v for k, v in pilot.items()
+                                                                                if k != "--inlets"}}}),
+        ("a flag in the contract only", lambda: {"CLI": {**K.CLI, "residualmap.gis_read": {
+            **K.CLI["residualmap.gis_read"], "--ghost": ""}}}),
+        ("a template header changed", lambda: {"TEMPLATES": {**K.TEMPLATES, "plant_log_template.csv":
+                                                             ("month", "temp_C", "toc_mgL")}}),
+        ("a grab-log role missing", lambda: {"GRAB_LOG_ROLES": {k: v for k, v in K.GRAB_LOG_ROLES.items() if k != "unit"}}),
+        ("a limit changed", lambda: {"LIMITS": {**K.LIMITS, "large model": ("residualmap.importers", "LARGE_JUNCTIONS",
+                                                                           2000, "")}}),
+        ("a required plant column dropped", lambda: {"PLANT_LOG_REQUIRED": K.PLANT_LOG_REQUIRED[:1]}),
+        ("a headline metric missing", lambda: {"APP_METRICS": K.APP_METRICS[1:]}),
+        ("a flag missing from the doc", lambda: doc_with(doc.replace("`--holdout-sites`", "holdout"))),
+        ("a name in the doc only", lambda: doc_with(doc + "\nAlso `--ghost-flag` and `ghost_column`.\n")),
+        ("a label missing from the doc", lambda: doc_with(doc.replace("'Sites on next month's route'", "'Sites'"))),
+        ("a limit changed in its module and the contract, not the doc", lambda: {
+            "MODULE": (window[0], window[1], 6), "LIMITS": {**K.LIMITS, "date window": window[:2] + (6,) + window[3:]}}),
+        ("a default changed in the doc only", lambda: edit("| 0.2 to 4; default 1.2 |", "| 0.2 to 4; default 1.5 |")),
+        ("a kind changed in the doc only", lambda: edit("| 'Sites on next month's route' | slider |",
+                                                        "| 'Sites on next month's route' | number input |")),
+        ("a template header changed in the doc only", lambda: edit(
+            "| date,time,tap_id,free_chlorine_mgL,method,notes |", "| date,time,tap_id |")),
+        ("a row added to the doc's files table", lambda: edit(
+            files_last, files_last + "\n| Hydrant flushing log | CSV | Main page | Optional |")),
+        ("the analyzer rule changed in the doc only", lambda: edit(   # the prose's (the pilot's flags table holds it too)
+            "within 60 minutes of it, and a day with none keeps no reading and is listed. The main page's",
+            "within 90 minutes of it, and a day with none keeps no reading and is listed. The main page's")),
+        ("a mixed-case column in the doc only", lambda: doc_with(doc + "\nAlso a column `temp_F`.\n")),
+        ("a template in the doc only", lambda: doc_with(doc + "\nAlso `hydrant_log_template.csv`.\n")),
+        ("a flag of a command line in the doc only", lambda: doc_with(
+            doc + "\nAlso `python -m residualmap.contract --ghost`.\n")),
+    ]
+
+
+@check("task21")
+def io_contract_matches_code():
+    """Plan task 21: residualmap/contract.py, the machine-readable twin of docs/io_contract.md, agrees with the code in
+    both directions, and the doc names everything in it.
+    - Command lines: every flag and positional argument of the pilot, importers, gis_read, cad_read and operator_form
+      (their main()'s add_argument calls, read from the source) is in contract.CLI, and nothing else is.
+    - Tables a utility gives: the grab log's roles are the keys of importers.guess_log_columns and the template
+      headers are guessed into them (free and total chlorine), a long-format header gives the analyte and unit roles,
+      and the keys read_grab_log looks up in its mapping are the pilot's --columns keys (which the pilot reads from
+      the contract); the species columns are the pilot's; the tap map's roles are guess_tap_columns' keys plus the
+      role inlet_taps_of looks up; the inlet file's are those read_inlet_residuals looks up, and its template is
+      read; the plant log's required columns are the set pilot.load_plant tests, each one dropped is refused, and the
+      optional ones are read in the pilot or the seasonal model; the operator form's kinds, columns and aliases are
+      operator_form's own, and its template's header is the contract's columns.  Every template column not read is
+      listed as not read, and every role's template column is in its template.
+    - Templates: docs/templates holds exactly the contract's files, each header is the contract's, the Get started
+      page's downloads are the contract's, and the one not on the page is named.
+    - Labels: every labelled input, title and header of app.py and pages/1_Get_started.py (sidebar or main, read from
+      the source, a label written from values at run time as {} and every arm of a conditional) is in
+      contract.APP_INPUTS or PAGE_INPUTS, and the reverse.  The scanner (_Source.widgets) fails closed since the task
+      21 review: a call on a Streamlit object (st, st.sidebar, a container, column or expander made from one, or a
+      function parameter given one) whose method is on none of its lists, an input or heading whose label it cannot
+      read, and an input drawn on an object it cannot trace each fail the check; every number input's and slider's range and default that
+      the source writes as a constant (or as a residualmap constant) is the contract's, and one computed at run time
+      is a string there; the main page's subheaders, headline metrics, typed-sample columns and per-junction table
+      columns are the contract's.  The route table's columns are listed, not checked (the code renames them).
+    - Outputs and limits: the committed synthetic pilot files' headers are the contract's columns; each limit is its
+      module's constant.
+    - The plant log is read as a grab log is: a semicolon export with decimal commas and a UTF-16 copy of the template
+      give the template's frame, and a blank or non-numeric temperature or a month not written YYYY-MM is refused
+      with the file's name.
+    - The doc: docs/io_contract.md names every flag and positional argument (in backticks), every column, role,
+      kind and alias, every template and every label (a run-time label by its words before the first {}); each of
+      its tables is the one contract.doc_tables() renders, under its heading and in its order, and no other table is
+      there, so a row, range, default, kind, template header or limit that differs from the contract fails; each
+      sentence that quotes a limit (contract.doc_sentences(), the analyzer rule among them) is in it word for word;
+      and every name it puts in backticks is a string of the contract, a check's name, a file of the repository, a
+      command line of one of its modules with that module's own flags, or one of DOC_LITERALS.
+    - The page (headless AppTest, once, outside the negative controls; not under --quick, which skips the app): the
+      Get started page shows the 'What files it takes' table with exactly the contract's columns and rows, under
+      step 3 and before its file checker, on the laptop and in the hosted demo with uploads turned on; in the hosted
+      demo with uploads off it is not shown (the page stops before it, as before task 21).
+    Negative controls: each of the twenty-two changes of _contract_negative_controls fails the check, and each of the
+    thirteen page sources of SCANNER_CASES is refused or read as it lists.
+    Since the task 21 final verification (_contract_final_parts and the doc's prose):
+    - Every default and setting the contract quotes in words is rendered from DEFAULTS, CLI_DEFAULTS,
+      TYPED_SAMPLES_RANGES or LIMITS, and each entry is the code's own: a module's constant or an item of it, a
+      function's parameter default, a module-level name of the main page, every add_argument default other than None
+      (read from each command's source, both ways), and the typed samples' column ranges (read from the main page's
+      data editor).  No string written in contract.py holds a number it does not render (labels, column names, the
+      doc's headings, quoted phrases and 'step N' aside), and no argparse help writes a default or a limit's number
+      into its text.
+    - The main page's titles are the contract's one title (APP_TITLE), drawn on the page itself, and its subheaders
+      its sections, on the page itself; the Get started page draws no metric and no data editor, and the main page one
+      data editor.  The scanner also refuses Streamlit imported other than as st, getattr on a Streamlit object, a
+      Streamlit attribute used other than by a call, a label name bound twice, and a function that draws and is used
+      other than by a direct call (or is a method, decorated, or a lambda).
+    - The doc: a table is any block with a '|' in it, so a row without end pipes, an indented row, a line right under
+      a table and a table without end pipes all fail; its prose holds no number outside the sentences doc_sentences()
+      renders (a second sentence that quotes a limit fails); every phrase in single quotes in the prose and in the
+      contract's strings is a label (or one without its closing parenthesis, or one written from values with a capital
+      letter for each value), the title, a section, metric or column, an option of APP_OPTIONS_NAMED (each offered by
+      its input in the source) or an example of DOC_EXAMPLES (each what the reader makes of it); and every 'step N' is
+      a step of the Get started page.
+    - The analyzer rule is quoted only whole, as contract.analyzer_rule() renders it, in the README, the pages, the
+      command lines' sources and the docs (the journal is history); the micrograms divisor is the reader's; the plant
+      log's temperature range is Chemistry's; and the plant log refuses a temperature outside it (in Fahrenheit, said
+      so) and a row longer than its header, by the file's name, and reads rows that leave out the optional cells as
+      read_csv did.
+    Its own controls: each of the twenty-five changes of _contract_final_controls fails the check with its own
+    message, and each of the fifteen page sources of SCANNER_CASES_FINAL is refused or read as it lists."""
+    from . import contract as K
+    out = _contract_pass(K)
+    # the page part renders the Get started page three times; --quick skips the app, so it skips this part too
+    out["page"] = "not rendered under --quick" if QUICK else _files_table_on_page(K)
+    controls = _contract_negative_controls(K)
+    caught = [what for what, change in controls if _contract_control_fails(K, change()) is not None]
+    assert len(caught) == len(controls), sorted(set(w for w, _ in controls) - set(caught))
+    out["negative_controls_caught"] = len(caught)
+    scanner = _scanner_controls()
+    out["scanner_controls"] = len(scanner)
+    # the task 21 final verification: its cases, each a change to the code, the contract or the doc that must fail
+    # the check for its own reason, and its page sources for the label scanner
+    final = []
+    for what, change, why in _contract_final_controls(K):
+        msg = _contract_control_fails(K, change())
+        assert msg is not None, (what, "passed the check")
+        assert why in msg, (what, "failed the check for another reason:", msg[:300])
+        final.append(what)
+    out["final_verification_controls_caught"] = len(final)
+    out["final_verification_scanner_cases"] = len(_scanner_controls(SCANNER_CASES_FINAL))
+    # ... and `--write-tables` never writes over a line that is no row (the verifier's fuzz of the doc: a heading
+    # written right above a table was taken into it and lost), so it refuses a table with a line under it and keeps a
+    # heading written right above one
+    doc = open(K.DOC, encoding="utf-8").read()
+    last = "| " + " | ".join(K.FILES_TABLE[-1]) + " |"
+    try:
+        K.write_tables(doc.replace(last, last + "\nHydrant flushing log", 1))
+        raise AssertionError("write_tables wrote over a line under a table")
+    except ValueError:
+        pass
+    glued = doc.replace("## Limits\n\n", "## Limits\n", 1)
+    assert glued != doc and K.write_tables(glued) == glued and not K.doc_problems(glued), "a heading right above a table"
+    out["write_tables_guarded"] = True
+    return out
+
+
+def _contract_control_fails(K, new: dict) -> str | None:
+    """Runs _contract_pass with one change in place and undoes it: the contract's attributes in new, 'MODULE' a list
+    of (module, name, value), 'SOURCE' {path relative to the repository: (old, new, count)} edits read through
+    SOURCE_OVERRIDE, 'DOC' a copy of the doc, and 'REWRITE_TABLES' the doc's tables rewritten from the changed
+    contract (as `python -m residualmap.contract --write-tables` would).  Returns the AssertionError's text, or None
+    when the pass passed."""
+    import importlib
+    new = dict(new)
+    mods = new.pop("MODULE", [])
+    mods = [mods] if isinstance(mods, tuple) else mods
+    sources = new.pop("SOURCE", {})
+    rewrite = new.pop("REWRITE_TABLES", False)
+    old = {k: getattr(K, k) for k in new}
+    mod_old = []
+    tmp = None
+    try:
+        for mod, name, value in mods:
+            m = importlib.import_module(mod)
+            mod_old.append((m, name, getattr(m, name)))
+            setattr(m, name, value)
+        for rel, (a, b, n) in sources.items():
+            path = os.path.join(REPO, rel)
+            text = _read_source(path)
+            assert text.count(a) == n, ("a control's edit does not apply", rel, a[:60], text.count(a))
+            SOURCE_OVERRIDE[path] = text.replace(a, b)
+        for k, v in new.items():
+            setattr(K, k, v)
+        if rewrite:
+            tmp = tempfile.mkdtemp(prefix="rm_t21_doc_")
+            path = os.path.join(tmp, "io_contract.md")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(K.write_tables(open(K.DOC, encoding="utf-8").read()))
+            K.DOC = path
+        try:
+            _contract_pass(K)
+        except AssertionError as e:
+            return str(e)
+        return None
+    finally:
+        for k, v in old.items():
+            setattr(K, k, v)
+        if rewrite:
+            K.DOC = CONTRACT_DOC_PATH
+        for m, name, v in reversed(mod_old):
+            setattr(m, name, v)
+        SOURCE_OVERRIDE.clear()
+        for d in [tmp] + ([os.path.dirname(new["DOC"])] if "DOC" in new else []):
+            if d:
+                shutil.rmtree(d, ignore_errors=True)
+
+
+def _contract_final_controls(K) -> list[tuple[str, callable, str]]:
+    """The task 21 final verification's cases (what, the change, a part of the message the check must fail with): the
+    verifier's, each reproduced first, and a few of the same kinds.  A default quoted in words drifts in the code (a
+    pilot add_argument default, a constant the pilot, topology or the main page holds, the typed samples' range); a
+    title changes or one is added in the sidebar; a data editor or a metric is added to the Get started page; a label
+    is renamed in the code and the contract and the doc's tables rewritten, leaving the old name in the prose; an
+    option the contract names is renamed in the code; the doc gains a second sentence that quotes a limit, a table
+    row without end pipes, an indented row, a row with no pipe under a table or a table with no end pipes; a help
+    writes a limit or the old analyzer rule into its text, and so does the README; the contract writes a number into
+    a string; the files table quotes an option or a step that does not exist; an example the doc quotes is not what
+    the reader makes of it; the unit divisor and the plant log's range drift from the reader's and Chemistry's."""
+    doc = open(K.DOC, encoding="utf-8").read()
+
+    def doc_with(text):
+        d = tempfile.mkdtemp(prefix="rm_t21_doc_")
+        path = os.path.join(d, "io_contract.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return {"DOC": path}
+
+    def edit(old, new):
+        assert doc.count(old) == 1, old
+        return doc_with(doc.replace(old, new))
+
+    from . import topology as T
+    last = "| " + " | ".join(K.FILES_TABLE[-1]) + " |"
+    lim_last = next(ln for ln in doc.splitlines() if ln.startswith("| hosted model |"))
+    keep = next(e for e in K.APP_INPUTS if e["label"].startswith("Keep every reading of these taps"))
+    renamed = keep["label"].replace("Keep every reading of these taps", "Keep all readings of these taps")
+    files_quote = tuple(r if r[0] != "Your network model" else (r[0], r[1], r[2].replace("'Upload my .inp'",
+                                                                                            "'Upload my model'"), r[3])
+                        for r in K.FILES_TABLE)
+    files_step = tuple(r if r[0] != "A GIS layer of your water mains" else (r[0], r[1], "This page, step 6", r[3])
+                       for r in K.FILES_TABLE)
+    old_rule = ("an online analyzer's series (a tap with 12 or more readings a day, minutes apart, on 2 or more days) "
+                "keeps one reading per day")
+    window = "months of history to fit on (default {CLI_DEFAULTS['residualmap.pilot']['--window']})"
+    plant = K.DEFAULTS["plant log temperatures"]
+    return [
+        ("a pilot add_argument default changed (--window 3 to 6)", lambda: {"SOURCE": {"residualmap/pilot.py": (
+            'ap.add_argument("--window", type=int, default=3,', 'ap.add_argument("--window", type=int, default=6,', 1)}},
+         "add_argument defaults"),
+        ("the pilot's free-chlorine dose changed (1.2 to 1.5)", lambda: {"MODULE": [(
+            "residualmap.pilot", "DEFAULT_DOSE_MGL", {"free_chlorine": 1.5, "chloramine": K._d("chloramine dose")})]},
+         "free chlorine dose"),
+        ("the main page's chloramine pH changed (8.0 to 7.5)", lambda: {"SOURCE": {"app.py": (
+            "CA_PH0 = 8.0", "CA_PH0 = 7.5", 1)}}, "chloramine pH"),
+        ("the GIS joining distance changed (6 ft to 3 ft)", lambda: {"MODULE": [(
+            "residualmap.topology", "DEFAULT_TOL_M", {**T.DEFAULT_TOL_M, "gis": 3 * T.FT})]}, "GIS joining distance"),
+        ("the typed samples' mg/L column's maximum changed (5 to 10)", lambda: {"SOURCE": {"app.py": (
+            'NumberColumn("mg/L", min_value=0.0, max_value=5.0,', 'NumberColumn("mg/L", min_value=0.0, max_value=10.0,',
+            1)}}, "column ranges"),
+        ("the main page's title changed", lambda: {"SOURCE": {"app.py": (
+            'st.title("ResidualMap")', 'st.title("Chlorine Planner")', 1)}}, "titles"),
+        ("a title added in the main page's sidebar", lambda: {"SOURCE": {"app.py": (
+            '    st.header("3. Route")\n', '    st.header("3. Route")\n    st.title("Advanced settings")\n', 1)}},
+         "titles"),
+        ("a data editor added to the Get started page", lambda: {"SOURCE": {"pages/1_Get_started.py": (
+            "\nimport streamlit as st\n", "\nimport streamlit as st\nst.data_editor({'tap_id': ['T1']}, key='x')\n", 1)}},
+         "a data_editor on a page"),
+        ("a metric added to the Get started page", lambda: {"SOURCE": {"pages/1_Get_started.py": (
+            "\nimport streamlit as st\n", "\nimport streamlit as st\nst.metric('Files checked', 3)\n", 1)}},
+         "a metric on a page"),
+        ("a label renamed in the code and the contract, the doc's tables rewritten, the prose left", lambda: {
+            "SOURCE": {"app.py": ('KEEP_ALL = "Keep every reading of these taps',
+                                  'KEEP_ALL = "Keep all readings of these taps', 1)},
+            "APP_INPUTS": tuple({**e, "label": renamed} if e is keep else e for e in K.APP_INPUTS),
+            "REWRITE_TABLES": True}, "the doc's prose quotes 'Keep every reading of these taps'"),
+        ("the option 'Upload my .inp' renamed in the code", lambda: {"SOURCE": {"app.py": (
+            '"Upload my .inp"', '"Upload my model"', 2)}}, "the contract names the option"),
+        ("a second sentence in the doc that quotes a limit (5,000 junctions)", lambda: edit(
+            "## The hosted demo (cloud mode)\n", "A model of more than 5,000 junctions needs a confirm before its grid is "
+            "built.\n\n## The hosted demo (cloud mode)\n"), "the doc's prose quotes the number '5,000'"),
+        ("a files-table row without its end pipes", lambda: edit(
+            last, last + "\nHydrant flushing log | CSV | Main page | Optional"), "differs at its row"),
+        ("a files-table row indented two spaces", lambda: edit(
+            last, last + "\n  | Hydrant flushing log | CSV | Main page | Optional |"), "differs at its row"),
+        ("a line with no pipe right under a table", lambda: edit(last, last + "\nHydrant flushing log"),
+         "differs at its row"),
+        ("a second Limits table with no end pipes", lambda: edit(
+            lim_last, lim_last + "\n\nlimit | value\n---|---\nhosted upload | 50"), "tables and the contract renders"),
+        ("the pilot's --analyzer-hour help written with the old rule", lambda: {"SOURCE": {"residualmap/pilot.py": (
+            'help=CONTRACT_CLI["residualmap.pilot"]["--analyzer-hour"])', f'help="{old_rule}")', 1)}},
+         "its help writes a number into its text"),
+        ("the pilot's --allow-large help written with 3,000", lambda: {"SOURCE": {"residualmap/pilot.py": (
+            "more than {LARGE_JUNCTIONS:,} junctions", "more than 3,000 junctions", 1)}},
+         "its help writes a number into its text"),
+        ("the README's analyzer rule written the old way", lambda: {"SOURCE": {"README.md": (
+            K.analyzer_rule(), "An online analyzer (12 or more readings a day, minutes apart, on 2 or more days) keeps "
+            "one reading a day, the one nearest 10:00.", 1)}}, "states the analyzer rule other than"),
+        ("a number written into a string of the contract (the --window help)", lambda: {"SOURCE": {
+            "residualmap/contract.py": ('f"' + window + '"', '"months of history to fit on (default 3)"', 1)}},
+         "writes a number into a string"),
+        ("the files table quotes an option that does not exist", lambda: {"FILES_TABLE": files_quote},
+         "the contract quotes 'Upload my model'"),
+        ("the files table names a step the Get started page does not have", lambda: {"FILES_TABLE": files_step},
+         "names step 6"),
+        ("an example header the reader guesses otherwise", lambda: {"DOC_EXAMPLES": {**K.DOC_EXAMPLES,
+                                                                                     "Sample Point": "date"}},
+         "the doc's example header"),
+        ("the micrograms divisor changed (1000 to 100)", lambda: {"UNIT_DIVISORS": {**K.UNIT_DIVISORS, "ppb": 100}},
+         "the unit"),
+        ("the plant log's temperature range widened past Chemistry's (35 to 40 C)", lambda: {
+            "MODULE": [("residualmap.pilot", "PLANT_TEMP_C", (0.0, 40.0))],
+            "DEFAULTS": {**K.DEFAULTS, "plant log temperatures": plant[:3] + ((0.0, 40.0),) + plant[4:]}},
+         "Chemistry and the plant log's range disagree"),
+    ]
+
+
+# The task 21 review: the label scanner fails closed.  Each case is a small page source and what the scanner must do
+# with it: refuse it (an input it does not know, a label it cannot read, an input on an object it cannot trace) or
+# find the input in its place.
+SCANNER_CASES = (
+    ("a select_slider", "st.select_slider('Hours to show', [1, 2])", ("main", "select_slider", "Hours to show")),
+    ("a date_input", "st.date_input('Sampling date')", ("main", "date_input", "Sampling date")),
+    ("a time_input in a column", "c1, c2 = st.columns(2)\nc2.time_input('Sample time')", ("main", "time_input", "Sample time")),
+    ("a link_button", "st.link_button('Open the guide', 'https://example.org')", ("main", "link_button", "Open the guide")),
+    ("st.sidebar.selectbox", "st.sidebar.selectbox('Pick one', [1, 2])", ("sidebar", "selectbox", "Pick one")),
+    ("st.sidebar.header", "st.sidebar.header('4. Extra section')", ("sidebar", "header", "4. Extra section")),
+    ("an input in a sidebar container", "with st.sidebar:\n    box = st.container()\nbox.checkbox('Boxed')",
+     ("sidebar", "checkbox", "Boxed")),
+    ("a function drawn in the sidebar", "def f():\n    st.toggle('In f')\nwith st.sidebar:\n    f()",
+     ("sidebar", "toggle", "In f")),
+    ("a label through **kwargs", "KW = {'label': 'Seen'}\nst.number_input(**KW)", None),
+    ("a Streamlit call it does not know", "st.popover('Settings')", None),
+    ("tabs", "a, b = st.tabs(['One', 'Two'])", None),
+    ("an input on an object it cannot trace", "for col in st.columns(2):\n    col.button('Go')", None),
+    ("a function drawn in both places", "def f():\n    st.toggle('In f')\nf()\nwith st.sidebar:\n    f()", None),
+)
+# The task 21 final verification: the page sources the scanner read wrongly without failing (the verifier's), now
+# refused, a few of the same kinds, and two it must still read.
+SCANNER_CASES_FINAL = (
+    ("a label name assigned twice", "LAB = 'Old label'\nLAB = 'New label'\nst.button(LAB)", None),
+    ("a label name assigned again in a function", "LAB = 'Shown'\ndef f():\n    LAB = 'Other'\n    st.button(LAB)\nf()",
+     None),
+    ("a function drawn in the sidebar through another function",
+     "def f():\n    st.toggle('In f')\ndef run(g):\n    g()\nwith st.sidebar:\n    run(f)", None),
+    ("a function drawn in the sidebar from a loop over functions",
+     "def f():\n    st.toggle('In f')\nwith st.sidebar:\n    for g in (f,):\n        g()", None),
+    ("a method that draws", "class P:\n    def draw(self):\n        st.button('Go')\nwith st.sidebar:\n    P().draw()", None),
+    ("a lambda that draws", "f = lambda: st.button('Go')\nwith st.sidebar:\n    f()", None),
+    ("a decorated function that draws", "import functools\n@functools.lru_cache\ndef f():\n    st.button('Go')\nf()",
+     None),
+    ("an input drawn through getattr", "getattr(st, 'button')('Go')", None),
+    ("an input method bound to a name", "b = st.sidebar.button\nb('Go')", None),
+    ("Streamlit imported under another name", "import streamlit as stl\nstl.sidebar.button('Go')", None),
+    ("an input imported from streamlit", "from streamlit import button\nbutton('Go')", None),
+    ("a data editor on a page", "st.data_editor({'a': [1]}, key='x')", None),
+    ("a metric on a page", "st.metric('Files checked', 3)", None),
+    ("a function called twice in the sidebar", "def f():\n    st.toggle('In f')\nwith st.sidebar:\n    f()\n    f()",
+     ("sidebar", "toggle", "In f")),
+    ("a module-level label used once", "LAB = 'Go now'\nst.sidebar.button(LAB)", ("sidebar", "button", "Go now")),
+)
+
+
+def _scanner_controls(cases=SCANNER_CASES) -> list[str]:
+    """Runs cases (SCANNER_CASES, or SCANNER_CASES_FINAL) through _Source.widgets(); every case must come out as
+    listed (its docstring).  A label the scanner returns unread (which _contract_pass refuses) counts as refused."""
+    done = []
+    with tempfile.TemporaryDirectory(prefix="rm_t21_scan_") as d:
+        for what, body, want in cases:
+            path = os.path.join(d, "page.py")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("import streamlit as st\n" + body + "\n'Not a widget'.title()\n")
+            try:
+                ws = _Source(path).widgets()
+                assert all(isinstance(x, str) for w in ws for x in w["labels"]), "a label it cannot read"
+            except AssertionError:
+                assert want is None, (what, "refused, and it should be found")
+                done.append(what)
+                continue
+            assert want is not None, (what, "not refused", ws)
+            assert [(w["where"], w["kind"], x) for w in ws for x in w["labels"]] == [want], (what, ws)
+            done.append(what)
+    return done
+
+
+# task 21: the Get started page in a fresh process (one AppTest at a time): its headers, subheaders, tables and the
+# order of step 3's header, the 'What files it takes' subheader, its table and the file checker
+CONTRACT_PAGE_SCRIPT = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+from streamlit.testing.v1 import AppTest
+at = AppTest.from_file(sys.argv[1], default_timeout=300).run()
+order = []
+def walk(node):
+    for kid in getattr(node, "children", {}).values():
+        t = getattr(kid, "type", "")
+        if t in ("header", "subheader") or t == "table" or t == "file_uploader":
+            order.append([t, getattr(kid, "value", None) if t in ("header", "subheader") else getattr(kid, "label", None)])
+        walk(kid)
+walk(at.main)
+tables = []
+for t in at.table:
+    v = t.value
+    tables.append({"columns": [v.index.name] + [str(c) for c in v.columns],
+                   "rows": [[str(i)] + [str(x) for x in r] for i, r in zip(v.index, v.values.tolist())]})
+print("CONTRACT_PAGE " + json.dumps({"exceptions": [str(e.value) for e in at.exception], "order": order,
+                                     "tables": tables}))
+"""
+
+
+def _files_table_on_page(K) -> dict:
+    """io_contract_matches_code's page part: the Get started page rendered headless on the laptop, in the hosted demo
+    with uploads on, and with uploads off; the 'What files it takes' table is the contract's (its docstring)."""
+    out = {}
+    want_rows = [list(r) for r in K.FILES_TABLE]
+    for case, extra in (("local", {"RESIDUALMAP_MODE": "local"}),
+                        ("hosted, uploads on", {"RESIDUALMAP_MODE": "cloud", "RESIDUALMAP_ALLOW_UPLOADS": "true"}),
+                        ("hosted, uploads off", {"RESIDUALMAP_MODE": "cloud", "RESIDUALMAP_ALLOW_UPLOADS": ""})):
+        env = {**os.environ, "PYTHONPATH": REPO, **extra}
+        r = subprocess.run([PY, "-c", CONTRACT_PAGE_SCRIPT, GET_STARTED_PAGE], cwd=os.getcwd(), capture_output=True,
+                           text=True, env=env)
+        line = [x for x in r.stdout.splitlines() if x.startswith("CONTRACT_PAGE ")]
+        if r.returncode != 0 or not line:
+            raise RuntimeError(f"AppTest failed ({case}, exit {r.returncode}): {r.stderr[-3000:]}")
+        res = json.loads(line[-1][len("CONTRACT_PAGE "):])
+        assert not res["exceptions"], (case, res["exceptions"])
+        files = [t for t in res["tables"] if t["columns"] == list(K.FILES_TABLE_COLUMNS)]
+        order = [tuple(x) for x in res["order"]]
+        sub = ("subheader", "What files it takes")
+        if case == "hosted, uploads off":
+            assert not files and sub not in order, (case, res)
+            out[case] = "not shown: the page stops before step 3's checker"
+            continue
+        assert len(files) == 1 and files[0]["rows"] == want_rows, (case, files)
+        i3, isub = order.index(("header", "Step 3. Check a file")), order.index(sub)
+        itab = next(i for i, x in enumerate(order) if x[0] == "table" and i > isub)
+        iup = next(i for i, x in enumerate(order) if x == ("file_uploader", "Check a file"))
+        assert i3 < isub < itab < iup, (case, order)
+        out[case] = {"rows": len(files[0]["rows"]), "columns": len(files[0]["columns"]),
+                     "under_step_3_before_the_checker": True}
+    return out
+
+
+CLI_MODULES_TEXT = ("README.md", "app.py", "pages/1_Get_started.py", "residualmap/pilot.py", "residualmap/importers.py",
+                    "residualmap/gis_read.py", "residualmap/cad_read.py", "residualmap/operator_form.py",
+                    "docs/how_to_export_your_model.md", "docs/io_contract.md", "docs/privacy.md")
+ANALYZER_QUOTE = re.compile(r"\d+ or more readings a day", re.I)
+
+
+def _contract_strings_with_numbers(K) -> list[tuple[int, str]]:
+    """(line, text) of every string written in residualmap/contract.py (not a docstring, a format spec or a regular
+    expression's pattern) that holds a number, other than one that is a label, section, metric or column name the check holds to the code, a number in
+    quotes (a label, held by the quote rule) or a 'step N' (held to the Get started page's steps)."""
+    import ast
+    path = os.path.join(REPO, "residualmap", "contract.py")
+    tree = ast.parse(_read_source(path))
+    docs, specs = set(), set()
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body and isinstance(n.body[0], ast.Expr) \
+                and isinstance(n.body[0].value, ast.Constant):
+            docs.add(id(n.body[0].value))
+        if isinstance(n, ast.FormattedValue) and n.format_spec is not None:
+            specs |= {id(x) for x in ast.walk(n.format_spec)}
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and ast.unparse(n.func.value) == "re" \
+                and n.args:             # a regular expression's pattern is code, not text
+            specs |= {id(x) for x in ast.walk(n.args[0])}
+    held = {e["label"] for e in K.APP_INPUTS + K.PAGE_INPUTS} | set(K.APP_SECTIONS) | set(K.APP_METRICS) | set(
+        K.ROUTE_COLUMNS) | set(K.EVERY_JUNCTION_COLUMNS) | set(K.PREDICTIONS_COLUMNS) | set(K.VALIDATION_COLUMNS) | set(
+        K.DOC_EXAMPLES) | {h for h, _ in K.doc_tables()} | {"utf-8"}   # the doc's headings (held by its tables' order)
+    #                                                                       and the encoding the module reads files in
+    out = []
+    for n in ast.walk(tree):
+        if not (isinstance(n, ast.Constant) and isinstance(n.value, str)) or id(n) in docs or id(n) in specs:
+            continue
+        if n.value in held:
+            continue
+        rest = K.QUOTED.sub(" ", re.sub(r"\bstep \d+\b", " ", n.value, flags=re.I))
+        if K.PROSE_NUMBER.search(rest):
+            out.append((n.lineno, n.value))
+    return out
+
+
+def _contract_final_parts(K) -> dict:
+    """io_contract_matches_code's parts since the task 21 final verification (its docstring lists them)."""
+    import ast
+    import importlib
+    from . import chemistry
+    from . import importers as I
+    from . import topology as T
+    out = {}
+    # every quoted default and setting is the code's own (DEFAULTS), and so is every add_argument default (CLI_DEFAULTS)
+    for name, (mod, const, key, value, unit) in K.DEFAULTS.items():
+        got = _default_in_code(mod, const, key)
+        want = value * T.FT if unit == "ft" else value
+        same = (tuple(got) == tuple(want)) if isinstance(want, tuple) else math.isclose(float(got), float(want))
+        assert same, ("a default the contract quotes", name, "is", got, "in", mod, const, key, "the contract says", value)
+    out["defaults"] = len(K.DEFAULTS)
+    defaults = {}
+    for mod in K.CLI:
+        got = _arg_defaults(os.path.join(REPO, *mod.split(".")) + ".py")
+        want = K.CLI_DEFAULTS.get(mod, {})
+        assert got == want, ("add_argument defaults", mod, "in the code", got, "in the contract", want)
+        defaults[mod] = len(got)
+    out["cli_defaults"] = sum(defaults.values())
+    # no argparse help writes a default or a limit's number into its text: it renders it from the code's constant
+    for mod in K.CLI:
+        for flag, text in _help_literals(os.path.join(REPO, *mod.split(".")) + ".py"):
+            m = HELP_QUOTE.search(text)
+            assert m is None, (mod, flag, "its help writes a number into its text:", text[max(0, m.start() - 40):m.end() + 20],
+                               "render it from the code's constant or take the contract's words")
+    # no string of the contract holds a number it does not render from its tables
+    lit = _contract_strings_with_numbers(K)
+    assert not lit, ("residualmap/contract.py writes a number into a string instead of rendering it", lit[:6])
+    # every phrase in quotes in the contract's strings names one of its labels, sections, options or examples, and
+    # every 'step N' is a step of the Get started page (a renamed label or option fails here)
+    strings = _contract_strings({k: getattr(K, k) for k in dir(K) if k.isupper() and not k.startswith("_")})
+    strings -= {e["label"] for e in K.APP_INPUTS + K.PAGE_INPUTS}      # a label is held to the code word for word
+    probs = [p for s in sorted(strings) for p in K.quote_problems(s, "the contract") + K.step_problems(s, "the contract")]
+    assert not probs, probs[:6]
+    # the options the contract names are offered by their input: every value its options list can hold, read from the
+    # source (the list, its appends and both arms of a conditional)
+    app = _Source(os.path.join(REPO, "app.py"))
+    for opt, (where, kind, label) in K.APP_OPTIONS_NAMED.items():
+        offered = _options_of(app, where, kind, label)
+        assert opt in offered, ("the contract names the option", opt, "of", label, "and app.py offers", sorted(offered))
+    out["options_named"] = len(K.APP_OPTIONS_NAMED)
+    # the doc's examples are what the reader makes of them
+    heads = [h for h, role in K.DOC_EXAMPLES.items() if role in K.GRAB_LOG_ROLES]
+    g = I.guess_log_columns(heads)
+    for h in heads:
+        assert g[K.DOC_EXAMPLES[h]] == h, ("the doc's example header", h, "is guessed as", g)
+    for v in (v for v, role in K.DOC_EXAMPLES.items() if role == "censored"):
+        r = I.parse_reading(v)
+        assert r[0] is None and r[1].startswith("censored"), ("the doc's example reading", v, r)
+    for v in (v for v, role in K.DOC_EXAMPLES.items() if role == "--columns"):
+        keys = [part.partition("=")[0] for part in v.split(";")]
+        assert set(keys) <= set(K.GRAB_LOG_MAPPING_KEYS), ("the doc's example of --columns", v, keys)
+    assert set(K.DOC_EXAMPLES.values()) <= set(K.GRAB_LOG_ROLES) | {"censored", "--columns"}, K.DOC_EXAMPLES
+    out["examples"] = len(K.DOC_EXAMPLES)
+    # a reading in micrograms is divided as the contract says
+    for u, d in K.UNIT_DIVISORS.items():
+        assert I.header_unit(u) is not None and round(1 / I.header_unit(u)) == d, ("the unit", u, I.header_unit(u))
+    # the analyzer rule is quoted only whole, as contract.analyzer_rule() renders it (the README, the pages, the
+    # command lines' sources and helps and the docs; the journal is history and is not read)
+    rule = " ".join(K.analyzer_rule().split())
+    quoted = 0
+    for rel in CLI_MODULES_TEXT:
+        text = " ".join(_read_source(os.path.join(REPO, rel)).split())
+        whole = [i for i in range(len(text)) if text.startswith(rule, i)]
+        for m in ANALYZER_QUOTE.finditer(text):
+            assert any(i <= m.start() < i + len(rule) for i in whole), (
+                rel, "states the analyzer rule other than as contract.analyzer_rule() renders it:",
+                text[max(0, m.start() - 60):m.end() + 60])
+        quoted += len(whole)
+    out["analyzer_rule_quoted_whole"] = quoted
+    # the plant log's temperature range is Chemistry's own
+    lo, hi = K._d("plant log temperatures")
+    for x, ok in ((lo, True), (hi, True), (lo - 0.01, False), (hi + 0.01, False)):
+        try:
+            chemistry.Chemistry(temp_C=x)
+            took = True
+        except ValueError:
+            took = False
+        assert took == ok, ("Chemistry and the plant log's range disagree at", x)
+    return out
+
+
+def _options_of(src: "_Source", where: str, kind: str, label: str) -> set:
+    """Every value the options of the input (where, kind, label) of a page can hold, read from its source: a list or
+    tuple, a sum of them, both arms of a conditional, list() or sorted() of one, a dict's keys, and a name bound to any
+    of these (each of its assignments, and each value appended or inserted)."""
+    import ast
+    calls = [n for n in ast.walk(src.tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == kind and src.is_streamlit(n.func.value) and n.args
+             and label in src.resolve(n.args[0]) and src.receiver_where(n.func.value, n) == where]
+    assert calls, (os.path.basename(src.path), "no", kind, label, "in", where)
+
+    def vals(e, depth=0) -> set:
+        if e is None or depth > 8:
+            return set()
+        if isinstance(e, (ast.List, ast.Tuple, ast.Set)):
+            return {x for el in e.elts for x in src.resolve(el) if isinstance(x, str)}
+        if isinstance(e, ast.BinOp) and isinstance(e.op, ast.Add):
+            return vals(e.left, depth + 1) | vals(e.right, depth + 1)
+        if isinstance(e, ast.IfExp):
+            return vals(e.body, depth + 1) | vals(e.orelse, depth + 1)
+        if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id in ("list", "sorted", "tuple") and e.args:
+            return vals(e.args[0], depth + 1)
+        if isinstance(e, ast.Dict):
+            return {x for k in e.keys if k is not None for x in src.resolve(k) if isinstance(x, str)}
+        if isinstance(e, ast.Name):
+            got = set()
+            for n in ast.walk(src.tree):
+                if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == e.id for t in n.targets):
+                    got |= vals(n.value, depth + 1)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in (
+                        "append", "insert", "extend") and isinstance(n.func.value, ast.Name) and n.func.value.id == e.id:
+                    arg = n.args[-1] if n.args else None
+                    got |= vals(arg, depth + 1) if n.func.attr == "extend" else {
+                        x for x in src.resolve(arg) if isinstance(x, str)}
+            return got
+        return set()
+
+    out = set()
+    for n in calls:
+        opts = n.args[1] if len(n.args) > 1 else next((k.value for k in n.keywords if k.arg == "options"), None)
+        out |= vals(opts)
+    return out
+
+
+def _contract_pass(K) -> dict:
+    """One pass of io_contract_matches_code over the contract module K (its docstring says what is compared)."""
+    import inspect
+    from . import importers as I
+    from . import operator_form as OF
+    from . import pilot as P
+    out = {}
+    # command lines
+    flags = {}
+    for mod, want in K.CLI.items():
+        got = _arg_flags(os.path.join(REPO, *mod.split(".")) + ".py")
+        assert got == set(want), (mod, sorted(got - set(want)), sorted(set(want) - got))
+        flags[mod] = len(got)
+    out["flags"] = flags
+    # the grab log
+    for name, species in (("grab_log_template.csv", "free_chlorine"), ("grab_log_total_template.csv", "chloramine")):
+        header = list(K.TEMPLATES[name])
+        g = I.guess_log_columns(header, species)
+        roles = {k for k, v in g.items() if v is None or isinstance(v, str)}
+        assert roles == set(K.GRAB_LOG_ROLES), (sorted(roles), sorted(K.GRAB_LOG_ROLES))
+        want = {**K.GRAB_LOG_ROLES, "reading": K.GRAB_LOG_SPECIES_COLUMNS[species]}
+        assert {k: g[k] for k in want} == want, (name, {k: g[k] for k in want})
+        assert set(header) - {v for v in want.values() if v} == set(K.GRAB_LOG_NOT_READ), (name, header)
+        with open(os.path.join(K.TEMPLATES_DIR, name), "rb") as fh:
+            I.read_grab_log(fh.read(), name, None, "tap_map.csv", species)
+    long = I.guess_log_columns(["Sample Point", "Date", "Time", "Analyte", "Result", "Units"])
+    assert (long["analyte"], long["unit"], long["reading"], long["tap"]) == ("Analyte", "Units", "Result", "Sample Point")
+    keys = _mapping_keys(I.read_grab_log)
+    assert keys == set(K.GRAB_LOG_MAPPING_KEYS) and P.GRAB_LOG_MAPPING_KEYS is K.GRAB_LOG_MAPPING_KEYS, sorted(keys)
+    assert P.SPECIES_COLUMN == K.GRAB_LOG_SPECIES_COLUMNS and set(K.GRAB_LOG_SPECIES_COLUMNS.values()) <= \
+        K.GRAB_LOG_TEMPLATE_NAMES and set(K.GRAB_LOG_ROLES.values()) - {None} <= K.GRAB_LOG_TEMPLATE_NAMES
+    # the tap map
+    th = list(K.TEMPLATES["tap_map_by_id_template.csv"])
+    tap_roles = set(I.guess_tap_columns(th)) | _mapping_keys(I.inlet_taps_of)
+    assert tap_roles == set(K.TAP_MAP_ROLES), sorted(tap_roles)
+    assert I.guess_tap_columns(th) == {k: v for k, v in K.TAP_MAP_ROLES.items() if v}
+    assert I._guess(th + ["role"], I._ROLE_EXACT) == "role"
+    assert set(th) - set(v for v in K.TAP_MAP_ROLES.values() if v) == set(K.TAP_MAP_NOT_READ), th
+    # inlet residuals
+    ih = list(K.TEMPLATES["inlet_residuals_template.csv"])
+    assert _mapping_keys(I.read_inlet_residuals) == set(K.INLET_ROLES), sorted(_mapping_keys(I.read_inlet_residuals))
+    assert (I._guess(ih, I._INLET_NODE_EXACT), I._guess(ih, I._INLET_RESIDUAL_EXACT)) == tuple(K.INLET_ROLES.values())
+    assert set(ih) - set(K.INLET_ROLES.values()) == set(K.INLET_NOT_READ), ih
+    with open(os.path.join(K.TEMPLATES_DIR, "inlet_residuals_template.csv"), "rb") as fh:
+        inlets, _ = I.read_inlet_residuals(fh.read(), "inlet_residuals_template.csv")
+    assert len(inlets) == 2, inlets
+    # the plant log
+    import ast
+    lp = ast.parse(inspect.getsource(P.load_plant))
+    required = [{e.value for e in n.elts} for n in ast.walk(lp) if isinstance(n, ast.Set)]
+    assert required == [set(K.PLANT_LOG_REQUIRED)], required
+    plant_path = os.path.join(K.TEMPLATES_DIR, "plant_log_template.csv")
+    assert tuple(P.load_plant(plant_path).columns) == K.PLANT_LOG_REQUIRED + K.PLANT_LOG_OPTIONAL
+    with tempfile.TemporaryDirectory(prefix="rm_t21_") as d:
+        for col in K.PLANT_LOG_REQUIRED:
+            p = os.path.join(d, f"no_{col}.csv")
+            pd.read_csv(plant_path, dtype={"month": str}).drop(columns=[col]).to_csv(p, index=False)
+            try:
+                P.load_plant(p)
+            except ValueError:
+                continue
+            raise AssertionError(f"a plant log without {col} was read")
+        # the task 21 review: the plant log is read as a grab log is, so a semicolon export with decimal commas and a
+        # UTF-16 file give the template's frame, and a blank or non-numeric temperature or a month not written YYYY-MM
+        # is refused with the file's name (before, a plain read_csv stopped the pilot with a traceback)
+        tmpl, text = P.load_plant(plant_path), open(plant_path, encoding="utf-8").read()
+        first = text.splitlines()[1]
+        same = {"semicolons and decimal commas": (text.replace(",", ";").replace(".", ","), "cp1252"),
+                "UTF-16": (text, "utf-16")}
+        for what, (body, enc) in same.items():
+            p = os.path.join(d, "plant_same.csv")
+            with open(p, "w", encoding=enc, newline="") as fh:
+                fh.write(body)
+            pd.testing.assert_frame_equal(P.load_plant(p), tmpl, check_exact=True, obj=what)
+        m, t_c, *rest = first.split(",")
+        refused = {"a blank temp_C": ",".join([m, "", *rest]), "a temp_C that is not a number": ",".join([m, "ten", *rest]),
+                   "a month not written YYYY-MM": ",".join(["Jan-26", t_c, *rest]),
+                   # the final verification: a temperature outside Chemistry's range, and a row longer than the header
+                   "a temp_C of -40": ",".join([m, "-40", *rest]), "a temp_C of 1000": ",".join([m, "1000", *rest]),
+                   "a row with a cell beyond the header": ",".join([m, t_c, *rest, "99"])}
+        for what, row in refused.items():
+            p = os.path.join(d, "plant_refused.csv")
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(text.replace(first, row, 1))
+            try:
+                P.load_plant(p)
+            except ValueError as e:
+                assert "plant_refused.csv" in str(e) and ("row 2" in str(e) or "Row 2" in str(e)), (what, str(e))
+                continue
+            raise AssertionError(f"a plant log with {what} was read")
+        # the final verification: a log in Fahrenheit is refused as one, by name; rows that leave out the optional
+        # cells at their end are read with them blank, as read_csv read them before the review
+        rows = text.splitlines()
+        f_text = "\n".join([rows[0]] + [",".join([r.split(",")[0], f"{float(r.split(',')[1]) * 1.8 + 32:g}",
+                                                  *r.split(",")[2:]]) for r in rows[1:]]) + "\n"
+        p = os.path.join(d, "plant_fahrenheit.csv")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(f_text)
+        try:
+            P.load_plant(p)
+            raise AssertionError("a plant log in Fahrenheit was read")
+        except ValueError as e:
+            assert "plant_fahrenheit.csv" in str(e) and "Fahrenheit" in str(e), str(e)
+        short = {"every row": "\n".join([rows[0]] + [",".join(r.split(",")[:2]) for r in rows[1:]]) + "\n",
+                 "one row": "\n".join([rows[0], ",".join(rows[1].split(",")[:2])] + rows[2:]) + "\n"}
+        for what, body in short.items():
+            p = os.path.join(d, "plant_short.csv")
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            got, old = P.load_plant(p), pd.read_csv(p, dtype={"month": str})
+            assert list(got.temp_C) == list(old.temp_C) and list(got.month) == list(old.month), (what, got, old)
+            assert got[list(K.PLANT_LOG_OPTIONAL)].isna().sum().sum() == old[list(K.PLANT_LOG_OPTIONAL)].isna().sum().sum()
+    out["plant_log"] = {"read_as_the_template": sorted(same), "refused_by_name": sorted(refused),
+                        "fahrenheit_refused_as_such": True, "short_rows_read_as_before": sorted(short)}
+    users = open(os.path.join(REPO, "residualmap", "pilot.py")).read() + open(
+        os.path.join(REPO, "residualmap", "seasonal.py")).read()
+    assert all(f'"{c}"' in users for c in K.PLANT_LOG_OPTIONAL), K.PLANT_LOG_OPTIONAL
+    # the operator form
+    assert OF.KINDS == K.OPERATOR_FORM_KINDS and OF.COLUMNS == K.OPERATOR_FORM_COLUMNS
+    assert OF.ALIASES == K.OPERATOR_FORM_ALIASES and OF.KIND_ALIASES == K.OPERATOR_FORM_KIND_ALIASES
+    assert OF.template_csv().decode("utf-8").splitlines()[0].lstrip("﻿") == ",".join(K.OPERATOR_FORM_COLUMNS)
+    out["columns"] = {"grab_log_roles": len(K.GRAB_LOG_ROLES), "grab_log_mapping_keys": len(K.GRAB_LOG_MAPPING_KEYS),
+                      "tap_map_roles": len(K.TAP_MAP_ROLES), "inlet_roles": len(K.INLET_ROLES),
+                      "plant_log": len(K.PLANT_LOG_REQUIRED + K.PLANT_LOG_OPTIONAL),
+                      "operator_form_columns": len(K.OPERATOR_FORM_COLUMNS), "operator_form_kinds": len(K.OPERATOR_FORM_KINDS),
+                      "operator_form_aliases": len(K.OPERATOR_FORM_ALIASES) + len(K.OPERATOR_FORM_KIND_ALIASES)}
+    # templates
+    shipped = sorted(f for f in os.listdir(K.TEMPLATES_DIR) if not f.startswith("."))
+    assert shipped == sorted(K.TEMPLATES), shipped
+    for name in shipped:
+        assert K.read_template_header(name) == K.template_header(name), (name, K.read_template_header(name))
+    on_page = {f for f, _ in K.TEMPLATE_FILES}
+    assert set(K.TEMPLATES) - on_page == set(K.NOT_ON_THE_PAGE) and on_page <= set(K.TEMPLATES)
+    out["templates"] = len(shipped)
+    # labels: the app and the Get started page
+    labels = {}
+    for path, entries in ((os.path.join(REPO, "app.py"), K.APP_INPUTS), (GET_STARTED_PAGE, K.PAGE_INPUTS)):
+        src = _Source(path)
+        page = path == GET_STARTED_PAGE
+        # the final verification: the Get started page draws no metric or data editor (the contract holds none for
+        # it); the main page's are checked by name below
+        ws = src.widgets(checked_elsewhere=() if page else CHECKED_ELSEWHERE)
+        bad = [(w["line"], w["kind"]) for w in ws if _UNRESOLVED in w["labels"]
+               or not all(isinstance(x, str) for x in w["labels"])]
+        assert not bad, (os.path.basename(path), "labels not readable from the source", bad)
+        # the main page's title and subheaders are what it shows (below); its sidebar headers are inputs' sections
+        code = {("page" if page else w["where"], w["kind"], x) for w in ws for x in w["labels"]
+                if page or w["kind"] not in ("title", "subheader")}
+        want = {(e["where"], e["kind"], e["label"]) for e in entries}
+        assert code == want, (os.path.basename(path), "in the code only", sorted(code - want)[:8],
+                              "in the contract only", sorted(want - code)[:8])
+        rng_code = {(w["kind"], x, w["range"]) for w in ws if w["range"] is not None for x in w["labels"]}
+        rng_want = {(e["kind"], e["label"], tuple("computed" if isinstance(v, str) else v for v in e["range"]))
+                    for e in entries if e["range"] is not None}
+        assert rng_code == rng_want, (os.path.basename(path), sorted(rng_code - rng_want), sorted(rng_want - rng_code))
+        labels[os.path.basename(path)] = {"labels": len(want), "ranges": len(rng_want)}
+        if not page:
+            # the final verification: the main page's titles (every one, where it is drawn) are the contract's one
+            # title, and its subheaders, all on the page itself, are its sections
+            titles = {(w["where"], x) for w in ws if w["kind"] == "title" for x in w["labels"]}
+            assert titles == {("main", K.APP_TITLE)}, ("app.py's titles", sorted(titles), "the contract's", K.APP_TITLE)
+            subs = {(w["where"], x) for w in ws if w["kind"] == "subheader" for x in w["labels"]}
+            assert subs == {("main", s) for s in K.APP_SECTIONS}, (sorted(subs ^ {("main", s) for s in K.APP_SECTIONS}))
+            import ast as _ast
+            metrics, typed, every, editors, ranges = set(), set(), None, 0, {}
+            for n in _ast.walk(src.tree):
+                if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Attribute) and n.func.attr == "metric":
+                    metrics |= set(src.resolve(n.args[0]))
+                if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Attribute) and n.func.attr == "data_editor":
+                    editors += 1
+                    cc = next(k.value for k in n.keywords if k.arg == "column_config")
+                    typed = {src.resolve(k)[0] for k in cc.keys}
+                    # the final verification: each number column's range is the contract's TYPED_SAMPLES_RANGES
+                    for k, col in zip(cc.keys, cc.values):
+                        kw = {x.arg: x.value for x in getattr(col, "keywords", [])}
+                        if "min_value" in kw or "max_value" in kw:
+                            ranges[src.resolve(k)[0]] = tuple(src.resolve(kw[x])[0] if x in kw else None
+                                                              for x in ("min_value", "max_value"))
+                if isinstance(n, _ast.Assign) and any(isinstance(t, _ast.Name) and t.id == "every" for t in n.targets) \
+                        and isinstance(n.value, _ast.Call) and n.value.args and isinstance(n.value.args[0], _ast.Dict):
+                    every = tuple(x for k in n.value.args[0].keys for x in src.resolve(k))
+            assert editors == 1, ("app.py draws", editors, "data editors; the contract holds one, 'Grab samples'")
+            assert ranges == K.TYPED_SAMPLES_RANGES, ("the typed samples' column ranges", ranges, K.TYPED_SAMPLES_RANGES)
+            assert metrics == set(K.APP_METRICS), sorted(metrics ^ set(K.APP_METRICS))
+            assert typed == set(K.TYPED_SAMPLES_COLUMNS), typed
+            assert every == K.EVERY_JUNCTION_COLUMNS, every
+    out["labels"] = labels
+    # outputs and limits
+    for f, cols in K.COMMITTED_PILOT.items():
+        with open(os.path.join(REPO, "outputs", "pilot", f)) as fh:
+            assert tuple(fh.readline().strip().split(",")) == cols, f
+    import importlib
+    for name, (mod, const, value, _) in K.LIMITS.items():
+        assert getattr(importlib.import_module(mod), const) == value, (name, mod, const)
+    out["final_verification"] = _contract_final_parts(K)
+    # the doc
+    doc = open(K.DOC, encoding="utf-8").read()
+    flat = " ".join(doc.split())
+    missing = []
+    for mod, fl in K.CLI.items():
+        missing += [f"{mod} {f}" for f in fl if f"`{f}`" not in doc]
+    names = set(K.GRAB_LOG_ROLES) | {v for v in K.GRAB_LOG_ROLES.values() if v} | set(K.GRAB_LOG_MAPPING_KEYS) \
+        | set(K.GRAB_LOG_NOT_READ) | set(K.TAP_MAP_ROLES) | {v for v in K.TAP_MAP_ROLES.values() if v} \
+        | set(K.TAP_MAP_NOT_READ) | set(K.INLET_ROLES) | set(K.INLET_ROLES.values()) | set(K.INLET_NOT_READ) \
+        | set(K.PLANT_LOG_REQUIRED) | set(K.PLANT_LOG_OPTIONAL) | set(K.OPERATOR_FORM_KINDS) \
+        | set(K.OPERATOR_FORM_COLUMNS) | set(K.OPERATOR_FORM_ALIASES) | set(K.OPERATOR_FORM_KIND_ALIASES) \
+        | set(K.TEMPLATES) | set(K.GRAB_LOG_SPECIES_COLUMNS.values()) | set(K.PREDICTIONS_COLUMNS) \
+        | set(K.VALIDATION_COLUMNS) | set(K.PILOT_FILES) | set(K.TYPED_SAMPLES_COLUMNS)
+    missing += [f"`{n}`" for n in sorted(names) if f"`{n}`" not in doc]
+    for e in K.APP_INPUTS + K.PAGE_INPUTS:
+        words = " ".join(e["label"].split("{}")[0].split()).strip()
+        if words not in flat:
+            missing.append(f"label {e['label']!r}")
+    assert not missing, missing[:12]
+    # every table of the doc is the one the contract renders, in its place, and so is every sentence that quotes a
+    # limit (contract.doc_problems): a row added, a default or kind changed, or a limit changed in the code and the
+    # contract but not in the doc, fails here
+    probs = K.doc_problems(doc)
+    assert not probs, ("the doc is not the contract's", probs[:6])
+    # every name the doc puts in backticks is the contract's, a check's, a file of the repository, a command line of
+    # a module of it with that module's own flags, or one of a few literals (DOC_LITERALS); anything else fails
+    known = _contract_strings({k: getattr(K, k) for k in dir(K) if k.isupper()})
+    flags_all = {f for fl in K.CLI.values() for f in fl}
+    ticks = set(re.findall(r"`([^`\n]+)`", doc))
+    unknown = []
+    for t in sorted(ticks):
+        if t.startswith("python -m "):
+            parts = t.split()
+            path = os.path.join(REPO, *parts[2].split(".")) + ".py"
+            if not os.path.exists(path) or not {p for p in parts[3:] if p.startswith("-")} <= _arg_flags(path):
+                unknown.append(t)
+        elif re.fullmatch(r"--?[A-Za-z][\w-]*", t):
+            if t not in flags_all:
+                unknown.append(t)
+        elif t in known or t in DOC_LITERALS or t in {c[0] for c in CHECKS} or t == K.PDF_NAME.format("Net3.inp"):
+            continue
+        elif "/" in t and re.fullmatch(r"[\w./-]+", t) and os.path.exists(os.path.join(REPO, t)):
+            continue
+        else:
+            unknown.append(t)
+    assert not unknown, ("named in the doc, not in the contract", unknown[:12])
+    out["doc"] = {"tables": len(K.doc_tables()), "rendered_sentences": len(K.doc_sentences()),
+                  "tables_and_sentences": "the contract's", "named_in_the_doc": "everything in the contract"}
+    return out
+
+
+# the doc's backticked names that are neither the contract's nor a path: file extensions and a model keyword
+DOC_LITERALS = frozenset({".bak", ".bin", ".inp", ".net", ".wtg", ".wtg.mdb", ".wtg.sqlite", ".xlsx", "START CLOCKTIME"})
+
+
+# The words that label a number as simulation, and the record files under outputs/intake/ (task 15 on)
+CLAIM_LABEL = re.compile(r"\bsimulat(?:ion|ions|ed)\b|\bconverter self-consistency\b|\bsame-library "
+                         r"self-consistency\b|\breader self-consistency\b", re.I)
+# A claim of validation (the task 21 review: per sentence, and more than the one word 'validated'): a sentence with one
+# of these words fails unless it says 'in simulation'; a word in quotes is a mention, a backticked name is code, and
+# the noun 'validation' (the hold-out procedure) is not a claim.  A claim word that claims it on real data fails
+# whatever else the sentence says.  Since the task 21 final verification each claim word is tested on its own (the
+# sentence's later claims too), a claim on real data is a lookahead of at most six words to 'on', 'against' or 'with'
+# and six more to the real-data word, and a claim word is negated only when the negation governs it: 'not', 'never'
+# or 'no longer' just before it (with 'be', 'been', 'yet' or 'ever' between), "n't" so, or a negated subject just
+# before its verb ('nothing here is', 'no importer is'); 'No doubt it is validated' and 'not only validated' are
+# claims.  'proved' is a claim word as 'proves' is, and 'confirmed' counts only in a claim on real data.
+CLAIM_WORD = re.compile(r"(?<!')\b(validat(?:ed|es|ing)|proven|proves|proved|verified|confirmed)\b(?!')", re.I)
+REAL_TAIL = re.compile(r"(?:\W+[\w'-]+){0,6}?\W+(?:on|against|with)\b(?:\W+[\w'-]+){0,6}?\W+"
+                       r"(?:utility|utilities|real|field|measured|town's|customer|customers)\b", re.I)
+NEGATED = re.compile(r"(?:\b(?:not|never|no longer)|n't)\s+(?:(?:be|been|being|yet|ever)\s+){0,2}$"
+                     r"|\b(?:nothing|none|no\s+[\w-]+)(?:\s+(?:here|else|of\s+(?:it|this|these|them)))?\s+"
+                     r"(?:is|are|was|were|has\s+been|have\s+been)\s+$", re.I)     # tested on the text just before
+IN_SIMULATION = re.compile(r"\bin simulation\b", re.I)
+
+
+def claim_sentences(unit: str) -> list[str]:
+    """A unit's sentences for the validation rule: each line of a table on its own, the rest split after '.', '!',
+    '?' or ';' and a space; backticked names (code, paths) blanked."""
+    t = re.sub(r"`[^`\n]*`", "``", unit)
+    out = []
+    for ln in t.splitlines() if t.lstrip().startswith("|") else [" ".join(t.split())]:
+        out += [x for x in re.split(r"(?<=[.!?;])\s+", ln) if x.strip()]
+    return out
+
+
+def _it5_units(sections=None) -> list[tuple[str, str, str]]:
+    """The iteration-5 text, as (where, unit, caption): the journal from 'Iteration 5, inputs and access' to its end,
+    the README's iteration-5 sections and limitations bullets (numbers.sections()), and the paragraphs of its other
+    sections there (the app's) that name iteration 5 or one of its tasks.  A unit is a paragraph (text
+    between blank lines), a table with the paragraph before it as its caption, or one README limitations bullet."""
+    from . import numbers as N
+    secs = sections if sections is not None else N.sections()
+    start = next(i for i, s in enumerate(secs) if s.doc == "journal" and s.title.startswith("Iteration 5, inputs"))
+    out = []
+    for i, s in enumerate(secs):
+        if s.doc == "journal" and i < start:
+            continue
+        whole = s.doc == "journal" or "iteration 5" in s.title.lower() or "iteration-5" in s.title
+        blocks = [b for b in re.split(r"\n\s*\n", s.text) if b.strip()]
+        if s.title.startswith("Honest limitations"):
+            blocks = [b for blk in blocks for b in re.split(r"(?m)^(?=- )", blk) if b.strip()]
+        if not whole:     # another README section (the app's): its paragraphs that name iteration 5 or its tasks
+            blocks = [b for b in blocks if N.IT5_TASK.search(b)]
+        for j, b in enumerate(blocks):
+            cap = blocks[j - 1] if b.lstrip().startswith("|") and j > 0 else ""
+            out.append((f"{s.doc}: {s.title[:50]}", b, cap))
+    return out
+
+
+def _intake_phrases() -> list[str]:
+    """The registry's iteration-5 headline numbers whose file is under outputs/intake/, each as its words with the
+    number put in (numbers.REGISTRY; a DERIVED rule counts when every file it reads is there)."""
+    from . import numbers as N
+    out = []
+    for doc, head, words, source, fmt in N._registry():
+        if "{}" not in words:
+            continue
+        if isinstance(source, tuple):
+            rel, keys = source
+            if not rel.startswith(N.IT5_DIRS):
+                continue
+            with open(os.path.join(REPO, rel)) as fh:
+                val = json.load(fh)
+            for k in keys:
+                val = val[k]
+        elif isinstance(source, str) and source in N.DERIVED and all(f.startswith(N.IT5_DIRS) for f in N.DERIVED[source][0]):
+            val = N.DERIVED[source][1]()
+        else:
+            continue
+        f = fmt
+        if f.startswith("abs"):
+            val, f = abs(val), f[3:]
+        out.append(N._flat(words.format(format(val, f) if f != "s" else str(val))))
+    return out
+
+
+def claims_problems(units, phrases) -> dict:
+    """The units that quote an importer number without saying simulation or self-consistency, and the units that say
+    'validated' without 'in simulation'.  A unit quotes an importer number when it holds a registry phrase of a file
+    under outputs/intake/, or names a file there and holds a number that is not a date, time, identifier, citation
+    or run cost (the numbers scan's blanks)."""
+    from . import numbers as N
+    intake = re.compile(r"\b(?:task15_import|task15b_physics|readiness_bundled|elevation_prv_ky10|run_cost_timing|"
+                        r"task16_samples|tap_snapping|zone_extract_[\w<>]+|gis_roundtrip|cad_roundtrip|cad_mtext_timing|"
+                        r"operator_form|fidelity_[\w<>]+|boundary_valve_ky10)\.json\b")
+    quoting, unlabelled, validated = 0, [], []
+    for where, b, cap in units:
+        flat = N._flat(b)
+        hit = any(p in flat for p in phrases)
+        if not hit and intake.search(b):
+            t = b
+            for _, rx in N.BLANKS:
+                t = rx.sub(lambda m: " " * len(m.group(0)), t)
+            hit = any(not N.COST.match(t[m.end():m.end() + 12]) for m in N.NUM.finditer(t))
+        if hit:
+            quoting += 1
+            if not (CLAIM_LABEL.search(b) or CLAIM_LABEL.search(cap)):
+                unlabelled.append((where, flat[:120]))
+        for sent in claim_sentences(b):
+            flagged = False
+            for m in CLAIM_WORD.finditer(sent):
+                if NEGATED.search(sent[:m.start()]):
+                    continue
+                real = REAL_TAIL.match(sent, m.end()) is not None
+                w = m.group(1).lower()
+                claim = w not in ("verified", "confirmed") or (w == "verified" and re.match(r"\s+on\b", sent[m.end():])
+                                                                is not None)
+                flagged = flagged or real or (claim and not IN_SIMULATION.search(sent))
+            if flagged:
+                validated.append((where, sent[:120]))
+    return {"quoting": quoting, "unlabelled": unlabelled, "validated": validated}
+
+
+@check("task21")
+def iteration5_claims_labelled():
+    """Plan task 21: every unit of the iteration-5 README and journal text (_it5_units: a paragraph, a table with its
+    caption, a README limitations bullet) that quotes an importer number says 'simulation' (or 'simulated') or
+    'converter self-consistency' (or the record's 'same-library' or 'reader' self-consistency, for files written by
+    the library that reads them, or invented logs), and no sentence claims a validation outside simulation: one that
+    says 'validated', 'validates', 'validating', 'proven', 'proves' or 'verified on' without 'in simulation', or one
+    that claims it on utility, real, field or measured data, fails, unless the claim word is negated just before it
+    ('not validated', 'nothing here is validated') (claim_sentences; since the
+    task 21 review, per sentence: before, one 'in simulation' anywhere in a paragraph let the rest through, and only
+    the word 'validated' was looked for).  An importer number is one of the registry's headline numbers whose file is
+    under outputs/intake/, or any number in a unit that names such a file, other than a date, time, identifier,
+    citation or run cost.  Negative controls: a unit with a registry phrase and no such words, and four sentences
+    that claim a validation (one of them after saying simulation), are all caught; four that do not are not.  Since
+    the task 21 final verification a negation counts only when it governs the claim word (NEGATED), each claim word is
+    tested on its own, and the real-data rule looks at most six words ahead twice (REAL_TAIL): FINAL_CLAIMS (the
+    verifier's six sentences that slipped through, a second claim after a negated one, and claims made with
+    'proved' and 'confirmed', which the rule now reads) are each caught, FINAL_HONEST (negations that do govern, and a
+    'confirmed' that claims nothing on real data) each pass, and a sentence of 150,000 characters is read in under a
+    second (the old rule took over ten)."""
+    units = _it5_units()
+    phrases = _intake_phrases()
+    res = claims_problems(units, phrases)
+    assert not res["unlabelled"], res["unlabelled"][:6]
+    assert not res["validated"], res["validated"][:6]
+    neg_validated = [   # each must be caught (the last two since the task 21 review)
+        "The importer is validated on ky4.",
+        "Tested in simulation, the importer is validated on utility data.",
+        "The importer validates every layer.",
+        "The GIS route is proven.",
+    ]
+    neg = claims_problems([("control", f"The rebuild gave {phrases[0]}.", "")]
+                          + [("control", x, "") for x in neg_validated], phrases)
+    assert len(neg["unlabelled"]) == 1 and len(neg["validated"]) == len(neg_validated), neg
+    pos = claims_problems([("control", f"Converter self-consistency on a public model: {phrases[0]}.", ""),
+                           ("control", "It is validated in simulation only.", ""),
+                           ("control", "Nothing here is validated on a utility's data. It is validated in simulation.", ""),
+                           ("control", "The leave-sites-out validation ran; the check says 'validated' is a claim.", "")],
+                          phrases)
+    assert not pos["unlabelled"] and not pos["validated"], pos
+    fin = claims_problems([("control", x, "") for x in FINAL_CLAIMS], phrases)
+    assert len(fin["validated"]) == len(FINAL_CLAIMS), ("missed", sorted(set(FINAL_CLAIMS) - {
+        s for _, s in fin["validated"]}))
+    hon = claims_problems([("control", x, "") for x in FINAL_HONEST], phrases)
+    assert not hon["validated"], hon["validated"]
+    long = ("validated " + "on with against " * 3200 + "x ") * 3
+    t0 = time.time()
+    claims_problems([("control", long, "")], phrases)
+    assert time.time() - t0 < 1.0, ("a sentence of", len(long), "characters took", time.time() - t0, "s")
+    return {"units_in_scope": len(units), "registry_phrases_from_outputs_intake": len(phrases),
+            "units_quoting_an_importer_number": res["quoting"], "unlabelled": 0, "validated_without_in_simulation": 0,
+            "negative_controls_caught": 1 + len(neg_validated),
+            "final_verification": {"claims_caught": len(FINAL_CLAIMS), "honest_passed": len(FINAL_HONEST),
+                                   "long_sentence_chars": len(long), "long_sentence_under_1_s": True}}
+
+
+# the task 21 final verification's sentences: each claims a validation outside simulation and must be caught
+FINAL_CLAIMS = (
+    "No doubt it is validated on real data.",
+    "Not surprisingly, it is validated on real data.",
+    "Without doubt, it's validated on field data.",
+    "Nothing failed: it is validated on a utility's own files.",
+    "No question: it validates every utility layer.",
+    "It is not only validated in simulation but also validated on utility data.",
+    "It is not validated on Net3, and it is validated on a town's own drawings.",
+    "The importer proved accurate on utility data.",
+    "The GIS importer was confirmed on a utility's real files.",
+)
+# ... and these negate their claim word and must pass
+FINAL_HONEST = (
+    "The importer is not validated on any utility's data.",
+    "Nothing here is validated outside simulation; it is validated in simulation only.",
+    "It has not been validated on utility data.",
+    "The importer is never validated on a utility's files.",
+    "It isn't validated on field data.",
+    "No importer here is validated on real data.",
+    "The CAD route is no longer validated on field data.",
+    "The verifier confirmed nine issues in the contract.",
+)
+
+
 def _counts(rs: list) -> dict:
     return {"all_pass": all(r["pass"] is not False for r in rs),
             "n_pass": sum(r["pass"] is True for r in rs), "n_fail": sum(r["pass"] is False for r in rs),
@@ -8387,9 +9930,10 @@ def settle_numbers_entry(report: dict, run_log: dict | None = None, path: str = 
 def run_checks(quick: bool) -> tuple[dict, dict]:
     """Returns (report, run_log): the report holds only results that do not change from run to run; the run log
     adds the date, the timings and the free disk."""
-    global CACHE_BEFORE
+    global CACHE_BEFORE, QUICK
     import warnings
     warnings.filterwarnings("ignore")      # GP optimiser bound warnings, as in experiment.py
+    QUICK = quick                          # io_contract_matches_code leaves the page alone under --quick (task 21)
     status0, CACHE_BEFORE = _git_status(), _cache_snapshot()
     results, timing, t_all = [], [], time.time()
     with scratch_cwd() as tmp:

@@ -132,6 +132,7 @@ from scipy.stats import norm
 from residualmap.age import INITIAL_SHARE_MAX, RANGE_LABEL, hydraulic_age_band, loss_split, oldest_water
 from residualmap.capabilities import ACCOUNTS_FOR_NOTE, accounts_for, grid_edge_warning, report_lines
 from residualmap.chemistry import FREE_CHLORINE, THRESHOLD_NOTE, cache_tag
+from residualmap.contract import GRAB_LOG_TEMPLATE_NAMES
 from residualmap.features import build_features
 from residualmap.importers import (ANALYZER_HOUR, DATE_ORDERS, INLET_ZONE_NOTE, LOG_WINDOW_MONTHS, LogRefused,
                                    clock_label, clock_minute_of, combine_inlet_residuals, daytime_model_hours,
@@ -193,10 +194,12 @@ ANALYTE_EVERY = "(every row: this column does not pick the rows)"
 TYPE_FORMAT = "type a format (strptime, such as %d-%b-%y)"
 DATE_FORMAT_CHOICES = {"guess (ask when a date reads two ways)": None, **{v: k for k, v in DATE_ORDERS.items()},
                        TYPE_FORMAT: "typed"}
-TEMPLATE_NAMES = {"date", "time", "tap_id", "free_chlorine_mgL", "total_chlorine_mgL"}   # docs/templates' headers
+TEMPLATE_NAMES = GRAB_LOG_TEMPLATE_NAMES      # docs/templates' headers, from residualmap/contract.py (task 21)
 KEEP_ALL = "Keep every reading of these taps (a sampling study, not an online analyzer)"
 # task 16c: a zone's inlets, each with its own measured residual
 INLET_BOX = "My zone's inlets carry different residuals"
+CA_PH0 = 8.0       # the chloramine mode's logged pH and Cl2:N ratio until the operator gives them (the demo shows its
+CA_CL2N0 = 4.5     # hidden truth's); named here since task 21, so residualmap/contract.py's defaults are checked on them
 INLET_BOX_HELP = ("A pressure zone cut from a larger system has several inlets, each with its own chlorine residual. "
                   "Tick this to give each inlet's residual, so each is dosed in proportion instead of all at one dose.")
 INLET_LABEL = "Inlet residuals (CSV)"
@@ -561,7 +564,7 @@ with st.sidebar:
     if ca:
         # the chloramine mode's prior centre: the plant's logged pH and chlorine-to-ammonia ratio (in demo mode, the
         # hidden truth's own, which an operator would log)
-        ph0, r0 = 8.0, 4.5
+        ph0, r0 = CA_PH0, CA_CL2N0
         if demo:
             ch0 = CA.truth_chemistry(hidden_chem_draws("chloramine", int(demo_seed)))
             ph0, r0 = round(ch0["pH"], 2), round(ch0["cl2n"], 2)
