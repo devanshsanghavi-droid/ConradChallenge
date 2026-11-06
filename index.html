@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ResidualMap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Prototype of the hosted ResidualMap product: a chlorine map of every junction, every hour, from a water system's model or map and the grab samples it already takes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one 1240px container; sections split by hairlines; the workspace is a three-pane tool (steps, map, inspector) that stacks on phones.
+   Colour: pipes and controls in the potable-water blue of utility markings; chlorine in the pink of a DPD test (more chlorine, deeper pink);
+   orange only for "likely below the minimum". Type: Public Sans throughout, IBM Plex Mono for IDs and readings. */
+:root {
+  --ground: #F5F7F8; --surface: #FFFFFF; --sunk: #EDF1F3;
+  --ink: #0E1B25; --ink-2: #364753; --muted: #5C6D79; --line: #DAE2E7; --line-2: #C3CED6;
+  --accent: #0A5BB0; --accent-ink: #FFFFFF; --accent-soft: #E2EDF8;
+  --warn: #B4400B; --warn-soft: #FBE9DD; --ok: #1E7449;
+  --pipe: #9EAEBA; --pump: #0A5BB0;
+  --ramp-0: #D7CDD3; --ramp-1: #E7AFCB; --ramp-2: #D6699F; --ramp-3: #AE2471; --ramp-4: #6C0D43;
+  --risk-0: #ECEFF1; --risk-1: #F4C9AA; --risk-2: #E0803F; --risk-3: #B4400B; --risk-4: #6B2206;
+  --band-0: #EEF3F7; --band-1: #BED2E4; --band-2: #80A7CB; --band-3: #3F6F9E; --band-4: #1A3A5D;
+  --age-0: #F6F0E2; --age-1: #EBD49F; --age-2: #D6A65B; --age-3: #A76A26; --age-4: #5C390F;
+  --font: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0C1318; --surface: #111B22; --sunk: #16222A;
+    --ink: #E4ECF1; --ink-2: #B4C2CC; --muted: #8696A2; --line: #1F2C35; --line-2: #2D3D48;
+    --accent: #7CB3F1; --accent-ink: #08131C; --accent-soft: #13283D;
+    --warn: #F08C4E; --warn-soft: #3A2217; --ok: #5DC48E;
+    --pipe: #4B5C68; --pump: #7CB3F1;
+    --ramp-0: #5B5161; --ramp-1: #73365A; --ramp-2: #94306B; --ramp-3: #D24E94; --ramp-4: #F8A9D0;
+    --risk-0: #26313A; --risk-1: #5C3423; --risk-2: #9D4719; --risk-3: #E07431; --risk-4: #FFB47F;
+    --band-0: #1D2A35; --band-1: #23425E; --band-2: #2E6390; --band-3: #5B92C5; --band-4: #A7CCF0;
+    --age-0: #29251F; --age-1: #594423; --age-2: #8C692E; --age-3: #C6994B; --age-4: #F0D59B;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0C1318; --surface: #111B22; --sunk: #16222A;
+  --ink: #E4ECF1; --ink-2: #B4C2CC; --muted: #8696A2; --line: #1F2C35; --line-2: #2D3D48;
+  --accent: #7CB3F1; --accent-ink: #08131C; --accent-soft: #13283D;
+  --warn: #F08C4E; --warn-soft: #3A2217; --ok: #5DC48E;
+  --pipe: #4B5C68; --pump: #7CB3F1;
+  --ramp-0: #5B5161; --ramp-1: #73365A; --ramp-2: #94306B; --ramp-3: #D24E94; --ramp-4: #F8A9D0;
+  --risk-0: #26313A; --risk-1: #5C3423; --risk-2: #9D4719; --risk-3: #E07431; --risk-4: #FFB47F;
+  --band-0: #1D2A35; --band-1: #23425E; --band-2: #2E6390; --band-3: #5B92C5; --band-4: #A7CCF0;
+  --age-0: #29251F; --age-1: #594423; --age-2: #8C692E; --age-3: #C6994B; --age-4: #F0D59B;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--surface); }
+h1, h2, h3 { margin: 0; letter-spacing: -0.02em; text-wrap: balance; color: var(--ink); }
+p { margin: 0; }
+a { color: var(--accent); }
+.mono, code { font-family: var(--mono); font-size: 0.92em; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- top bar ---- */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 24px; min-height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; font-size: 16px; }
+.brand svg { flex: none; }
+.nav { display: flex; gap: 4px; margin-right: auto; }
+.nav a { white-space: nowrap; color: var(--ink-2); text-decoration: none; padding: 6px 10px; border-radius: var(--r); font-size: 14px; }
+.nav a:hover { background: var(--sunk); }
+.nav a[aria-current="page"] { color: var(--ink); font-weight: 600; background: var(--sunk); }
+.notice { background: var(--accent-soft); color: var(--ink-2); font-size: 13px; border-bottom: 1px solid var(--line); }
+.notice .wrap { padding-block: 7px; }
+
+/* ---- buttons and controls ---- */
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 600 14px/1 var(--font); padding: 11px 16px; border-radius: var(--r); border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background-color .15s, border-color .15s, color .15s; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-quiet { background: var(--surface); color: var(--ink); border-color: var(--line-2); }
+.btn-quiet:hover { background: var(--sunk); }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.seg { display: inline-flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--line-2); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.seg button { font: 500 13px/1 var(--font); color: var(--ink-2); background: none; border: 0; padding: 8px 11px; cursor: pointer; border-right: 1px solid var(--line-2); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:hover:not([aria-pressed="true"]) { background: var(--sunk); }
+.label { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; user-select: none; }
+.switch input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+
+/* ---- landing ---- */
+section.band { border-bottom: 1px solid var(--line); }
+section.band > .wrap { padding-block: 64px; }
+.hero > .wrap { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: center; padding-block: 56px 64px; }
+.hero h1 { font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; font-weight: 700; }
+.hero .lead { font-size: 17px; color: var(--ink-2); margin-top: 18px; max-width: 34em; }
+.hero .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.kicker { font-size: 13px; color: var(--muted); margin-bottom: 14px; font-weight: 500; }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.figure .map-wrap { padding: 10px 10px 0; }
+.figure figcaption { font-size: 12.5px; color: var(--muted); padding: 10px 14px 12px; border-top: 1px solid var(--line); display: flex; gap: 14px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.shead { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; margin-bottom: 36px; }
+.shead h2 { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.15; font-weight: 700; }
+.shead p { color: var(--ink-2); max-width: 38em; padding-top: 6px; }
+.grid { display: grid; border-top: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--surface); }
+.grid > * { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 22px; min-width: 0; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.step-n { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.cell h3 { font-size: 16px; margin: 10px 0 8px; }
+.cell p { color: var(--ink-2); font-size: 14px; }
+.stat .v { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.stat .k { font-size: 13.5px; color: var(--ink-2); margin-top: 6px; }
+.foot-note { font-size: 13px; color: var(--muted); margin-top: 16px; max-width: 70em; }
+.list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.list li { padding: 13px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; }
+.list li b { font-weight: 600; }
+.list li span { color: var(--ink-2); }
+.cta > .wrap { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; padding-block: 44px; }
+.cta h2 { font-size: 24px; }
+.cta p { color: var(--ink-2); margin-top: 6px; }
+footer { color: var(--muted); font-size: 13px; }
+footer .wrap { padding-block: 28px 40px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+/* ---- workspace ---- */
+.ws-head { background: var(--surface); border-bottom: 1px solid var(--line); }
+.ws-head .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 14px; }
+.ws-head h1 { font-size: 20px; }
+.chip { font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: var(--r); background: var(--sunk); color: var(--ink-2); border: 1px solid var(--line); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.ws-head .spacer { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.ws { display: grid; grid-template-columns: 190px minmax(0, 1fr) 330px; gap: 0; border-left: 1px solid var(--line); }
+.ws > * { min-width: 0; border-right: 1px solid var(--line); }
+.steps { padding: 18px 0; background: var(--surface); }
+.steps ol { list-style: none; margin: 0; padding: 0; display: grid; }
+.steps button { width: 100%; text-align: left; font: 500 14px/1.3 var(--font); color: var(--ink-2); background: none; border: 0; padding: 11px 18px; cursor: pointer; display: grid; grid-template-columns: 22px 1fr; gap: 8px; border-left: 3px solid transparent; }
+.steps button:hover { background: var(--sunk); }
+.steps button[aria-current="step"] { color: var(--ink); font-weight: 600; border-left-color: var(--accent); background: var(--sunk); }
+.steps .n { font-family: var(--mono); color: var(--muted); }
+.steps .sub { grid-column: 2; font-size: 12px; color: var(--muted); font-weight: 400; }
+.steps-foot { padding: 18px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); margin-top: 14px; }
+.pane { padding: 18px 20px 28px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; }
+.toolbar .field { display: grid; gap: 6px; }
+.hour-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.hour-row input[type=range] { width: 180px; accent-color: var(--accent); }
+.hour-row output { font-family: var(--mono); font-size: 13px; min-width: 44px; }
+.iconbtn { width: 32px; height: 32px; display: inline-grid; place-items: center; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); border-radius: var(--r); cursor: pointer; }
+.iconbtn:hover { background: var(--sunk); }
+.map-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); position: relative; }
+.map-card .map-wrap { padding: 8px; }
+.map-svg { width: 100%; height: auto; display: block; }
+.map-svg .pipe { stroke: var(--pipe); fill: none; stroke-linecap: round; }
+.map-svg .pump { stroke: var(--pump); fill: none; stroke-dasharray: 4 3; }
+.map-svg .jn { stroke: var(--surface); stroke-width: 1.5; cursor: pointer; }
+.map-svg .jn:hover { stroke: var(--ink); }
+.map-svg .src { fill: var(--accent); }
+.map-svg .tank { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5; }
+.map-svg text { font-family: var(--font); fill: var(--ink-2); }
+.map-svg .lbl { font-size: 15px; font-weight: 600; }
+.map-svg .flag { fill: none; stroke: var(--warn); stroke-width: 2.4; pointer-events: none; }
+.map-svg .truth { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 3 2.5; pointer-events: none; }
+.map-svg .sample { fill: none; stroke: var(--ink); stroke-width: 2.2; pointer-events: none; }
+.map-svg .sel { fill: none; stroke: var(--accent); stroke-width: 3; pointer-events: none; }
+.map-svg .badge circle { fill: var(--accent); }
+.map-svg .badge text { fill: var(--accent-ink); font: 700 12px var(--font); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.map-svg .badge.hot circle { fill: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+.legend .bar { display: grid; gap: 4px; }
+.legend .ramp { width: 200px; height: 9px; border-radius: 2px; border: 1px solid var(--line); }
+.legend .ticks { display: flex; justify-content: space-between; width: 200px; font-family: var(--mono); font-size: 11px; }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.tip { position: absolute; z-index: 5; pointer-events: none; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r); padding: 8px 10px; font-size: 12.5px; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); min-width: 170px; }
+.tip b { font-family: var(--mono); }
+.tip .row { display: flex; justify-content: space-between; gap: 14px; color: var(--ink-2); }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--surface); }
+.metrics > div { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
+.metrics .k { font-size: 12.5px; color: var(--muted); }
+.metrics .v { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-top: 2px; }
+.metrics .s { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.panel > header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.panel > header h2 { font-size: 15px; }
+.panel > header p { font-size: 12.5px; color: var(--muted); }
+.panel .body { padding: 14px; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover, tbody tr.on { background: var(--sunk); }
+td.r, th.r { text-align: right; }
+.pbar { display: inline-block; width: 46px; height: 6px; background: var(--sunk); border-radius: 2px; vertical-align: middle; margin-right: 8px; position: relative; overflow: hidden; }
+.pbar i { position: absolute; inset: 0 auto 0 0; background: var(--warn); }
+.inspector { padding: 18px; display: grid; gap: 16px; align-content: start; background: var(--surface); }
+.insp-head { display: grid; gap: 4px; }
+.insp-head .id { font-family: var(--mono); font-size: 22px; font-weight: 500; }
+.verdict { font-size: 13.5px; padding: 8px 10px; border-radius: var(--r); background: var(--sunk); color: var(--ink-2); }
+.verdict.warn { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; font-size: 13.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--mono); font-size: 13px; text-align: right; }
+.find { display: grid; gap: 6px; }
+.find input { font: 14px var(--mono); padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); color: var(--ink); width: 100%; }
+.score { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; font-size: 13.5px; color: var(--ink-2); display: grid; gap: 6px; }
+.score b { color: var(--ink); }
+.note { font-size: 12.5px; color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.cards > div { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.cards h3 { font-size: 15px; }
+.cards p { font-size: 13.5px; color: var(--ink-2); }
+.tag { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.ok { color: var(--ok); }
+.report { background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r); max-width: 760px; padding: 28px 30px; display: grid; gap: 18px; }
+.report h2 { font-size: 20px; }
+.report .meta { font-size: 13px; color: var(--muted); }
+.rep-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.hourchart { width: 100%; height: auto; display: block; }
+.hourchart text { font: 10px var(--mono); fill: var(--muted); }
+.hourchart .bar { fill: var(--risk-2); cursor: pointer; }
+.hourchart .bar.on { fill: var(--warn); }
+.hourchart .grid-l { stroke: var(--line); }
+.jchart { width: 100%; height: auto; display: block; }
+.jchart text { font: 10px var(--mono); fill: var(--muted); }
+.jchart .area { fill: var(--accent-soft); }
+.jchart .med { fill: none; stroke: var(--accent); stroke-width: 2; }
+.jchart .thr { stroke: var(--warn); stroke-dasharray: 4 3; }
+.jchart .tru { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.jchart .smp { fill: var(--ink); }
+.jchart .now { stroke: var(--line-2); }
+.jchart .axis { stroke: var(--line-2); }
+
+/* ---- pilot ---- */
+.checks { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.checks label { display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.checks input { accent-color: var(--accent); width: 16px; height: 16px; margin-top: 3px; flex: none; }
+.checks small { display: block; color: var(--muted); font-size: 12.5px; }
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.plan ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--ink-2); }
+.copyline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.copyline code { padding: 7px 10px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--surface); user-select: all; }
+
+@media (max-width: 1100px) {
+  .ws { grid-template-columns: 170px minmax(0, 1fr); }
+  .inspector { grid-column: 1 / -1; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+}
+@media (max-width: 900px) {
+  .hero > .wrap, .shead, .rep-grid { grid-template-columns: minmax(0, 1fr); }
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .list li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+@media (max-width: 760px) {
+  .ws { grid-template-columns: minmax(0, 1fr); }
+  .steps { padding: 0; border-bottom: 1px solid var(--line); }
+  .steps ol { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .steps button { border-left: 0; border-bottom: 3px solid transparent; padding: 12px 14px; }
+  .steps button[aria-current="step"] { border-bottom-color: var(--accent); }
+  .steps .sub, .steps-foot { display: none; }
+  .metrics, .cards, .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav a { padding: 6px 7px; }
+  .top .wrap { gap: 12px; }
+  .top .btn { display: none; }
+  .top .wrap { flex-wrap: wrap; gap: 2px 12px; padding-block: 8px; }
+  .pane { padding: 14px 14px 24px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .g4, .cards, .g2 { grid-template-columns: minmax(0, 1fr); }
+  .hour-row input[type=range] { width: 130px; }
+  .legend .ramp, .legend .ticks { width: 160px; }
+  .report { padding: 20px 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- field check ---- */
+.fc-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.fc-tbl tbody tr { cursor: default; }
+.fc-tbl tbody tr:hover { background: none; }
+.fc-tbl .sub-h td { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--sunk); }
+.fc-bars { list-style: none; margin: 0; padding: 0; }
+.fc-bars li { display: grid; grid-template-columns: 36px 56px minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.fc-bars li:last-child { border-bottom: 0; }
+.fc-bars .id { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.fc-bars .res { font-weight: 700; }
+.fc-bars .res.pass { color: var(--ok); }
+.fc-bars .res.miss { color: var(--warn); }
+.fc-bars .val { font-family: var(--mono); font-size: 13px; color: var(--ink-2); text-align: right; }
+.fc-keys { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 12.5px; color: var(--ink-2); }
+.fc-keys .key svg { flex: none; }
+.fc-cell { display: grid; gap: 8px; align-content: start; }
+.fc-cell h3 { font-size: 15px; }
+.fc-cell .s { font-size: 12.5px; color: var(--ink-2); }
+.fc-host { position: relative; touch-action: pan-y; }
+.fc-chart .area { fill: var(--band-1); }
+.fc-chart .grid-l { stroke: var(--line); }
+.fc-chart .smp { stroke: var(--surface); stroke-width: 1.5; }
+.fc-chart .cross { stroke: var(--line-2); }
+.fc-split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 18px; align-items: start; }
+.fc-map-host { max-width: 300px; margin: 0 auto; }
+.fc-map .lbl { font-size: 12.5px; }
+.fc-map .measured { fill: var(--ink); stroke: var(--surface); stroke-width: 1.5; }
+.fc-cal { display: grid; gap: 14px; }
+.fc-cal p { font-size: 13.5px; color: var(--ink-2); }
+.fc-list li:first-child { border-top: 0; }
+.fc-list { border-top: 0; }
+.fc-list li:last-child { border-bottom: 0; }
+.fc-list li { padding-inline: 14px; }
+@media (max-width: 900px) { .fc-split { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .grid.g2.fc-charts { grid-template-columns: minmax(0, 1fr); }
+  .fc-bars li { grid-template-columns: 36px minmax(0, 1fr); }
+  .fc-bars .txt, .fc-bars .val { grid-column: 1 / -1; text-align: left; }
+}
+@media (max-width: 560px) {
+  .top .wrap { flex-wrap: wrap; row-gap: 2px; padding-block: 8px; }
+  .nav { width: 100%; margin-right: 0; overflow-x: auto; }
+  .nav a { white-space: nowrap; flex: none; }
+}
+</style>
+
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#home" data-go="home" aria-label="ResidualMap home">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M2 16 L8 10 L14 13 L20 5" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/><circle cx="8" cy="10" r="2.6" fill="var(--ramp-3)"/><circle cx="14" cy="13" r="2.6" fill="var(--ramp-1)"/><circle cx="20" cy="5" r="2.6" fill="var(--warn)"/></svg>
+      ResidualMap
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#home" data-go="home">Product</a>
+      <a href="#workspace" data-go="workspace">Workspace</a>
+      <a href="#pilot" data-go="pilot">Pilot program</a>
+      <a href="#field" data-go="field">Field check</a>
+    </nav>
+    <a class="btn btn-primary" href="#workspace" data-go="workspace">Open the demo</a>
+  </div>
+</header>
+<div class="notice"><div class="wrap">Working prototype. The demo shows ResidualMap's real output on EPA's public Net3 network, in simulation. Uploads are off.</div></div>
+
+<!-- ================================================================== PRODUCT -->
+<main id="view-home" data-view="home">
+  <section class="band hero">
+    <div class="wrap">
+      <div>
+        <p class="kicker">Disinfectant mapping for small drinking water systems</p>
+        <h1>Chlorine at every junction, every hour.</h1>
+        <p class="lead">ResidualMap combines a water system's hydraulic model, or a map of its mains, with the grab samples it already takes. It estimates the disinfectant residual at every junction for every hour of the day, shows how sure it is, and plans where to sample next.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#workspace" data-go="workspace">Open the demo workspace</a>
+          <a class="btn btn-quiet" href="#pilot" data-go="pilot">Run a free pilot</a>
+        </div>
+      </div>
+      <figure class="figure" style="margin:0">
+        <div class="map-wrap" id="hero-map" aria-label="Map of EPA Net3 coloured by estimated daily minimum chlorine"></div>
+        <figcaption>
+          <span>EPA Net3, 92 junctions, estimated from 8 daytime grab samples. Deeper pink means more free chlorine, as on a DPD test.</span>
+          <span class="key"><svg width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="var(--warn)" stroke-width="2"/></svg>likely below 0.2 mg/L</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="shead">
+        <h2>From the files a system already has to next month's route.</h2>
+        <p>No new sensors. ResidualMap uses the model or map a system already keeps and the readings its operators already log, then shows where chlorine is likely to run low, including dead ends and night hours that nobody samples.</p>
+      </div>
+      <div class="grid g4">
+        <div class="cell"><span class="step-n">1</span><h3>Your network</h3><p>An EPANET export from WaterGEMS, WaterCAD or InfoWater. No model? A GIS layer, an AutoCAD drawing or a paper map traced in Google Earth becomes a starting pipe network.</p></div>
+        <div class="cell"><span class="step-n">2</span><h3>Your grab samples</h3><p>The log as your lab or field sheet exports it, CSV or Excel. Free and total chlorine are never mixed, and readings like &lt;0.02 or ND are kept and marked.</p></div>
+        <div class="cell"><span class="step-n">3</span><h3>The map</h3><p>Residual at every junction for every hour, with a 90% range and the chance it is below the 0.2 mg/L minimum. Decay rates are calibrated to your readings.</p></div>
+        <div class="cell"><span class="step-n">4</span><h3>The route</h3><p>Where and when to sample next month: sites that confirm likely low spots and sites that narrow the widest ranges.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="shead">
+        <h2>Scored against a hidden truth.</h2>
+        <p>In simulation the true chlorine at every junction is known, so every estimate can be checked. These numbers are the demo you can open in the workspace: EPA's Net3 network with 8 grab samples taken between 07:00 and 17:00.</p>
+      </div>
+      <div class="grid g4" id="home-stats"></div>
+      <p class="foot-note">Simulation on a public EPA network. ResidualMap has not yet been checked against a real system's own readings; that is what the pilots are for.</p>
+      <p class="foot-note" id="home-field">One EPANET water movement check against real readings exists, on EPA's own Net2 model, with ResidualMap's estimator not run: <a href="#field" data-go="field">see the field check</a>.</p>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="shead">
+        <h2>Built around how small systems work.</h2>
+        <p>A small system might sample a handful of sites a month at the same daytime hours, while the lowest chlorine sits at dead ends and at night. Most have no hydraulic model, and many keep their pipe records on paper.</p>
+      </div>
+      <ul class="list">
+        <li><b>Starts from what exists</b><span>An EPANET model, a GIS layer, a DXF drawing, or a paper map traced in Google Earth. In a pilot, the source, tanks and pumps are filled in with the operator using a short form.</span></li>
+        <li><b>Two disinfectants</b><span>Free chlorine, and a separate chloramine mode for total chlorine with its own decay ranges and a 0.5 mg/L default minimum.</span></li>
+        <li><b>Water age</b><span>The hours since water left the source, at every junction, with the range it could move if the model's demands or pipe roughness are off.</span></li>
+        <li><b>Several inlets</b><span>A zone fed from more than one point uses each inlet's measured residual.</span></li>
+        <li><b>Private by default</b><span>The hosted demo runs public example networks only. In a pilot, a utility's files are processed privately and never shared or named without written permission.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="band cta">
+    <div class="wrap">
+      <div>
+        <h2>Looking for the first systems to try it.</h2>
+        <p>A free pilot: send a model or map and a few months of readings, get back a map, likely low spots and a sampling plan.</p>
+      </div>
+      <a class="btn btn-primary" href="#pilot" data-go="pilot">See how a pilot works</a>
+    </div>
+  </section>
+</main>
+
+<!-- ================================================================== WORKSPACE -->
+<main id="view-workspace" data-view="workspace" hidden>
+  <div class="ws-head">
+    <div class="wrap">
+      <h1>EPA Net3</h1>
+      <span class="chip">Example network</span>
+      <span class="chip warn">Simulation</span>
+      <span class="note">Free chlorine · dose 1.2 mg/L · minimum 0.2 mg/L</span>
+      <div class="spacer">
+        <span class="label" id="lbl-n">Grab samples</span>
+        <div class="seg" role="group" aria-labelledby="lbl-n" id="seg-n">
+          <button type="button" data-n="3" aria-pressed="false">3</button>
+          <button type="button" data-n="8" aria-pressed="true">8</button>
+          <button type="button" data-n="15" aria-pressed="false">15</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="wrap" style="padding-left:0;padding-right:0;max-width:1440px">
+    <div class="ws">
+      <nav class="steps" aria-label="Workspace steps">
+        <ol>
+          <li><button type="button" data-step="network"><span class="n">1</span>Network<span class="sub">Reads and runs</span></button></li>
+          <li><button type="button" data-step="samples"><span class="n">2</span>Samples<span class="sub" id="sub-samples">8 readings</span></button></li>
+          <li><button type="button" data-step="map" aria-current="step"><span class="n">3</span>Map and route<span class="sub" id="sub-map">42 likely low</span></button></li>
+          <li><button type="button" data-step="report"><span class="n">4</span>Report<span class="sub">Monthly summary</span></button></li>
+        </ol>
+        <p class="steps-foot">Hosted demo: example networks only. Your own files run in a pilot or on your computer.</p>
+      </nav>
+
+      <!-- step 3: map -->
+      <div class="pane" data-pane="map">
+        <div class="toolbar">
+          <div class="field"><span class="label" id="lbl-layer">Show</span>
+            <div class="seg" role="group" aria-labelledby="lbl-layer" id="seg-layer">
+              <button type="button" data-layer="cl" aria-pressed="true">Chlorine</button>
+              <button type="button" data-layer="p" aria-pressed="false">Chance below 0.2</button>
+              <button type="button" data-layer="band" aria-pressed="false">Uncertainty</button>
+              <button type="button" data-layer="age" aria-pressed="false">Water age</button>
+            </div>
+          </div>
+          <div class="field"><span class="label" id="lbl-when">When</span>
+            <div class="hour-row">
+              <div class="seg" role="group" aria-labelledby="lbl-when" id="seg-mode">
+                <button type="button" data-mode="min" aria-pressed="true">Daily minimum</button>
+                <button type="button" data-mode="hour" aria-pressed="false">By hour</button>
+              </div>
+              <input type="range" id="hour" min="0" max="23" step="1" value="7" aria-label="Hour of the day">
+              <output id="hour-out" for="hour">07:00</output>
+              <button type="button" class="iconbtn" id="play" aria-label="Play through the day" title="Play through the day"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path id="play-ico" d="M2 1 L11 6 L2 11 Z" fill="currentColor"/></svg></button>
+            </div>
+          </div>
+          <div class="field" style="gap:8px">
+            <label class="switch"><input type="checkbox" id="tg-route" checked> Next route</label>
+            <label class="switch"><input type="checkbox" id="tg-truth"> Hidden truth (demo)</label>
+          </div>
+        </div>
+
+        <div class="metrics" id="metrics"></div>
+
+        <div class="map-card">
+          <div class="map-wrap" id="ws-map"></div>
+          <div class="tip" id="tip" hidden></div>
+          <div class="legend" id="legend"></div>
+        </div>
+
+        <div class="panel">
+          <header><h2>Sample here next</h2><p id="route-note">6 sites for next month's route, 07:00 to 17:00</p></header>
+          <div class="tbl-wrap"><table id="route-tbl"><thead><tr><th>#</th><th>Junction</th><th>When</th><th>Chance below 0.2</th><th class="r">Water age</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+        </div>
+
+        <div class="panel">
+          <header><h2>When is the network lowest?</h2><p>Share of junctions whose median estimate is below 0.2 mg/L, by hour. Select a bar to map that hour.</p></header>
+          <div class="body"><svg class="hourchart" id="hourchart" viewBox="0 0 640 150" role="img" aria-label="Share of junctions below 0.2 mg/L by hour"></svg></div>
+        </div>
+      </div>
+
+      <!-- step 1: network -->
+      <div class="pane" data-pane="network" hidden>
+        <div class="panel">
+          <header><h2>Model readiness report</h2><p>EPA Net3, an example network bundled with EPANET</p></header>
+          <div class="tbl-wrap"><table id="ready-tbl"><thead><tr><th>Item</th><th>Value</th><th>Where it comes from</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
+          <header><h2>Bring your own network</h2><p>Off in the hosted demo. In a pilot, files are processed privately.</p></header>
+          <div class="cards">
+            <div><span class="tag">Hydraulic model</span><h3>EPANET .inp</h3><p>Export from WaterGEMS, WaterCAD, InfoWater or EPANET. The file is identified by its content, fixed in a copy if needed, and test-run before anything else.</p><button class="btn btn-quiet" disabled>Upload a model</button></div>
+            <div><span class="tag">No model</span><h3>GIS layer</h3><p>GeoPackage, zipped shapefile, GeoJSON or KML of the water mains. Lines are joined where their ends meet and pipe sizes are read from the attributes.</p><button class="btn btn-quiet" disabled>Upload a layer</button></div>
+            <div><span class="tag">No model</span><h3>AutoCAD drawing</h3><p>A DXF from AutoCAD or Civil 3D. Pipe sizes come from layer names or the labels next to each line.</p><button class="btn btn-quiet" disabled>Upload a drawing</button></div>
+            <div><span class="tag">Paper records</span><h3>Traced paper map</h3><p>Trace the mains over aerial imagery in Google Earth, name each line with its size, and save it as KML.</p><button class="btn btn-quiet" disabled>Upload a KML</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- step 2: samples -->
+      <div class="pane" data-pane="samples" hidden>
+        <div class="panel">
+          <header><h2>Grab samples used</h2><p id="samples-note"></p></header>
+          <div class="tbl-wrap"><table id="samples-tbl"><thead><tr><th>Junction</th><th>Taken at</th><th class="r">Reading</th><th class="r">Model at that hour</th><th class="r">90% range</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
+          <header><h2>Upload a grab-sample log</h2><p>Off in the hosted demo</p></header>
+          <div class="body" style="display:grid;gap:10px">
+            <p style="color:var(--ink-2);font-size:14px">Any CSV or Excel log works as exported: columns are guessed from the header (Sample Point, Date/Time, Free Chlorine mg/L) for you to confirm. Lab exports with one row per analyte, decimal commas, µg/L and month-name dates are read. Every row that is not used is listed with its reason.</p>
+            <div><button class="btn btn-quiet" disabled>Upload a log</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- step 4: report -->
+      <div class="pane" data-pane="report" hidden>
+        <article class="report" id="report"></article>
+        <p class="note">The local app writes this page as a one-page PDF. Downloads are off in this prototype.</p>
+      </div>
+
+      <aside class="inspector" id="inspector" aria-label="Selected junction"></aside>
+    </div>
+  </div>
+</main>
+
+<!-- ================================================================== PILOT -->
+<main id="view-pilot" data-view="pilot" hidden>
+  <section class="band">
+    <div class="wrap">
+      <div class="shead">
+        <h2>How a free pilot works.</h2>
+        <p>A pilot runs ResidualMap on one system's own files and checks it against months of readings the model never saw. It costs nothing, and the system is never named without written permission.</p>
+      </div>
+      <div class="grid g4">
+        <div class="cell"><span class="step-n">1</span><h3>A short call</h3><p>15 minutes on how you choose sampling sites and times, and what records you keep.</p></div>
+        <div class="cell"><span class="step-n">2</span><h3>Send files</h3><p>Your model or a map of the mains, 3 to 12 months of grab samples, the list of sampling sites, and the dose leaving the plant.</p></div>
+        <div class="cell"><span class="step-n">3</span><h3>About two weeks</h3><p>A chlorine map, the likely low spots, a suggested sampling plan, and an accuracy check on the months held back.</p></div>
+        <div class="cell"><span class="step-n">4</span><h3>Decide</h3><p>Keep using it with each month's readings, or stop. Your files are deleted on request.</p></div>
+      </div>
+    </div>
+  </section>
+  <section class="band">
+    <div class="wrap">
+      <div class="shead">
+        <h2>What would your system send?</h2>
+        <p>Tick what you have. The list on the right shows what a pilot would use and what is still missing.</p>
+      </div>
+      <div class="grid g2" style="background:transparent;border:0">
+        <div style="border:0;padding:0 24px 0 0">
+          <div class="checks" id="checks">
+            <label><input type="checkbox" value="model"><span>A hydraulic model<small>WaterGEMS, WaterCAD, InfoWater, KYPipe or EPANET, even if it is out of date</small></span></label>
+            <label><input type="checkbox" value="gis"><span>A GIS layer of the mains<small>ArcGIS, QGIS, or a file from an engineering firm</small></span></label>
+            <label><input type="checkbox" value="cad"><span>AutoCAD or Civil 3D drawings</span></label>
+            <label><input type="checkbox" value="paper"><span>Paper or PDF maps only</span></label>
+            <label><input type="checkbox" value="log" checked><span>A grab-sample log<small>Paper sheets, a spreadsheet, or lab reports</small></span></label>
+            <label><input type="checkbox" value="analyzer"><span>Online chlorine analyzers<small>At the plant, a well or a tank</small></span></label>
+          </div>
+        </div>
+        <div class="plan" id="plan" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+  <section class="band cta">
+    <div class="wrap">
+      <div>
+        <h2>Start with an email.</h2>
+        <p>ResidualMap is a personal project by Devansh Sanghavi, a junior at Los Altos High School in California.</p>
+      </div>
+      <div class="copyline"><code id="email">devansh.sanghavi@gmail.com</code><button class="btn btn-quiet" type="button" id="copy-email">Copy address</button></div>
+    </div>
+  </section>
+</main>
+
+<!-- ================================================================== FIELD CHECK -->
+<main id="view-field" data-view="field" hidden>
+  <section class="band">
+    <div class="wrap fc-stack">
+      <div class="shead" style="margin-bottom:18px">
+        <h2>Field check against real fluoride readings.</h2>
+        <p id="fc-lede">Measured fluoride tracer readings against fluoride simulated by EPANET, the simulator ResidualMap builds on, running EPA's own Net2 model. ResidualMap's estimator was not run. This is fluoride, not chlorine: it checks water movement, not chlorine decay.</p>
+      </div>
+      <div class="panel">
+        <header><h2>Results</h2><p>MAE and RMSE in mg/L fluoride, lower is better. For r, higher is better.</p></header>
+        <div class="tbl-wrap"><table class="fc-tbl" id="fc-overall"><thead><tr><th>Prediction</th><th class="r">MAE</th><th class="r">RMSE</th><th class="r">Pearson r</th></tr></thead><tbody></tbody></table></div>
+        <div class="tbl-wrap"><table class="fc-tbl" id="fc-nodes"><thead><tr><th>Node</th><th class="r">Readings</th><th class="r">Model MAE</th><th class="r">Own mean MAE</th><th class="r">Flat 1.0 MAE</th><th class="r">Model RMSE</th><th class="r">Model r</th><th>Model beats flat 1.0?</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="panel">
+        <header><h2>Bars set before simulating fluoride</h2><p>Set after reading the measurements. A miss would show here as plainly as a pass.</p></header>
+        <ul class="fc-bars" id="fc-bars"></ul>
+        <p class="note" id="fc-bars-note" style="padding:0 14px 14px"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap fc-stack">
+      <div class="shead" style="margin-bottom:18px">
+        <h2>Measured and modelled, node by node.</h2>
+        <p id="fc-charts-note">55 hours from the 08:00 start.</p>
+      </div>
+      <div class="fc-keys">
+        <span class="key"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--ink)"/></svg>measured</span>
+        <span class="key"><svg width="20" height="10" aria-hidden="true"><line x1="0" x2="20" y1="5" y2="5" stroke="var(--accent)" stroke-width="2"/></svg>model at nominal settings</span>
+        <span class="key"><svg width="20" height="10" aria-hidden="true"><rect width="20" height="10" fill="var(--band-1)"/></svg>range across the 9 demand and roughness settings</span>
+      </div>
+      <div class="grid g2 fc-charts" id="fc-charts"></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap fc-split">
+      <div class="panel">
+        <header><h2>Where the readings were taken</h2><p>Net2, schematic</p></header>
+        <div class="body">
+          <div class="fc-map-host" id="fc-map"></div>
+          <div class="fc-keys" style="margin-top:10px">
+            <span class="key"><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="var(--ink)"/></svg>measured node</span>
+            <span class="key"><svg width="14" height="14" aria-hidden="true"><rect x="1" y="1" width="12" height="12" rx="2" fill="var(--accent)"/></svg>source</span>
+            <span class="key"><svg width="14" height="14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="2" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/></svg>tank</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <header>
+          <h2>Calibration test</h2>
+          <div class="seg" role="group" aria-label="Readings used to calibrate" id="seg-fc">
+            <button type="button" data-fc="3" aria-pressed="false">3</button>
+            <button type="button" data-fc="8" aria-pressed="true">8</button>
+            <button type="button" data-fc="15" aria-pressed="false">15</button>
+          </div>
+        </header>
+        <div class="body fc-cal" id="fc-cal"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <div class="panel">
+        <header><h2>What this does and does not test</h2></header>
+        <ul class="list fc-list" id="fc-limits">
+          <li><b>What it checks</b><span>Whether EPANET, the simulator ResidualMap builds on, running EPA's own Net2 model, moves water through the pipes and tank at the right times. ResidualMap's estimator was not run. Fluoride does not decay, so a gap between measured and modelled fluoride comes from water movement, the source record or reading error, not from chemistry.</span></li>
+          <li><b>What it does not check</b><span>Chlorine decay. No simulated chlorine is validated here.</span></li>
+          <li><b>The data</b><span>Field data from one small network. EPA's file gives no site, study or date. The University of Kentucky toolkit identifies Net2 as Cherry Hills/Brushy Plains, New Haven, CT, and links a 1994 paper as its system description. That paper is paywalled and was not read, so it is not confirmed as the source of these readings.</span></li>
+          <li><b>Chlorine readings</b><span>The public file holds no chlorine readings. None have been obtained, and whether any can be is not confirmed.</span></li>
+          <li><b>A replay, not a forecast</b><span>The Net2 file carries hourly demand, pump station and source fluoride patterns written for these same 55 hours, so the model was set up for this test period. Whether its demands were also tuned to these readings could not be confirmed. Read these numbers as a best case.</span></li>
+          <li><b>How it was run</b><span>Bars set after reading the measurements but before simulating fluoride. Net2 itself had been simulated earlier in this project for other work, and the timing rests on local file timestamps. The first run's units bug (kg/m3 read as mg/L) showed B1 and B3 as misses; fixing it flipped them. The method and bars did not change.</span></li>
+          <li><b>Time step</b><span id="fc-step">Simulated with a 5 minute report step and compared by linear interpolation in time.</span></li>
+          <li><b>Who uses it</b><span>No utility is using ResidualMap.</span></li>
+          <li><b>Sources</b><span><a href="https://uky.edu/WDST/SystemPages/20System_Page_CherryHillsBrushyPlains.html">University of Kentucky system page</a>, <a href="https://github.com/USEPA/EPANET2.2/releases/tag/2.2.0">EPA's EPANET 2.2 release</a>, the readings themselves: <a href="data/Net2-FL.dat">Net2-FL.dat</a>, and, not read, <a href="https://doi.org/10.1061/(ASCE)0733-9372(1994)120:4(803)">the paper that page links</a>.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap"><span>ResidualMap prototype. All results shown are simulation on public EPA example networks, except the fluoride field check, which compares EPANET on EPA's Net2 model with measured readings.</span><span>Not a compliance determination.</span></div></footer>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const st = { d: null, n: "8", layer: "cl", mode: "min", hour: 7, sel: null, truth: false, route: true, step: "map", view: "home", timer: null, f: null, fcN: "8" };
+  const THR = 0.2;
+  const hh = h => String(h).padStart(2, "0") + ":00";
+
+  /* ---------- colour ramps from the theme tokens ---------- */
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const hex = c => { c = c.replace("#", ""); if (c.length === 3) c = [...c].map(x => x + x).join(""); return [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); };
+  let RAMPS = {};
+  function readRamps() {
+    for (const k of ["ramp", "risk", "band", "age"]) RAMPS[k] = [0, 1, 2, 3, 4].map(i => hex(css(`--${k}-${i}`)));
+  }
+  function rampColor(name, t) {
+    const s = RAMPS[name]; t = Math.max(0, Math.min(1, t)) * (s.length - 1);
+    const i = Math.min(Math.floor(t), s.length - 2), f = t - i, a = s[i], b = s[i + 1];
+    return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(",")})`;
+  }
+
+  /* ---------- layers ---------- */
+  const LAYERS = {
+    cl:   { title: "Chlorine, median estimate", ramp: "ramp", dom: () => [0, 1.2], fmt: v => v.toFixed(2) + " mg/L", ticks: [0, 0.2, 0.6, 1.2] },
+    p:    { title: "Chance the residual is below 0.2 mg/L", ramp: "risk", dom: () => [0, 1], fmt: v => Math.round(v * 100) + "%", ticks: [0, 0.5, 1], tickFmt: v => Math.round(v * 100) + "%" },
+    band: { title: "Uncertainty: width of the 90% range", ramp: "band", dom: () => [0, 0.8], fmt: v => v.toFixed(2) + " mg/L", ticks: [0, 0.4, 0.8] },
+    age:  { title: "Water age at its oldest hour of the day", ramp: "age", dom: () => [0, st.d.ageMax], fmt: v => Math.round(v) + " h", ticks: null },
+  };
+  const scen = () => st.d.scenarios[st.n];
+  function value(j, layer = st.layer, mode = st.mode, h = st.hour, n = st.n) {
+    const sc = st.d.scenarios[n];
+    if (layer === "age") return st.d.age[j].max;
+    if (mode === "min") { const r = sc.daily[j]; return layer === "cl" ? r.m : layer === "band" ? r.hi - r.lo : r.p; }
+    const r = sc.hourly[j]; return layer === "cl" ? r.m[h] : layer === "band" ? r.hi[h] - r.lo[h] : r.p[h];
+  }
+  const pBelow = (j, mode = st.mode, h = st.hour, n = st.n) => mode === "min" ? st.d.scenarios[n].daily[j].p : st.d.scenarios[n].hourly[j].p[h];
+  const truthAt = (j, mode = st.mode, h = st.hour) => mode === "min" ? st.d.truth.daily_min[j] : st.d.truth.hourly[j][h];
+
+  /* ---------- geometry ---------- */
+  function project(net, W) {
+    const pts = net.nodes.map(n => [n.x, n.y]);
+    net.links.forEach(l => l.v.forEach(p => pts.push(p)));
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const pad = 28, s = (W - 2 * pad) / (x1 - x0), H = Math.round((y1 - y0) * s + 2 * pad);
+    const P = ([x, y]) => [+(pad + (x - x0) * s).toFixed(1), +(pad + (y1 - y) * s).toFixed(1)];
+    const pos = {}; net.nodes.forEach(n => { pos[n.id] = P([n.x, n.y]); });
+    return { W, H, pos, P };
+  }
+
+  /* ---------- map ---------- */
+  function mapSVG(opts) {
+    const d = st.d, g = d.geo, o = Object.assign({ layer: st.layer, mode: st.mode, hour: st.hour, n: st.n, route: st.route, truth: st.truth, sel: st.sel, interactive: true, labels: true }, opts);
+    const sc = d.scenarios[o.n], L = LAYERS[o.layer], [a, b] = L.dom();
+    const out = [`<svg class="map-svg" viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="${L.title}">`];
+    for (const l of d.network.links) {
+      const pts = [g.pos[l.a], ...l.v.map(g.P), g.pos[l.b]];
+      out.push(`<path class="${l.kind === "Pump" ? "pump" : "pipe"}" stroke-width="${l.kind === "Pump" ? 2.4 : 2}" d="M${pts.map(p => p.join(" ")).join(" L")}"/>`);
+    }
+    for (const nd of d.network.nodes) {
+      const [x, y] = g.pos[nd.id];
+      if (nd.kind === "Reservoir") out.push(`<rect class="src" x="${x - 9}" y="${y - 9}" width="18" height="18" rx="2"/>` + (o.labels ? `<text class="lbl" x="${x + 14}" y="${y + 5}">${nd.id}</text>` : ""));
+      else if (nd.kind === "Tank") out.push(`<rect class="tank" x="${x - 8}" y="${y - 8}" width="16" height="16" rx="2"/>` + (o.labels ? `<text class="lbl" x="${x + 13}" y="${y + 5}">Tank ${nd.id}</text>` : ""));
+    }
+    const sampled = new Set(sc.samples.map(s => s.j));
+    for (const j of d.network.junctions) {
+      const [x, y] = g.pos[j], v = value(j, o.layer, o.mode, o.hour, o.n);
+      out.push(`<circle class="jn" data-j="${j}" cx="${x}" cy="${y}" r="6.5" fill="${rampColor(L.ramp, (v - a) / (b - a || 1))}"/>`);
+      if (o.layer !== "p" && pBelow(j, o.mode, o.hour, o.n) > 0.5) out.push(`<circle class="flag" cx="${x}" cy="${y}" r="10"/>`);
+      if (sampled.has(j)) out.push(`<circle class="sample" cx="${x}" cy="${y}" r="${o.layer !== "p" && pBelow(j, o.mode, o.hour, o.n) > 0.5 ? 13.5 : 10}"/>`);
+      if (o.truth && truthAt(j, o.mode, o.hour) < THR) out.push(`<circle class="truth" cx="${x}" cy="${y}" r="16.5"/>`);
+    }
+    if (o.route) sc.route.forEach((r, i) => {
+      const [x, y] = g.pos[r.j];
+      out.push(`<g class="badge" data-route="${i}"><circle cx="${x + 13}" cy="${y - 13}" r="10"/><text x="${x + 13}" y="${y - 13}">${i + 1}</text></g>`);
+    });
+    if (o.sel && g.pos[o.sel]) { const [x, y] = g.pos[o.sel]; out.push(`<circle class="sel" cx="${x}" cy="${y}" r="12"/>`); }
+    out.push("</svg>");
+    return out.join("");
+  }
+
+  function legend() {
+    const L = LAYERS[st.layer], [a, b] = L.dom();
+    const stops = [0, 0.25, 0.5, 0.75, 1].map(t => rampColor(L.ramp, t)).join(",");
+    const ticks = (L.ticks || [a, (a + b) / 2, b]).map(v => `<span>${L.tickFmt ? L.tickFmt(v) : st.layer === "age" ? Math.round(v) + " h" : v}</span>`).join("");
+    const when = st.layer === "age" ? "" : st.mode === "min" ? " · daily minimum" : " · " + hh(st.hour);
+    const keys = [];
+    if (st.layer !== "p") keys.push(`<span class="key"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--warn)" stroke-width="2"/></svg>likely below 0.2</span>`);
+    keys.push(`<span class="key"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--ink)" stroke-width="2"/></svg>sampled</span>`);
+    if (st.route) keys.push(`<span class="key"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--accent)"/></svg>next route</span>`);
+    if (st.truth) keys.push(`<span class="key"><svg width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="7" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-dasharray="3 2.5"/></svg>truly below 0.2</span>`);
+    keys.push(`<span class="key"><svg width="14" height="14" aria-hidden="true"><rect x="1" y="1" width="12" height="12" rx="2" fill="var(--accent)"/></svg>source</span>`);
+    $("#legend").innerHTML = `<div class="bar"><span>${L.title}${when}</span><div class="ramp" style="background:linear-gradient(90deg,${stops})"></div><div class="ticks">${ticks}</div></div>${keys.join("")}`;
+  }
+
+  function metrics() {
+    const sc = scen(), J = st.d.network.junctions, s = sc.summary;
+    const low = st.mode === "min" ? s.flagged : J.filter(j => sc.hourly[j].p[st.hour] > 0.5).length;
+    $("#metrics").innerHTML = [
+      ["Grab samples", sc.samples.length, "07:00 to 17:00, random sites"],
+      [`Likely below 0.2 mg/L`, `${low} <span style="font-size:14px;color:var(--muted);font-weight:500">of ${J.length}</span>`, st.mode === "min" ? "at each junction's daily minimum" : "at " + hh(st.hour)],
+      ["Lowest hour", hh(s.worst_hour), `${Math.round(s.worst_frac * 100)}% of junctions below by median`],
+      ["Calibrated decay", `${s.kb.toFixed(2)} <span style="font-size:14px;color:var(--muted);font-weight:500">/day bulk</span>`, `${s.kw.toFixed(2)} m/day at the pipe wall`],
+    ].map(([k, v, sub]) => `<div><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${sub}</div></div>`).join("");
+    $("#sub-samples").textContent = `${sc.samples.length} readings`;
+    $("#sub-map").textContent = `${s.flagged} likely low`;
+  }
+
+  function why(reason) {
+    const first = reason.split(";")[0].trim().toLowerCase();
+    if (first.startsWith("likely violation")) return "Likely low: confirm it";
+    if (first.startsWith("most uncertain")) return "Least certain call: narrow the range";
+    if (first.startsWith("likely fine")) return "Likely fine, widest range: check it";
+    return first.charAt(0).toUpperCase() + first.slice(1);
+  }
+  function routeTable() {
+    const sc = scen();
+    $("#route-tbl tbody").innerHTML = sc.route.map((r, i) =>
+      `<tr data-j="${r.j}" class="${st.sel === r.j ? "on" : ""}"><td class="num">${i + 1}</td><td class="mono">${r.j}</td><td class="mono">${hh(r.h)}</td><td><span class="pbar"><i style="width:${Math.round(r.p * 100)}%"></i></span><span class="num">${Math.round(r.p * 100)}%</span></td><td class="r num">${r.age == null ? "" : r.age.toFixed(0) + " h"}</td><td title="${r.reason.replace(/"/g, "&quot;")}">${why(r.reason)}</td></tr>`).join("");
+  }
+
+  function hourChart() {
+    const f = scen().frac_below_by_hour, W = 640, H = 150, l = 30, b = 22, t = 8, bw = (W - l - 6) / 24, mx = Math.max(0.5, ...f);
+    const y = v => t + (H - b - t) * (1 - v / mx);
+    const parts = [];
+    [0, 0.25, 0.5].filter(v => v <= mx).forEach(v => parts.push(`<line class="grid-l" x1="${l}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${l - 6}" y="${y(v) + 3}" text-anchor="end">${Math.round(v * 100)}%</text>`));
+    f.forEach((v, h) => {
+      const on = st.mode === "hour" ? h === st.hour : h === scen().summary.worst_hour;
+      parts.push(`<rect class="bar${on ? " on" : ""}" data-h="${h}" x="${l + h * bw + 2}" y="${y(v)}" width="${bw - 4}" height="${Math.max(1, H - b - y(v))}"><title>${hh(h)}: ${Math.round(v * 100)}% of junctions below 0.2 by median</title></rect>`);
+      if (h % 3 === 0) parts.push(`<text x="${l + h * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${hh(h)}</text>`);
+    });
+    $("#hourchart").innerHTML = parts.join("");
+  }
+
+  /* ---------- inspector ---------- */
+  function jChart(j) {
+    const sc = scen(), r = sc.hourly[j], W = 300, H = 150, l = 30, b = 20, t = 8;
+    const tru = st.truth ? st.d.truth.hourly[j] : null;
+    const ymax = Math.max(1.2, ...r.hi, ...(tru || [0])) * 1.05, x = h => l + (W - l - 8) * h / 23, y = v => t + (H - b - t) * (1 - v / ymax);
+    const area = r.hi.map((v, h) => `${x(h)},${y(v)}`).concat(r.lo.map((v, h) => `${x(h)},${y(v)}`).reverse()).join(" ");
+    const med = r.m.map((v, h) => `${h ? "L" : "M"}${x(h)} ${y(v)}`).join(" ");
+    const parts = [`<line class="axis" x1="${l}" x2="${W - 8}" y1="${H - b}" y2="${H - b}"/>`];
+    [0, 0.5, 1].forEach(v => parts.push(`<text x="${l - 5}" y="${y(v) + 3}" text-anchor="end">${v}</text>`));
+    [0, 6, 12, 18, 23].forEach(h => parts.push(`<text x="${x(h)}" y="${H - 5}" text-anchor="middle">${h === 23 ? "23h" : hh(h).slice(0, 2) + "h"}</text>`));
+    if (st.mode === "hour") parts.push(`<line class="now" x1="${x(st.hour)}" x2="${x(st.hour)}" y1="${t}" y2="${H - b}"/>`);
+    parts.push(`<polygon class="area" points="${area}"/><path class="med" d="${med}"/>`);
+    parts.push(`<line class="thr" x1="${l}" x2="${W - 8}" y1="${y(THR)}" y2="${y(THR)}"/><text x="${W - 10}" y="${y(THR) - 4}" text-anchor="end" style="fill:var(--warn)">0.2 minimum</text>`);
+    if (tru) parts.push(`<path class="tru" d="${tru.map((v, h) => `${h ? "L" : "M"}${x(h)} ${y(v)}`).join(" ")}"/>`);
+    sc.samples.filter(s => s.j === j).forEach(s => parts.push(`<circle class="smp" cx="${x(s.h)}" cy="${y(s.y)}" r="4"><title>Grab sample ${hh(s.h)}: ${s.y.toFixed(2)} mg/L</title></circle>`));
+    return `<svg class="jchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated chlorine at junction ${j} over 24 hours">${parts.join("")}</svg>`;
+  }
+
+  function inspector() {
+    const d = st.d, sc = scen(), j = st.sel;
+    if (!j) { $("#inspector").innerHTML = `<p class="note">Select a junction on the map.</p>`; return; }
+    const dm = sc.daily[j], a = d.age[j], ri = sc.route.findIndex(r => r.j === j), smp = sc.samples.filter(s => s.j === j);
+    const p = pBelow(j), when = st.mode === "min" ? "at its daily minimum" : "at " + hh(st.hour);
+    const cur = st.mode === "min" ? { m: dm.m, lo: dm.lo, hi: dm.hi } : { m: sc.hourly[j].m[st.hour], lo: sc.hourly[j].lo[st.hour], hi: sc.hourly[j].hi[st.hour] };
+    let verdict = p > 0.5 ? `<div class="verdict warn">Likely below 0.2 mg/L ${when}: ${Math.round(p * 100)}% chance</div>` : `<div class="verdict">${Math.round(p * 100)}% chance of being below 0.2 mg/L ${when}</div>`;
+    const truthRow = st.truth ? `<dt>True value (demo)</dt><dd>${truthAt(j).toFixed(2)} mg/L</dd>` : "";
+    const scoreBox = st.truth ? scoreHTML() : "";
+    $("#inspector").innerHTML = `
+      <div class="insp-head"><span class="label">Junction</span><span class="id">${j}</span></div>
+      ${verdict}
+      <dl class="kv">
+        <dt>Estimate ${st.mode === "min" ? "(daily minimum)" : hh(st.hour)}</dt><dd>${cur.m.toFixed(2)} mg/L</dd>
+        <dt>90% range</dt><dd>${cur.lo.toFixed(2)} to ${cur.hi.toFixed(2)}</dd>
+        <dt>Lowest hour</dt><dd>${hh(dm.hmin)}</dd>
+        <dt>Water age, oldest hour</dt><dd>${a.max.toFixed(0)} h (${a.lo.toFixed(0)} to ${a.hi.toFixed(0)})</dd>
+        ${truthRow}
+        <dt>Sampled</dt><dd>${smp.length ? smp.map(s => `${hh(s.h)} · ${s.y.toFixed(2)}`).join("<br>") : "no"}</dd>
+        <dt>Next route</dt><dd>${ri >= 0 ? `stop ${ri + 1}, ${hh(sc.route[ri].h)}` : "no"}</dd>
+      </dl>
+      <div><span class="label">Over the day</span>${jChart(j)}<p class="note">Line: median estimate. Band: 90% range.${st.truth ? " Dotted: the hidden truth." : ""} Dots: grab samples here.</p></div>
+      <div class="find"><label class="label" for="find">Find a junction</label><input id="find" list="jlist" placeholder="Type an ID, e.g. 125" autocomplete="off"><datalist id="jlist">${d.network.junctions.map(x => `<option value="${x}">`).join("")}</datalist></div>
+      ${scoreBox}`;
+    $("#find").addEventListener("change", e => { const v = e.target.value.trim(); if (d.age[v]) select(v); });
+  }
+
+  function scoreHTML() {
+    const sc = scen(), J = st.d.network.junctions, sampled = new Set(sc.samples.map(s => s.j));
+    const uns = J.filter(j => !sampled.has(j));
+    const low = j => truthAt(j) < THR, flag = j => pBelow(j) > 0.5;
+    const tv = uns.filter(low), found = tv.filter(flag).length, fa = uns.filter(j => !low(j) && flag(j)).length;
+    return `<div class="score"><span class="label">Hidden truth, demo only</span>
+      <span><b class="num">${J.filter(low).length}</b> junctions are truly below 0.2 mg/L ${st.mode === "min" ? "at their daily minimum" : "at " + hh(st.hour)}.</span>
+      <span>Of the <b class="num">${tv.length}</b> that were not sampled, the map flags <b class="num">${found}</b>, with <b class="num">${fa}</b> false alarm${fa === 1 ? "" : "s"} among the other ${uns.length - tv.length}.</span></div>`;
+  }
+
+  /* ---------- other panes ---------- */
+  function readiness() {
+    const net = st.d.network, cnt = (arr, k) => arr.filter(x => x.kind === k).length;
+    const rows = [
+      ["Status", "Reads and runs", "EPANET test run of the first hour"],
+      ["Junctions", cnt(net.nodes, "Junction"), "from the file"],
+      ["Sources", `${cnt(net.nodes, "Reservoir")} (${net.nodes.filter(n => n.kind === "Reservoir").map(n => n.id).join(", ")})`, "from the file"],
+      ["Tanks", cnt(net.nodes, "Tank"), "from the file"],
+      ["Pipes", cnt(net.links, "Pipe"), "from the file"],
+      ["Pumps", cnt(net.links, "Pump"), "from the file, with their controls"],
+      ["Coordinates", "Schematic, not to scale", "derived: drawn lengths do not match pipe lengths"],
+      ["Chlorine dose", "1.2 mg/L at each source", "set in the demo"],
+      ["Decay rates", "Calibrated to the samples", "675 EPANET runs over bulk, wall, pipe age, demand and roughness"],
+    ];
+    $("#ready-tbl tbody").innerHTML = rows.map(r => `<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td style="color:var(--muted)">${r[2]}</td></tr>`).join("");
+  }
+
+  function samplesTable() {
+    const sc = scen();
+    $("#samples-note").textContent = `${sc.samples.length} readings at random junctions between 07:00 and 17:00, drawn from the hidden truth with 0.03 mg/L of measurement noise.`;
+    $("#samples-tbl tbody").innerHTML = sc.samples.map(s => {
+      const r = sc.hourly[s.j];
+      return `<tr data-j="${s.j}"><td class="mono">${s.j}</td><td class="mono">${hh(s.h)}</td><td class="r num">${s.y.toFixed(2)}</td><td class="r num">${r.m[s.h].toFixed(2)}</td><td class="r num">${r.lo[s.h].toFixed(2)} to ${r.hi[s.h].toFixed(2)}</td></tr>`;
+    }).join("");
+  }
+
+  function report() {
+    const sc = scen(), s = sc.summary, J = st.d.network.junctions;
+    $("#report").innerHTML = `
+      <div><span class="label">ResidualMap monthly report</span><h2 style="margin-top:6px">EPA Net3, free chlorine</h2><p class="meta">Example network · ${sc.samples.length} grab samples · minimum 0.2 mg/L · simulation</p></div>
+      <div class="metrics" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div><div class="k">Likely below 0.2 mg/L</div><div class="v num">${s.flagged} of ${J.length}</div><div class="s">at the daily minimum</div></div>
+        <div><div class="k">Lowest hour</div><div class="v num">${hh(s.worst_hour)}</div><div class="s">${Math.round(s.worst_frac * 100)}% below by median</div></div>
+        <div><div class="k">Next route</div><div class="v num">${sc.route.length} sites</div><div class="s">07:00 to 17:00</div></div>
+      </div>
+      <div class="rep-grid">
+        <div>${mapSVG({ layer: "p", mode: "min", route: true, truth: false, sel: null, labels: false })}<p class="note">Chance each junction is below 0.2 mg/L at its daily minimum. Numbers: next month's route.</p></div>
+        <div class="tbl-wrap"><table><thead><tr><th>#</th><th>Junction</th><th>When</th><th class="r">Chance</th></tr></thead><tbody>${sc.route.map((r, i) => `<tr><td>${i + 1}</td><td class="mono">${r.j}</td><td class="mono">${hh(r.h)}</td><td class="r num">${Math.round(r.p * 100)}%</td></tr>`).join("")}</tbody></table></div>
+      </div>
+      <p class="note">What this model accounts for: water age, pipe-wall and bulk decay calibrated to your readings, and its own uncertainty. Tested in simulation on public networks only. This report is a planning aid, not a compliance determination.</p>`;
+  }
+
+  /* ---------- render ---------- */
+  function renderMap() {
+    $("#ws-map").innerHTML = mapSVG({});
+    legend(); metrics(); routeTable(); hourChart(); inspector();
+    $("#hour").disabled = st.mode === "min";
+    $("#hour-out").textContent = st.mode === "min" ? "daily" : hh(st.hour);
+  }
+  function renderAll() {
+    readRamps();
+    $("#hero-map").innerHTML = mapSVG({ layer: "cl", mode: "min", n: "8", route: false, truth: false, sel: null, interactive: false, labels: true });
+    renderMap(); readiness(); samplesTable(); report();
+  }
+  function select(j) { st.sel = j; renderMap(); }
+
+  function homeStats() {
+    const sc = st.d.scenarios["8"], sc3 = st.d.scenarios["3"], J = st.d.network.junctions;
+    const rows = [
+      [`${sc.score.found} of ${sc.score.unsampled_violations}`, "junctions truly below 0.2 mg/L and not sampled that the map flagged"],
+      [`${sc.score.false_alarms}`, `false alarm among the ${J.length - sc.samples.length - sc.score.unsampled_violations} other unsampled junctions`],
+      [`${J.length * 24}`, `junction-hours estimated from ${sc.samples.length} daytime readings`],
+      [`${sc3.score.found} of ${sc3.score.unsampled_violations}`, "low junctions flagged with only 3 samples"],
+    ];
+    $("#home-stats").innerHTML = rows.map(([v, k]) => `<div class="stat"><div class="v num">${v}</div><div class="k">${k}</div></div>`).join("");
+  }
+
+  /* ---------- pilot planner ---------- */
+  function plan() {
+    const on = new Set($$("#checks input:checked").map(i => i.value));
+    const items = [];
+    let net = null;
+    if (on.has("model")) net = "Export the model to EPANET (.inp), with IDs, not labels. An older model is fine to start.";
+    else if (on.has("gis")) net = "Export the mains layer (GeoPackage, zipped shapefile or GeoJSON). ResidualMap joins the lines into a pipe network.";
+    else if (on.has("cad")) net = "Save the drawing as DXF. Pipe sizes are read from layer names or labels.";
+    else if (on.has("paper")) net = "Send a scan or a phone photo of the map. The mains can be traced over Google Earth, by you or by me.";
+    items.push(net || `<span style="color:var(--warn)">Missing: a model or any map of the water mains.</span>`);
+    if (!on.has("model") && net) items.push("Fill in a short form: the well or source, tanks, pumps and how they switch, and typical daily water use.");
+    items.push(on.has("log") ? "Send 3 to 12 months of grab samples as they are, with the list of sampling sites." : `<span style="color:var(--warn)">Missing: grab-sample readings. Even a few months on paper sheets works.</span>`);
+    if (on.has("analyzer")) items.push("Include the analyzer readings at the source: they set the chlorine level entering the pipes all day.");
+    items.push("Tell us the chlorine dose or residual leaving the plant.");
+    const ready = net && on.has("log");
+    $("#plan").innerHTML = `<span class="label">${ready ? "Enough for a pilot" : "What is still needed"}</span><ol>${items.map(i => `<li>${i}</li>`).join("")}</ol><p class="note">Everything stays private and is deleted on request.</p>`;
+  }
+
+  /* ---------- field check: measured fluoride against the model, from data/net2_field.json ---------- */
+  const FC = { H: 210, l: 34, r: 10, t: 22, b: 40, ymax: 1.2, xmax: 55 };
+  const f3 = v => v == null ? "undefined" : v.toFixed(3);
+  const words = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  const losers = f => f.network.measured.filter(n => f.metrics.per_node[n].nominal.mae >= f.metrics.per_node[n].flat_1.mae);
+  const clockOf = h => { const m = Math.round((8 + h) * 60) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+
+  function homeField() {
+    const f = st.f, o = f.metrics.overall, lost = losers(f), n = o.nominal.n;
+    $("#home-field").innerHTML = `Field check on real readings: ${n} measured fluoride tracer readings from one small network, against EPANET, the simulator ResidualMap builds on, running EPA's own Net2 model. ResidualMap's estimator was not run. EPANET misses by ${o.nominal.mae.toFixed(3)} mg/L on average, against ${o.flat_1.mae.toFixed(3)} for a flat guess, but it loses to that guess at ${lost.length} of ${f.network.measured.length} nodes, and ${f.error_spread.over_05} of ${n} readings miss by more than 0.5 mg/L. This is a replay using the file's hourly inputs for those same ${f.protocol.duration_h} hours, best case. It is fluoride, not chlorine, so it checks water movement and says nothing about chlorine decay. <a href="#field" data-go="field">See the field check</a>.`;
+  }
+
+  function fieldTables() {
+    const f = st.f, o = f.metrics.overall, N = f.network.measured, lost = losers(f), passed = f.bars.filter(b => b.pass).length, es = f.error_spread;
+    $("#fc-lede").textContent = `${o.nominal.n} real fluoride tracer readings at ${N.length} nodes over ${f.protocol.duration_h} hours, against fluoride simulated by EPANET, the simulator ResidualMap builds on, running EPA's own Net2 model. ResidualMap's estimator was not run. At its nominal settings the model's mean absolute error is ${o.nominal.mae.toFixed(3)} mg/L, against ${o.flat_1.mae.toFixed(3)} for a flat 1.0 mg/L guess and ${o.own_mean.mae.toFixed(3)} for each node's own measured mean. This is a replay using the file's hourly inputs for those same ${f.protocol.duration_h} hours, best case. This is fluoride, not chlorine: it checks water movement, not chlorine decay.`;
+    const row = (label, m) => `<tr><td>${label}</td><td class="r num">${f3(m.mae)}</td><td class="r num">${f3(m.rmse)}</td><td class="r num">${f3(m.r)}</td></tr>`;
+    $("#fc-overall tbody").innerHTML = row("<b>Model at nominal settings</b>", o.nominal) + row("Baseline: each node's own measured mean (uses the answer)", o.own_mean) + row("Baseline: flat 1.0 mg/L", o.flat_1);
+    $("#fc-nodes tbody").innerHTML = N.map(n => {
+      const p = f.metrics.per_node[n], wins = p.nominal.mae < p.flat_1.mae;
+      return `<tr><td class="mono">${n}</td><td class="r num">${p.nominal.n}</td><td class="r num">${f3(p.nominal.mae)}</td><td class="r num">${f3(p.own_mean.mae)}</td><td class="r num">${f3(p.flat_1.mae)}</td><td class="r num">${f3(p.nominal.rmse)}</td><td class="r num">${f3(p.nominal.r)}</td><td style="color:var(--${wins ? "ok" : "warn"});font-weight:600">${wins ? "Yes" : "No"}</td></tr>`;
+    }).join("");
+    $("#fc-bars").innerHTML = f.bars.map(b => `<li><span class="id">${b.id}</span><span class="res ${b.pass ? "pass" : "miss"}">${b.pass ? "Pass" : "Miss"}</span><span class="txt">${b.text}</span><span class="val">${b.value}</span></li>`).join("");
+    $("#fc-bars-note").textContent = `${passed} of ${f.bars.length} bars passed. ` + (lost.length ? `That is the pooled result: at node${lost.length > 1 ? "s" : ""} ${words(lost)} the model loses to the flat 1.0 mg/L guess.` : "The model also beats the flat guess at every node.") + ` ${es.over_05} of ${es.n} readings miss by more than 0.5 mg/L; ${es.early_readings} readings fall in the first ${es.early_cutoff_h} h, when all water starts at 1.0. B3 tests a simple pick-the-best, not ResidualMap's fit, and a fixed x0.85 does as well. The first run's units bug showed B1 and B3 as misses; fixing it flipped them.`;
+    $("#fc-step").textContent = `Simulated with a ${f.protocol.quality_step_min} minute report step and compared by linear interpolation in time. With the file's default hourly report step, the same comparison gives an MAE of ${f.report_step_sensitivity.mae_hourly.toFixed(3)} mg/L, not ${f.report_step_sensitivity.mae_5_min.toFixed(3)}, a shift about the size of the calibration gain.`;
+    $("#fc-charts-note").textContent = `${f.protocol.duration_h} hours from the 08:00 start. Only ${f.coverage.inside} of ${f.coverage.n} readings fall inside the range, so it is not an uncertainty band. Roughness barely matters here: scaling every pipe's C equally leaves the flow split unchanged when demands are fixed, with one tank and no pumps (the pump station is a fixed inflow at node 1), so the 9 settings act like 3 (at most ${f.rough_effect_max_mgL.toFixed(4)} mg/L apart at these nodes).`;
+    $("#fc-charts").innerHTML = N.map(n => {
+      const p = f.metrics.per_node[n].nominal;
+      return `<div class="fc-cell"><h3>Node <span class="mono">${n}</span></h3><p class="s">Model MAE ${f3(p.mae)} mg/L, r ${f3(p.r)}, ${p.n} readings</p><div class="fc-host" data-node="${n}"></div></div>`;
+    }).join("");
+  }
+
+  function fcChartSVG(n, W) {
+    const f = st.f, s = f.series.nodes[n], hrs = f.series.hours, { H, l, r, t, b, ymax, xmax } = FC;
+    const x = h => +(l + (W - l - r) * h / xmax).toFixed(1), y = v => +(t + (H - t - b) * (1 - v / ymax)).toFixed(1);
+    const parts = [];
+    [0, 0.5, 1].forEach(v => parts.push(`<line class="grid-l" x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}"/><text x="${l - 5}" y="${y(v) + 3}" text-anchor="end">${v.toFixed(1)}</text>`));
+    [0, 12, 24, 36, 48].forEach(h => parts.push(`<text x="${x(h)}" y="${H - b + 14}" text-anchor="middle">${h}</text>`));
+    parts.push(`<text x="0" y="11">mg/L fluoride</text><text x="${(l + W - r) / 2}" y="${H - 6}" text-anchor="middle">hours since start</text>`);
+    const area = hrs.map((h, i) => `${x(h)},${y(s.max[i])}`).concat(hrs.map((h, i) => `${x(h)},${y(s.min[i])}`).reverse()).join(" ");
+    parts.push(`<polygon class="area" points="${area}"/><line class="axis" x1="${l}" x2="${W - r}" y1="${y(0)}" y2="${y(0)}"/>`);
+    parts.push(`<path class="med" d="${hrs.map((h, i) => `${i ? "L" : "M"}${x(h)} ${y(s.nominal[i])}`).join(" ")}"/>`);
+    f.measurements[n].forEach(([h, v]) => parts.push(`<circle class="smp" cx="${x(h)}" cy="${y(v)}" r="4"/>`));
+    parts.push(`<line class="cross" x1="0" x2="0" y1="${t}" y2="${H - b}" visibility="hidden"/>`);
+    return `<svg class="jchart fc-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Measured and modelled fluoride in mg/L at node ${n} over ${xmax} hours">${parts.join("")}</svg><div class="tip" hidden></div>`;
+  }
+
+  function fieldCharts() {
+    $$("#fc-charts .fc-host").forEach(host => {
+      const W = Math.max(240, Math.round(host.clientWidth));
+      if (host.clientWidth) host.innerHTML = fcChartSVG(host.dataset.node, W);
+    });
+  }
+
+  function fcHoverOff(host) {
+    const c = $(".cross", host), tip = $(".tip", host);
+    if (c) c.setAttribute("visibility", "hidden");
+    if (tip) tip.hidden = true;
+  }
+  function fcHover(e) {
+    const host = e.target.closest(".fc-host");
+    $$("#fc-charts .fc-host").forEach(h => { if (h !== host) fcHoverOff(h); });
+    if (!host || !$(".cross", host)) return;
+    const f = st.f, n = host.dataset.node, s = f.series.nodes[n], W = host.clientWidth, box = host.getBoundingClientRect();
+    const hr = Math.max(0, Math.min(FC.xmax, (e.clientX - box.left - FC.l) / (W - FC.l - FC.r) * FC.xmax));
+    const i = Math.round(hr * 60 / f.series.step_min), h = f.series.hours[i], px = FC.l + (W - FC.l - FC.r) * h / FC.xmax;
+    const near = f.measurements[n].reduce((a, m) => Math.abs(m[0] - h) < Math.abs(a[0] - h) ? m : a);
+    const c = $(".cross", host), tip = $(".tip", host);
+    c.setAttribute("x1", px); c.setAttribute("x2", px); c.setAttribute("visibility", "visible");
+    tip.innerHTML = `<div class="row"><b>${h.toFixed(2)} h</b><span>clock ${clockOf(h)}</span></div>
+      <div class="row"><span>Model</span><span class="num">${s.nominal[i].toFixed(2)} mg/L</span></div>
+      <div class="row"><span>Range</span><span class="num">${s.min[i].toFixed(2)} to ${s.max[i].toFixed(2)}</span></div>
+      ${Math.abs(near[0] - h) <= 0.75 ? `<div class="row"><span>Measured at ${near[0].toFixed(2)} h</span><span class="num">${near[1].toFixed(2)} mg/L</span></div>` : ""}`;
+    tip.hidden = false;
+    const left = px + 12 + tip.offsetWidth > W ? px - tip.offsetWidth - 12 : px + 12;
+    tip.style.left = Math.max(0, left) + "px"; tip.style.top = "26px";
+  }
+
+  function fieldMap() {
+    const f = st.f, host = $("#fc-map"), net = f.network;
+    if (!host.clientWidth) return;
+    const W = Math.round(host.clientWidth), g = project(net, W), out = [`<svg class="map-svg fc-map" viewBox="0 0 ${g.W} ${g.H}" role="img" aria-label="Map of Net2 marking the 4 measured nodes, the source and the tank">`];
+    net.links.forEach(l => { const pts = [g.pos[l.a], ...l.v.map(g.P), g.pos[l.b]]; out.push(`<path class="pipe" stroke-width="1.6" d="M${pts.map(p => p.join(" ")).join(" L")}"/>`); });
+    const [sx, sy] = g.pos[net.source], [tx, ty] = g.pos[net.tank];
+    out.push(`<rect class="src" x="${sx - 7}" y="${sy - 7}" width="14" height="14" rx="2"/><text class="lbl" x="${sx + 12}" y="${sy + 4}">Source, node ${net.source}</text>`);
+    out.push(`<rect class="tank" x="${tx - 6}" y="${ty - 6}" width="12" height="12" rx="2" style="stroke-width:2"/><text class="lbl" x="${tx - 11}" y="${ty + 4}" text-anchor="end">Tank ${net.tank}</text>`);
+    net.measured.forEach(n => { const [x, y] = g.pos[n]; out.push(`<circle class="measured" cx="${x}" cy="${y}" r="5.5"/><text class="lbl" x="${x + 9}" y="${y + 4}">${n}</text>`); });
+    host.innerHTML = out.join("") + "</svg>";
+  }
+
+  function fieldCal() {
+    const f = st.f, c = f.calibration[st.fcN], d = c.median_paired_difference, gain = Math.round(-d / c.median_mae_nominal * 100), pd = c.picks_by_demand;
+    const pct = v => Math.round(v * 100) + "%";
+    const diffs = Object.keys(f.calibration).map(n => f.calibration[n].median_paired_difference.toFixed(3));
+    const sizes = Object.keys(f.calibration);
+    const memberRows = f.members.map((m, i) => {
+      const nominal = m.demand === 1 && m.rough === 1, tag = nominal ? "<b>" : "", end = nominal ? " (nominal)</b>" : "";
+      return `<tr><td class="num">${tag}x${m.demand}${end}</td><td class="num">x${m.rough}</td><td class="r num">${f3(m.mae)}</td><td class="r num">${f3(m.r)}</td><td class="r num">${c.picks[i].count}</td></tr>`;
+    }).join("");
+    $("#fc-cal").innerHTML = `
+      <div class="metrics">
+        <div><div class="k">Nominal, median MAE</div><div class="v num">${f3(c.median_mae_nominal)}</div><div class="s">mg/L on held-out readings</div></div>
+        <div><div class="k">Calibrated, median MAE</div><div class="v num">${f3(c.median_mae_calibrated)}</div><div class="s">mg/L on the same readings</div></div>
+        <div><div class="k">Always x0.85, median MAE</div><div class="v num">${f3(c.median_mae_fixed_085)}</div><div class="s">mg/L on the same readings</div></div>
+        <div><div class="k">Median paired difference</div><div class="v num">${d > 0 ? "+" : ""}${d.toFixed(3)}</div><div class="s">calibrated minus nominal, mg/L</div></div>
+      </div>
+      <p><b>This is a simple pick-the-best, not ResidualMap's fit.</b> It finds one global scale, and a fixed x0.85 does as well, though x0.85 can only be named as best after seeing the results. ResidualMap's fit was not run here. It also fits decay rates, and fluoride cannot test those.</p>
+      <p>${c.draws} random draws of ${st.fcN} readings taken between 07:00 and 17:00. Each draw picks the setting with the lowest error on those readings, then scores it on the ${c.held_out_each} readings not drawn, day and night, the same readings as nominal.</p>
+      <p>${d < 0 ? `The gain over nominal is small, about ${gain}% of the error.` : "No gain in the median."} Calibrated beats nominal in ${pct(c.share_calibrated_beats_nominal)} of draws, ${pct(c.share_beats_by_over_0001)} by more than 0.001 mg/L. More readings do not help: the median difference is ${words(diffs)} at ${words(sizes)} readings. Demand x0.85 was picked in ${pd["0.85"]} draws, x1 in ${pd["1.0"]} and x1.15 in ${pd["1.15"]}, and the nominal setting itself in ${pct(c.share_nominal_picked)}. A demand setting moves water faster or slower, with node 1's inflow scaled too; it cannot fix a wrong path through the network.</p>
+      <div class="tbl-wrap"><table class="fc-tbl"><thead><tr><th>Demand</th><th>Roughness C</th><th class="r">MAE, all ${f.metrics.overall.nominal.n}</th><th class="r">r</th><th class="r">Picked, ${st.fcN} readings</th></tr></thead><tbody>${memberRows}</tbody></table></div>`;
+  }
+
+  function renderField() {
+    if (!st.f) return;
+    fieldTables(); fieldCharts(); fieldMap(); fieldCal();
+  }
+
+  /* ---------- routing between views ---------- */
+  function go(view, push = true) {
+    if (!["home", "workspace", "pilot", "field"].includes(view)) view = "home";
+    st.view = view;
+    $$("main[data-view]").forEach(m => { m.hidden = m.dataset.view !== view; });
+    $$(".nav a").forEach(a => a.toggleAttribute("aria-current", a.dataset.go === view) || a.dataset.go === view && a.setAttribute("aria-current", "page"));
+    $$(".nav a").forEach(a => { if (a.dataset.go === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    if (push) { try { history.replaceState(null, "", "#" + view); } catch (e) { /* the viewer may not allow it */ } }
+    window.scrollTo(0, 0);
+    if (view === "field") renderField();
+  }
+  function step(name) {
+    st.step = name;
+    $$("[data-pane]").forEach(p => { p.hidden = p.dataset.pane !== name; });
+    $$(".steps button").forEach(b => { if (b.dataset.step === name) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current"); });
+    $("#inspector").hidden = name === "report" || name === "network";
+  }
+
+  /* ---------- events ---------- */
+  function bind() {
+    document.addEventListener("click", e => {
+      const a = e.target.closest("[data-go]");
+      if (a) { e.preventDefault(); go(a.dataset.go); }
+    });
+    $$(".steps button").forEach(b => b.addEventListener("click", () => step(b.dataset.step)));
+    $("#seg-n").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; st.n = b.dataset.n; $$("#seg-n button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderMap(); samplesTable(); report(); });
+    $("#seg-layer").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; st.layer = b.dataset.layer; $$("#seg-layer button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderMap(); });
+    $("#seg-mode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; setMode(b.dataset.mode); });
+    $("#hour").addEventListener("input", e => { st.hour = +e.target.value; renderMap(); });
+    $("#play").addEventListener("click", () => {
+      if (st.timer) { stopPlay(); return; }
+      setMode("hour");
+      $("#play-ico").setAttribute("d", "M2 1 H5 V11 H2 Z M7 1 H10 V11 H7 Z");
+      st.timer = setInterval(() => { st.hour = (st.hour + 1) % 24; $("#hour").value = st.hour; renderMap(); }, 700);
+    });
+    $("#tg-route").addEventListener("change", e => { st.route = e.target.checked; renderMap(); });
+    $("#tg-truth").addEventListener("change", e => { st.truth = e.target.checked; renderMap(); });
+    $("#hourchart").addEventListener("click", e => { const r = e.target.closest("[data-h]"); if (!r) return; st.hour = +r.dataset.h; $("#hour").value = st.hour; setMode("hour"); });
+    $("#route-tbl").addEventListener("click", e => { const tr = e.target.closest("tr[data-j]"); if (tr) select(tr.dataset.j); });
+    $("#samples-tbl").addEventListener("click", e => { const tr = e.target.closest("tr[data-j]"); if (tr) { select(tr.dataset.j); step("map"); } });
+    const mapEl = $("#ws-map"), tip = $("#tip");
+    mapEl.addEventListener("click", e => { const c = e.target.closest("[data-j]"); if (c) select(c.dataset.j); });
+    mapEl.addEventListener("mousemove", e => {
+      const c = e.target.closest("[data-j]");
+      if (!c) { tip.hidden = true; return; }
+      const j = c.dataset.j, sc = scen(), r = st.mode === "min" ? sc.daily[j] : { m: sc.hourly[j].m[st.hour], lo: sc.hourly[j].lo[st.hour], hi: sc.hourly[j].hi[st.hour] };
+      tip.innerHTML = `<div class="row"><b>${j}</b><span>${st.mode === "min" ? "daily minimum" : hh(st.hour)}</span></div>
+        <div class="row"><span>Estimate</span><span class="num">${r.m.toFixed(2)} mg/L</span></div>
+        <div class="row"><span>90% range</span><span class="num">${r.lo.toFixed(2)} to ${r.hi.toFixed(2)}</span></div>
+        <div class="row"><span>Chance below 0.2</span><span class="num">${Math.round(pBelow(j) * 100)}%</span></div>
+        <div class="row"><span>Water age</span><span class="num">${st.d.age[j].max.toFixed(0)} h</span></div>
+        ${st.truth ? `<div class="row"><span>True value</span><span class="num">${truthAt(j).toFixed(2)} mg/L</span></div>` : ""}`;
+      const box = mapEl.parentElement.getBoundingClientRect();
+      let x = e.clientX - box.left + 14, y = e.clientY - box.top + 14;
+      tip.hidden = false;
+      if (x + tip.offsetWidth > box.width - 8) x = e.clientX - box.left - tip.offsetWidth - 14;
+      if (y + tip.offsetHeight > box.height - 8) y = e.clientY - box.top - tip.offsetHeight - 14;
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+    });
+    mapEl.addEventListener("mouseleave", () => { tip.hidden = true; });
+    $("#checks").addEventListener("change", plan);
+    $("#copy-email").addEventListener("click", async () => {
+      const t = $("#email").textContent, btn = $("#copy-email");
+      try { await navigator.clipboard.writeText(t); btn.textContent = "Copied"; }
+      catch (e) { const r = document.createRange(); r.selectNodeContents($("#email")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected, press Copy"; }
+      setTimeout(() => { btn.textContent = "Copy address"; }, 2000);
+    });
+    const rerender = () => { if (st.d) renderAll(); };
+    try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender); } catch (e) { /* older browsers */ }
+    new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    window.addEventListener("hashchange", () => go(location.hash.slice(1), false));
+    $("#seg-fc").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; st.fcN = b.dataset.fc; $$("#seg-fc button").forEach(x => x.setAttribute("aria-pressed", x === b)); if (st.f) fieldCal(); });
+    $("#fc-charts").addEventListener("pointermove", fcHover);
+    $("#fc-charts").addEventListener("pointerleave", () => $$("#fc-charts .fc-host").forEach(fcHoverOff));
+    let fcRaf = 0;
+    window.addEventListener("resize", () => { cancelAnimationFrame(fcRaf); fcRaf = requestAnimationFrame(() => { if (st.f && st.view === "field") { fieldCharts(); fieldMap(); } }); });
+  }
+  function setMode(m) {
+    st.mode = m; $$("#seg-mode button").forEach(x => x.setAttribute("aria-pressed", x.dataset.mode === m));
+    if (m === "min") stopPlay();
+    renderMap();
+  }
+  function stopPlay() { clearInterval(st.timer); st.timer = null; const ico = $("#play-ico"); if (ico) ico.setAttribute("d", "M2 1 L11 6 L2 11 Z"); }
+
+  /* ---------- start ---------- */
+  bind(); plan();
+  go(location.hash.slice(1) || "home", false);
+  fetch("data/net3.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+    st.d = d;
+    d.geo = project(d.network, 1000);
+    const ages = Object.values(d.age).map(a => a.max).sort((a, b) => a - b);
+    d.ageMax = Math.ceil(ages[Math.floor(ages.length * 0.98)] / 10) * 10;
+    LAYERS.age.ticks = [0, d.ageMax / 2, d.ageMax];
+    st.sel = d.scenarios[st.n].route[0].j;
+    homeStats(); renderAll();
+  }).catch(err => {
+    const msg = `<p class="note" style="padding:16px">The demo data could not be loaded (${err.message}). Open this page through a web server so it can read data/net3.json.</p>`;
+    $("#hero-map").innerHTML = msg; $("#ws-map").innerHTML = msg;
+  });
+  fetch("data/net2_field.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(f => {
+    st.f = f;
+    homeField();
+    if (st.view === "field") renderField();
+  }).catch(err => {
+    $("#fc-lede").textContent = `The field check data could not be loaded (${err.message}). Open this page through a web server so it can read data/net2_field.json.`;
+  });
+})();
+</script>
+
+</body>
+</html>
