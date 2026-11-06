@@ -14,6 +14,7 @@
    Colour: pipes and controls in the potable-water blue of utility markings; chlorine in the pink of a DPD test (more chlorine, deeper pink);
    orange only for "likely below the minimum". Type: Public Sans throughout, IBM Plex Mono for IDs and readings. */
 :root {
+  color-scheme: light;
   --ground: #F5F7F8; --surface: #FFFFFF; --sunk: #EDF1F3;
   --ink: #0E1B25; --ink-2: #364753; --muted: #5C6D79; --line: #DAE2E7; --line-2: #C3CED6;
   --accent: #0A5BB0; --accent-ink: #FFFFFF; --accent-soft: #E2EDF8;
@@ -26,32 +27,6 @@
   --font: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --r: 4px;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ground: #0C1318; --surface: #111B22; --sunk: #16222A;
-    --ink: #E4ECF1; --ink-2: #B4C2CC; --muted: #8696A2; --line: #1F2C35; --line-2: #2D3D48;
-    --accent: #7CB3F1; --accent-ink: #08131C; --accent-soft: #13283D;
-    --warn: #F08C4E; --warn-soft: #3A2217; --ok: #5DC48E;
-    --pipe: #4B5C68; --pump: #7CB3F1;
-    --ramp-0: #5B5161; --ramp-1: #73365A; --ramp-2: #94306B; --ramp-3: #D24E94; --ramp-4: #F8A9D0;
-    --risk-0: #26313A; --risk-1: #5C3423; --risk-2: #9D4719; --risk-3: #E07431; --risk-4: #FFB47F;
-    --band-0: #1D2A35; --band-1: #23425E; --band-2: #2E6390; --band-3: #5B92C5; --band-4: #A7CCF0;
-    --age-0: #29251F; --age-1: #594423; --age-2: #8C692E; --age-3: #C6994B; --age-4: #F0D59B;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --ground: #0C1318; --surface: #111B22; --sunk: #16222A;
-  --ink: #E4ECF1; --ink-2: #B4C2CC; --muted: #8696A2; --line: #1F2C35; --line-2: #2D3D48;
-  --accent: #7CB3F1; --accent-ink: #08131C; --accent-soft: #13283D;
-  --warn: #F08C4E; --warn-soft: #3A2217; --ok: #5DC48E;
-  --pipe: #4B5C68; --pump: #7CB3F1;
-  --ramp-0: #5B5161; --ramp-1: #73365A; --ramp-2: #94306B; --ramp-3: #D24E94; --ramp-4: #F8A9D0;
-  --risk-0: #26313A; --risk-1: #5C3423; --risk-2: #9D4719; --risk-3: #E07431; --risk-4: #FFB47F;
-  --band-0: #1D2A35; --band-1: #23425E; --band-2: #2E6390; --band-3: #5B92C5; --band-4: #A7CCF0;
-  --age-0: #29251F; --age-1: #594423; --age-2: #8C692E; --age-3: #C6994B; --age-4: #F0D59B;
-  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
